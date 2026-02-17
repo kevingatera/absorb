@@ -27,6 +27,7 @@ void main() async {
   ));
 
   // Load device info for server identification
+  await ApiService.initDeviceId();
   try {
     final info = await DeviceInfoPlugin().androidInfo;
     ApiService.deviceManufacturer = info.manufacturer;

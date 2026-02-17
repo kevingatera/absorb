@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   final String baseUrl;
@@ -9,6 +10,19 @@ class ApiService {
   // Device info — set once at app start
   static String deviceManufacturer = '';
   static String deviceModel = '';
+  static String deviceId = '';
+
+  /// Generate or load a persistent unique device ID
+  static Future<void> initDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    var id = prefs.getString('absorb_device_id');
+    if (id == null || id.isEmpty) {
+      // Generate a unique ID for this install
+      id = 'absorb-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}-${(DateTime.now().microsecond * 31337).toRadixString(36)}';
+      await prefs.setString('absorb_device_id', id);
+    }
+    deviceId = id;
+  }
 
   ApiService({required this.baseUrl, required this.token});
 
@@ -220,7 +234,7 @@ class ApiService {
         body: jsonEncode({
           'deviceInfo': {
             'clientName': 'Absorb',
-            'deviceId': 'absorb-android',
+            'deviceId': deviceId,
             'deviceName': '${deviceManufacturer.isNotEmpty ? "$deviceManufacturer " : ""}$deviceModel'.trim(),
             'manufacturer': deviceManufacturer,
             'model': deviceModel,
