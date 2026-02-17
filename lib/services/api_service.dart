@@ -486,7 +486,7 @@ class ApiService {
   static Future<Map<String, dynamic>?> getAudibleRating(String asin) async {
     try {
       final response = await http.get(
-        Uri.parse('https://api.audnex.us/books/$asin'),
+        Uri.parse('https://api.audnex.us/books/$asin?update=1'),
       ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
@@ -502,6 +502,44 @@ class ApiService {
       }
     } catch (e) {
       // ignore — Audnexus is optional
+    }
+    return null;
+  }
+
+  /// Search Audible via the audiobookshelf server for an ASIN by title+author,
+  /// then fetch the rating from Audnexus. Used as a fallback when the book's
+  /// stored ASIN returns no rating.
+  Future<Map<String, dynamic>?> searchAudibleRating(
+      String title, String? author) async {
+    try {
+      // Use the ABS server's search endpoint to query Audible for the book
+      final query = author != null && author.isNotEmpty
+          ? '$title $author'
+          : title;
+      final encoded = Uri.encodeQueryComponent(query);
+      final response = await http.get(
+        Uri.parse(
+          '$_cleanBaseUrl/api/search/covers?title=${Uri.encodeQueryComponent(title)}'
+          '&author=${Uri.encodeQueryComponent(author ?? '')}'
+          '&provider=audible',
+        ),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final results = jsonDecode(response.body) as List<dynamic>? ?? [];
+        // Look for an ASIN in the results
+        for (final r in results) {
+          if (r is Map<String, dynamic>) {
+            final asin = r['asin'] as String? ?? r['key'] as String? ?? '';
+            if (asin.isNotEmpty && asin.startsWith('B')) {
+              return await getAudibleRating(asin);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // ignore
     }
     return null;
   }

@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart' hide PlaybackEvent;
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
+import '../services/api_service.dart';
 import '../services/download_service.dart';
 import '../services/progress_sync_service.dart';
 import '../services/bookmark_service.dart';
@@ -893,14 +894,23 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
   void _subscribePosition() {
     _posSub?.cancel();
     if (widget.isActive) {
+      // Seed from static progress first so the bar doesn't jump to 0
+      // while waiting for the first position stream event
+      if (_lastKnownPos == 0 && widget.staticProgress > 0) {
+        _lastKnownPos = widget.staticProgress * widget.staticDuration;
+        _lastPosTime = DateTime.now();
+      }
       _posSub = widget.player.positionStream.listen((dur) {
         _lastKnownPos = dur.inMilliseconds / 1000.0;
         _lastPosTime = DateTime.now();
         _currentSpeed = widget.player.speed;
         _isPlaying = widget.player.isPlaying;
       });
-      // Seed initial values
-      _lastKnownPos = widget.player.position.inMilliseconds / 1000.0;
+      // Override with real player position if available
+      final playerPos = widget.player.position.inMilliseconds / 1000.0;
+      if (playerPos > 0) {
+        _lastKnownPos = playerPos;
+      }
       _lastPosTime = DateTime.now();
       _currentSpeed = widget.player.speed;
       _isPlaying = widget.player.isPlaying;
@@ -2004,6 +2014,7 @@ class _BookDetailSheetContent extends StatefulWidget {
 
 class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   Map<String, dynamic>? _item;
+  Map<String, dynamic>? _rating;
   bool _isLoading = true;
   bool _chaptersExpanded = false;
 
@@ -2016,6 +2027,32 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     try {
       final item = await api.getLibraryItem(widget.itemId);
       if (mounted) setState(() { _item = item; _isLoading = false; });
+
+      // Fetch Audible rating
+      if (item != null && !context.read<LibraryProvider>().isOffline) {
+        final media = item['media'] as Map<String, dynamic>? ?? {};
+        final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+        final asin = metadata['asin'] as String?;
+        final title = metadata['title'] as String? ?? '';
+        final author = metadata['authorName'] as String?;
+
+        Map<String, dynamic>? rating;
+        // Try ASIN first
+        if (asin != null && asin.isNotEmpty) {
+          rating = await ApiService.getAudibleRating(asin);
+        }
+        // If no rating or 0 rating, try title+author search fallback
+        if ((rating == null || (rating['rating'] as num).toDouble() <= 0) &&
+            title.isNotEmpty && api != null) {
+          final fallback = await api.searchAudibleRating(title, author);
+          if (fallback != null && (fallback['rating'] as num).toDouble() > 0) {
+            rating = fallback;
+          }
+        }
+        if (rating != null && mounted) {
+          setState(() => _rating = rating);
+        }
+      }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -2087,6 +2124,23 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       Text(authorName, textAlign: TextAlign.center, style: tt.bodyMedium?.copyWith(color: Colors.white60)),
       if (narrator.isNotEmpty) ...[const SizedBox(height: 2),
         Text('Narrated by $narrator', textAlign: TextAlign.center, style: tt.bodySmall?.copyWith(color: Colors.white38))],
+      // ─── AUDIBLE RATING ───────────────────────────────
+      if (_rating != null && (_rating!['rating'] as num).toDouble() > 0) ...[
+        const SizedBox(height: 8),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          ..._buildStars((_rating!['rating'] as num).toDouble(), cs),
+          const SizedBox(width: 6),
+          Text((_rating!['rating'] as num).toStringAsFixed(1),
+            style: tt.labelLarge?.copyWith(fontWeight: FontWeight.w600, color: Colors.white70)),
+          if (_rating!['numRatings'] != null && (_rating!['numRatings'] as num).toInt() > 0) ...[
+            const SizedBox(width: 4),
+            Text('(${_fmtCount((_rating!['numRatings'] as num).toInt())})',
+              style: tt.labelSmall?.copyWith(color: Colors.white38)),
+          ],
+          const SizedBox(width: 4),
+          Text('on Audible', style: tt.labelSmall?.copyWith(color: Colors.white38)),
+        ]),
+      ],
       const SizedBox(height: 12),
       if (progress > 0) ...[
         ClipRRect(borderRadius: BorderRadius.circular(3),
@@ -2106,7 +2160,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       )),
       const SizedBox(height: 12),
       Row(children: [
-        Expanded(child: _DownloadButton(itemId: widget.itemId, coverUrl: _coverUrl, title: title, author: authorName)),
+        Expanded(child: _DownloadWideButton(itemId: widget.itemId, coverUrl: _coverUrl, title: title, author: authorName, accent: cs.primary)),
         const SizedBox(width: 10),
         if (isFinished)
           Expanded(child: _sheetBtn(icon: Icons.replay_rounded,
@@ -2176,7 +2230,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   }
 
   Widget _sheetBtn({required IconData icon, required String label, required VoidCallback onTap}) {
-    return GestureDetector(onTap: onTap, child: Container(height: 40,
+    return GestureDetector(onTap: onTap, child: Container(height: 44,
       decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white.withOpacity(0.1))),
       child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -2200,6 +2254,28 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor();
     if (h > 0) return '${h}h ${m}m';
     return '${m}m';
+  }
+
+  List<Widget> _buildStars(double rating, ColorScheme cs) {
+    final stars = <Widget>[];
+    final fullStars = rating.floor();
+    final hasHalf = (rating - fullStars) >= 0.4;
+    for (int i = 0; i < 5; i++) {
+      if (i < fullStars) {
+        stars.add(Icon(Icons.star_rounded, size: 16, color: cs.primary));
+      } else if (i == fullStars && hasHalf) {
+        stars.add(Icon(Icons.star_half_rounded, size: 16, color: cs.primary));
+      } else {
+        stars.add(Icon(Icons.star_outline_rounded, size: 16, color: Colors.white24));
+      }
+    }
+    return stars;
+  }
+
+  String _fmtCount(int count) {
+    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
+    if (count >= 1000) return '${(count / 1000).toStringAsFixed(count >= 10000 ? 0 : 1)}K';
+    return count.toString();
   }
 
   Future<void> _openSeries(BuildContext context, String? seriesId, String seriesName) async {

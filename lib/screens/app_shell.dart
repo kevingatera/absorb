@@ -78,7 +78,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   DateTime? _lastRefresh;
-  static const _refreshCooldown = Duration(minutes: 5);
+  static const _refreshCooldown = Duration(minutes: 1);
 
   void _refreshData() {
     final now = DateTime.now();

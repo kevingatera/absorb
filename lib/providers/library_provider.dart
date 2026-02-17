@@ -317,8 +317,13 @@ class LibraryProvider extends ChangeNotifier {
       return;
     }
 
-    _isLoading = true;
-    notifyListeners();
+    // Only show loading spinner if we have NO existing data.
+    // If we already have sections, do a silent background refresh.
+    final hadData = _personalizedSections.isNotEmpty;
+    if (!hadData) {
+      _isLoading = true;
+      notifyListeners();
+    }
 
     try {
       await _refreshProgress();
