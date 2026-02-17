@@ -1,0 +1,349 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../providers/library_provider.dart';
+import '../services/download_service.dart';
+import '../screens/absorbing_screen.dart';
+
+class BookCard extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final bool showProgress;
+  final bool isWide;
+
+  const BookCard({
+    super.key,
+    required this.item,
+    this.showProgress = false,
+    this.isWide = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final lib = context.read<LibraryProvider>();
+
+    final itemId = item['id'] as String?;
+    final media = item['media'] as Map<String, dynamic>? ?? {};
+    final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+
+    final title = metadata['title'] as String? ?? 'Unknown Title';
+    final authorName = metadata['authorName'] as String? ?? '';
+    final coverUrl = lib.getCoverUrl(itemId);
+
+    // Progress from LibraryProvider (fetched via /api/me, same source as book detail)
+    double progress = 0;
+    if (showProgress) {
+      progress = lib.getProgress(itemId);
+    }
+
+    if (isWide) {
+      return _buildWideCard(context, cs, tt, title, authorName, coverUrl, progress);
+    }
+    return _buildCompactCard(context, cs, tt, title, authorName, coverUrl, progress);
+  }
+
+  void _navigateToDetail(BuildContext context) {
+    final itemId = item['id'] as String?;
+    if (itemId == null) return;
+    showBookDetailSheet(context, itemId);
+  }
+
+  /// Wide "continue listening" card with square cover + text side-by-side.
+  /// Uses IntrinsicHeight so the row sizes to the square cover without overflow.
+  Widget _buildWideCard(
+    BuildContext context,
+    ColorScheme cs,
+    TextTheme tt,
+    String title,
+    String authorName,
+    String? coverUrl,
+    double progress,
+  ) {
+    return Card(
+      elevation: 0,
+      color: cs.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _navigateToDetail(context),
+        borderRadius: BorderRadius.circular(16),
+        child: Row(
+          children: [
+            // Square cover with download badge
+            SizedBox(
+              width: 120,
+              height: 120,
+              child: Stack(
+                children: [
+                  _CoverImage(coverUrl: coverUrl, cs: cs, fit: BoxFit.contain),
+                  if (DownloadService().isDownloaded(item['id'] as String? ?? ''))
+                    Positioned(
+                      top: 4, right: 4,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Icon(Icons.download_done_rounded,
+                            size: 14, color: cs.primary),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            // Info section
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: tt.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: cs.onSurface,
+                      ),
+                    ),
+                    if (authorName.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        authorName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: tt.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    if (showProgress) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: progress.clamp(0, 1),
+                                minHeight: 5,
+                                backgroundColor: cs.surfaceContainerHighest,
+                                valueColor: AlwaysStoppedAnimation(cs.primary),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${(progress * 100).round()}%',
+                            style: tt.labelSmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Compact vertical card with a square cover on top and text below.
+  Widget _buildCompactCard(
+    BuildContext context,
+    ColorScheme cs,
+    TextTheme tt,
+    String title,
+    String authorName,
+    String? coverUrl,
+    double progress,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Square cover
+        AspectRatio(
+          aspectRatio: 1,
+          child: _PressableCard(
+            onTap: () => _navigateToDetail(context),
+            borderRadius: 12,
+            child: Card(
+              elevation: 0,
+              margin: EdgeInsets.zero,
+              color: cs.surfaceContainerHigh,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _CoverImage(coverUrl: coverUrl, cs: cs),
+                  if (DownloadService().isDownloaded(item['id'] as String? ?? ''))
+                    Positioned(
+                      top: 4, right: 4,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Icon(Icons.download_done_rounded,
+                            size: 14, color: cs.primary),
+                      ),
+                    ),
+                  if (showProgress && progress > 0)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                          bottom: Radius.circular(12),
+                        ),
+                        child: LinearProgressIndicator(
+                          value: progress.clamp(0, 1),
+                          minHeight: 4,
+                          backgroundColor: Colors.transparent,
+                          valueColor: AlwaysStoppedAnimation(cs.primary),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        // Title
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: tt.labelMedium?.copyWith(
+              fontWeight: FontWeight.w500,
+              color: cs.onSurface,
+            ),
+          ),
+        ),
+        if (authorName.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Text(
+              authorName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tt.labelSmall?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Reusable cover image with placeholder.
+class _CoverImage extends StatelessWidget {
+  final String? coverUrl;
+  final ColorScheme cs;
+  final BoxFit fit;
+
+  const _CoverImage({required this.coverUrl, required this.cs, this.fit = BoxFit.cover});
+
+  @override
+  Widget build(BuildContext context) {
+    if (coverUrl == null || coverUrl!.isEmpty) {
+      return _placeholder();
+    }
+
+    return CachedNetworkImage(
+      imageUrl: coverUrl!,
+      fit: fit,
+      placeholder: (_, __) => _placeholder(),
+      errorWidget: (_, __, ___) => _placeholder(),
+    );
+  }
+
+  Widget _placeholder() {
+    return Container(
+      color: cs.surfaceContainerHighest,
+      child: Center(
+        child: Icon(
+          Icons.headphones_rounded,
+          size: 32,
+          color: cs.onSurfaceVariant.withOpacity(0.4),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pressable wrapper that scales down slightly on tap for tactile feedback.
+class _PressableCard extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  final double borderRadius;
+
+  const _PressableCard({
+    required this.child,
+    required this.onTap,
+    this.borderRadius = 12,
+  });
+
+  @override
+  State<_PressableCard> createState() => _PressableCardState();
+}
+
+class _PressableCardState extends State<_PressableCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 100),
+      reverseDuration: const Duration(milliseconds: 200),
+    );
+    _scale = Tween<double>(begin: 1.0, end: 0.96).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => _controller.forward(),
+      onTapUp: (_) {
+        _controller.reverse();
+        widget.onTap();
+      },
+      onTapCancel: () => _controller.reverse(),
+      child: ScaleTransition(
+        scale: _scale,
+        child: widget.child,
+      ),
+    );
+  }
+}
