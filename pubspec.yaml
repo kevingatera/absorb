@@ -45,6 +45,8 @@ dependencies:
   # Download notifications
   flutter_local_notifications: ^17.2.1
 
+  device_info_plus: ^11.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

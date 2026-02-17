@@ -39,7 +39,7 @@ class SleepTimerService extends ChangeNotifier {
   Duration get timeRemaining => _timeRemaining;
   Duration get initialDuration => _initialDuration;
   double get timeProgress => _initialDuration.inSeconds > 0
-      ? 1.0 - (_timeRemaining.inSeconds / _initialDuration.inSeconds).clamp(0.0, 1.0)
+      ? (_timeRemaining.inSeconds / _initialDuration.inSeconds).clamp(0.0, 1.0)
       : 0.0;
   int get chaptersRemaining => _chaptersRemaining;
   bool get isActive => _mode != SleepTimerMode.off;

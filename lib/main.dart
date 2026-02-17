@@ -3,10 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 import 'providers/auth_provider.dart';
 import 'providers/library_provider.dart';
 import 'services/audio_player_service.dart';
+import 'services/api_service.dart';
 import 'services/download_service.dart';
 import 'services/download_notification_service.dart';
 import 'services/progress_sync_service.dart';
@@ -23,6 +25,13 @@ void main() async {
     systemNavigationBarColor: Colors.black,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
+
+  // Load device info for server identification
+  try {
+    final info = await DeviceInfoPlugin().androidInfo;
+    ApiService.deviceManufacturer = info.manufacturer;
+    ApiService.deviceModel = info.model;
+  } catch (_) {}
 
   // Initialize download notification service
   await DownloadNotificationService().init();

@@ -6,6 +6,10 @@ class ApiService {
   final String baseUrl;
   final String token;
 
+  // Device info — set once at app start
+  static String deviceManufacturer = '';
+  static String deviceModel = '';
+
   ApiService({required this.baseUrl, required this.token});
 
   Map<String, String> get _headers => {
@@ -217,6 +221,9 @@ class ApiService {
           'deviceInfo': {
             'clientName': 'Absorb',
             'deviceId': 'absorb-android',
+            'deviceName': '${deviceManufacturer.isNotEmpty ? "$deviceManufacturer " : ""}$deviceModel'.trim(),
+            'manufacturer': deviceManufacturer,
+            'model': deviceModel,
           },
           'forceDirectPlay': true,
           'forceTranscode': false,
