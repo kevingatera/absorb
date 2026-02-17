@@ -1700,7 +1700,7 @@ class _CardWideButton extends StatelessWidget {
   }
 }
 
-/// Sleep button as wide card
+/// Sleep button as wide card with countdown and fill bar
 class _CardSleepButtonInline extends StatelessWidget {
   final Color accent;
   final bool isActive;
@@ -1710,27 +1710,60 @@ class _CardSleepButtonInline extends StatelessWidget {
     return ListenableBuilder(
       listenable: SleepTimerService(),
       builder: (_, __) {
-        final active = SleepTimerService().isActive;
+        final sleep = SleepTimerService();
+        final active = sleep.isActive;
+        final isTime = sleep.mode == SleepTimerMode.time;
+
+        String label;
+        if (active && isTime) {
+          final r = sleep.timeRemaining;
+          final m = r.inMinutes;
+          final s = r.inSeconds % 60;
+          label = '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+        } else if (active) {
+          label = '${sleep.chaptersRemaining} ch left';
+        } else {
+          label = 'Sleep Timer';
+        }
+
         return GestureDetector(
-          onTap: isActive ? () => _showSleepPicker(context) : null,
+          onTap: isActive ? () {
+            if (active) { sleep.cancel(); } else { _showSleepPicker(context); }
+          } : null,
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 12),
+            height: 44,
+            clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-              color: active ? accent.withOpacity(0.15) : Colors.white.withOpacity(0.06),
+              color: active ? accent.withOpacity(0.1) : Colors.white.withOpacity(0.06),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: active ? accent.withOpacity(0.3) : Colors.white.withOpacity(0.08)),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.bedtime_outlined, size: 18,
-                  color: active ? accent : (isActive ? Colors.white54 : Colors.white24)),
-                const SizedBox(width: 8),
-                Text(active ? 'Sleep On' : 'Sleep Timer', style: TextStyle(
-                  color: active ? accent : (isActive ? Colors.white54 : Colors.white24),
-                  fontSize: 12, fontWeight: FontWeight.w500)),
-              ],
-            ),
+            child: Stack(children: [
+              if (active && isTime)
+                FractionallySizedBox(
+                  widthFactor: sleep.timeProgress.clamp(0.0, 1.0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: accent.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                  ),
+                ),
+              Center(child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.bedtime_outlined, size: 16,
+                    color: active ? accent : (isActive ? Colors.white54 : Colors.white24)),
+                  const SizedBox(width: 8),
+                  Text(label, style: TextStyle(
+                    color: active ? accent : (isActive ? Colors.white54 : Colors.white24),
+                    fontSize: active && isTime ? 13 : 12,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                    fontFeatures: active && isTime ? const [FontFeature.tabularFigures()] : null,
+                  )),
+                ],
+              )),
+            ]),
           ),
         );
       },
@@ -1738,41 +1771,33 @@ class _CardSleepButtonInline extends StatelessWidget {
   }
 
   void _showSleepPicker(BuildContext context) {
-    final svc = SleepTimerService();
-    if (svc.isActive) {
-      svc.cancel();
-      return;
-    }
     showModalBottomSheet(
-      context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 16),
-            Text('Sleep Timer', style: Theme.of(ctx).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 12),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final mins in [5, 10, 15, 20, 30, 45, 60, 90])
-                ActionChip(
-                  label: Text('${mins}m'),
-                  onPressed: () {
-                    svc.setTimeSleep(Duration(minutes: mins));
-                    Navigator.pop(ctx);
-                  },
-                ),
-            ]),
+      context: context, backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        decoration: const BoxDecoration(color: Color(0xFF1A1A1A), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          const Text('Sleep Timer', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 16),
+          Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.center, children: [
+            for (final mins in [5, 10, 15, 30, 45, 60])
+              _timerChip(ctx, '${mins}m', () { SleepTimerService().setTimeSleep(Duration(minutes: mins)); Navigator.pop(ctx); }),
+            _timerChip(ctx, '1 Ch', () { SleepTimerService().setChapterSleep(1); Navigator.pop(ctx); }),
+            _timerChip(ctx, '2 Ch', () { SleepTimerService().setChapterSleep(2); Navigator.pop(ctx); }),
           ]),
-        );
-      },
+        ]),
+      ),
     );
+  }
+
+  Widget _timerChip(BuildContext ctx, String label, VoidCallback onTap) {
+    return GestureDetector(onTap: onTap, child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.12))),
+      child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500)),
+    ));
   }
 }
 
@@ -1824,7 +1849,7 @@ class _CardBookmarkButtonInlineState extends State<_CardBookmarkButtonInline> {
   }
 }
 
-/// Speed button as wide card
+/// Speed button as wide card — opens the full speed sheet with slider
 class _CardSpeedButtonInline extends StatelessWidget {
   final AudioPlayerService player;
   final Color accent;
@@ -1833,9 +1858,12 @@ class _CardSpeedButtonInline extends StatelessWidget {
 
   @override Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: isActive ? () => _showSpeedPicker(context) : null,
+      onTap: isActive ? () {
+        showModalBottomSheet(context: context, backgroundColor: Colors.transparent,
+          builder: (ctx) => _CardSpeedSheet(player: player, accent: accent));
+      } : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        height: 44,
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.06),
           borderRadius: BorderRadius.circular(14),
@@ -1844,48 +1872,15 @@ class _CardSpeedButtonInline extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.speed_rounded, size: 18,
+            Icon(Icons.speed_rounded, size: 16,
               color: isActive ? accent : Colors.white24),
             const SizedBox(width: 8),
             Text('${player.speed.toStringAsFixed(2)}x', style: TextStyle(
               color: isActive ? accent : Colors.white24,
-              fontSize: 12, fontWeight: FontWeight.w600)),
+              fontSize: 13, fontWeight: FontWeight.w700)),
           ],
         ),
       ),
-    );
-  }
-
-  void _showSpeedPicker(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 16),
-            Text('Playback Speed', style: Theme.of(ctx).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 12),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final s in [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0])
-                ActionChip(
-                  label: Text('${s}x'),
-                  onPressed: () {
-                    player.setSpeed(s);
-                    Navigator.pop(ctx);
-                  },
-                ),
-            ]),
-          ]),
-        );
-      },
     );
   }
 }
@@ -1933,29 +1928,33 @@ class _DownloadWideButtonState extends State<_DownloadWideButton> {
     return GestureDetector(
       onTap: () => _handleTap(context),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        height: 44,
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: downloaded ? Colors.greenAccent.withOpacity(0.06) : Colors.white.withOpacity(0.06),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: downloaded ? Colors.greenAccent.withOpacity(0.15) : Colors.white.withOpacity(0.08)),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (downloading)
-              SizedBox(width: 18, height: 18,
-                child: CircularProgressIndicator(
-                  value: progress.clamp(0.0, 1.0),
-                  strokeWidth: 2, color: widget.accent,
-                  backgroundColor: Colors.white.withOpacity(0.1),
+        child: Stack(children: [
+          if (downloading)
+            FractionallySizedBox(
+              widthFactor: progress.clamp(0.0, 1.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: widget.accent.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(13),
                 ),
-              )
-            else
-              Icon(icon, size: 18, color: color),
-            const SizedBox(width: 8),
-            Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500)),
-          ],
-        ),
+              ),
+            ),
+          Center(child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 8),
+              Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500)),
+            ],
+          )),
+        ]),
       ),
     );
   }

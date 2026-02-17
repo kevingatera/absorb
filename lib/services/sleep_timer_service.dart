@@ -19,6 +19,7 @@ class SleepTimerService extends ChangeNotifier {
   
   // Time mode
   Duration _timeRemaining = Duration.zero;
+  Duration _initialDuration = Duration.zero;
   Timer? _timer;
   
   // Chapter mode
@@ -36,6 +37,10 @@ class SleepTimerService extends ChangeNotifier {
   // ── Getters ──
   SleepTimerMode get mode => _mode;
   Duration get timeRemaining => _timeRemaining;
+  Duration get initialDuration => _initialDuration;
+  double get timeProgress => _initialDuration.inSeconds > 0
+      ? 1.0 - (_timeRemaining.inSeconds / _initialDuration.inSeconds).clamp(0.0, 1.0)
+      : 0.0;
   int get chaptersRemaining => _chaptersRemaining;
   bool get isActive => _mode != SleepTimerMode.off;
   bool get shakeEnabled => _shakeEnabled;
@@ -57,6 +62,7 @@ class SleepTimerService extends ChangeNotifier {
     cancel();
     _mode = SleepTimerMode.time;
     _timeRemaining = duration;
+    _initialDuration = duration;
     _startTimeCountdown();
     _startShakeDetection();
     notifyListeners();
