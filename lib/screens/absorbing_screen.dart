@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -28,7 +29,7 @@ class AbsorbingScreen extends StatefulWidget {
 
 class _AbsorbingScreenState extends State<AbsorbingScreen> {
   final _player = AudioPlayerService();
-  final _pageController = PageController(viewportFraction: 0.93);
+  final _pageController = PageController(viewportFraction: 0.92);
 
   @override
   void initState() {
@@ -231,10 +232,51 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                       : PageView.builder(
                           controller: _pageController,
                           scrollDirection: Axis.horizontal,
+                          clipBehavior: Clip.none,
+                          allowImplicitScrolling: true,
+                          physics: const BouncingScrollPhysics(),
                           itemCount: books.length,
-                          itemBuilder: (_, i) => Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                            child: _AbsorbingCard(item: books[i], player: _player),
+                          itemBuilder: (_, i) => LayoutBuilder(
+                            builder: (context, constraints) {
+                              final cardWidth = constraints.maxWidth;
+                              final vPad = (constraints.maxHeight * 0.04).clamp(12.0, 40.0);
+                              return AnimatedBuilder(
+                                animation: _pageController,
+                                builder: (context, child) {
+                                  double distFromCenter = 0.0;
+                                  double rawDist = 0.0;
+                                  if (_pageController.position.haveDimensions) {
+                                    final page = _pageController.page ?? _pageController.initialPage.toDouble();
+                                    rawDist = page - i; // negative = card is to the right
+                                    distFromCenter = rawDist.abs();
+                                  }
+                                  final double scaleX;
+                                  if (distFromCenter >= 1.0) {
+                                    scaleX = 0.5;
+                                  } else {
+                                    scaleX = (1.0 - distFromCenter * 0.5).clamp(0.5, 1.0);
+                                  }
+                                  // Calculate how much space the squeeze frees up, then translate toward center
+                                  final squeezedWidth = cardWidth * scaleX;
+                                  final freedSpace = cardWidth - squeezedWidth;
+                                  // Pull card toward center by half the freed space
+                                  final direction = rawDist > 0 ? 1.0 : (rawDist < 0 ? -1.0 : 0.0);
+                                  final translateX = direction * freedSpace * 0.5;
+
+                                  return Transform(
+                                    alignment: Alignment.center,
+                                    transform: Matrix4.identity()
+                                      ..translate(translateX, 0.0, 0.0)
+                                      ..scale(scaleX, 1.0, 1.0),
+                                    child: Padding(
+                                      padding: EdgeInsets.symmetric(horizontal: 4, vertical: vPad),
+                                      child: child,
+                                    ),
+                                  );
+                                },
+                                child: _AbsorbingCard(item: books[i], player: _player),
+                              );
+                            },
                           ),
                         ),
             ),
@@ -309,10 +351,15 @@ class _AbsorbingCard extends StatefulWidget {
   State<_AbsorbingCard> createState() => _AbsorbingCardState();
 }
 
-class _AbsorbingCardState extends State<_AbsorbingCard> {
+class _AbsorbingCardState extends State<_AbsorbingCard> with AutomaticKeepAliveClientMixin {
   ColorScheme? _coverScheme;
   bool _isStarting = false;
   List<dynamic>? _fetchedChapters;
+  StreamSubscription<Duration>? _chapterTrackSub;
+  int _lastChapterIdx = -1;
+
+  @override
+  bool get wantKeepAlive => true;
 
   String get _itemId => widget.item['id'] as String? ?? '';
   Map<String, dynamic> get _media => widget.item['media'] as Map<String, dynamic>? ?? {};
@@ -336,6 +383,7 @@ class _AbsorbingCardState extends State<_AbsorbingCard> {
   void initState() {
     super.initState();
     _fetchChaptersIfNeeded();
+    _startChapterTracking();
   }
 
   Future<void> _fetchChaptersIfNeeded() async {
@@ -362,15 +410,58 @@ class _AbsorbingCardState extends State<_AbsorbingCard> {
     } catch (_) {}
   }
 
-  void _onCoverLoaded(ImageProvider provider) {
-    if (_coverScheme != null) return;
-    ColorScheme.fromImageProvider(provider: provider, brightness: Brightness.dark)
-        .then((s) { if (mounted) setState(() => _coverScheme = s); })
-        .catchError((_) {});
+  void _startChapterTracking() {
+    _chapterTrackSub?.cancel();
+    _chapterTrackSub = widget.player.positionStream.listen((pos) {
+      if (!_isActive) return;
+      final posS = pos.inMilliseconds / 1000.0;
+      final chapters = widget.player.chapters.isNotEmpty ? widget.player.chapters : _chapters;
+      int idx = 0;
+      for (int i = 0; i < chapters.length; i++) {
+        final ch = chapters[i] as Map<String, dynamic>;
+        final start = (ch['start'] as num?)?.toDouble() ?? 0;
+        final end = (ch['end'] as num?)?.toDouble() ?? 0;
+        if (posS >= start && posS < end) { idx = i; break; }
+      }
+      if (idx != _lastChapterIdx) {
+        _lastChapterIdx = idx;
+        if (mounted) setState(() {});
+      }
+    });
   }
 
   @override
+  void didUpdateWidget(_AbsorbingCard old) {
+    super.didUpdateWidget(old);
+    if (old.player != widget.player) _startChapterTracking();
+  }
+
+  @override
+  void dispose() {
+    _chapterTrackSub?.cancel();
+    super.dispose();
+  }
+
+  void _onCoverLoaded(ImageProvider provider) {
+    if (_coverScheme != null) return;
+    ColorScheme.fromImageProvider(provider: provider, brightness: Brightness.dark)
+        .then((s) {
+          if (mounted) {
+            // Delay scheme application to avoid mid-swipe rebuilds
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() => _coverScheme = s);
+            });
+          }
+        })
+        .catchError((_) {});
+  }
+
+  // Cache the blur filter to avoid recreating it every build
+  static final _blurFilter = ImageFilter.blur(sigmaX: 80, sigmaY: 80, tileMode: TileMode.decal);
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context); // required for AutomaticKeepAliveClientMixin
     final tt = Theme.of(context).textTheme;
     final cs = _coverScheme ?? Theme.of(context).colorScheme;
     final accent = cs.primary;
@@ -380,13 +471,21 @@ class _AbsorbingCardState extends State<_AbsorbingCard> {
     final progress = lib.getProgress(_itemId);
     final chapterIdx = _currentChapterIndex();
     final totalChapters = _isActive ? widget.player.chapters.length : _chapters.length;
-    final bookProgress = _isActive && widget.player.totalDuration > 0
-        ? (widget.player.position.inMilliseconds / 1000.0) / widget.player.totalDuration
-        : progress;
+    final double bookProgress;
+    if (_isActive && widget.player.totalDuration > 0) {
+      final playerPos = widget.player.position.inMilliseconds / 1000.0;
+      // Don't use player position if it's near zero while we have real progress
+      // (means the player is still loading/seeking to resume point)
+      if (playerPos < 1.0 && progress > 0.01) {
+        bookProgress = progress; // Keep showing stored progress during load
+      } else {
+        bookProgress = (playerPos / widget.player.totalDuration).clamp(0.0, 1.0);
+      }
+    } else {
+      bookProgress = progress;
+    }
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 500),
-      curve: Curves.easeOutCubic,
+    return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
@@ -395,20 +494,22 @@ class _AbsorbingCardState extends State<_AbsorbingCard> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Layer 1: Pre-blurred cover image (no BackdropFilter = no transition artifacts)
+          // Layer 1: Pre-blurred cover image (isolated for performance)
           if (_coverUrl != null)
-            CachedNetworkImage(
-              imageUrl: _coverUrl!,
-              fit: BoxFit.cover,
-              imageBuilder: (_, provider) {
-                _onCoverLoaded(provider);
-                return ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 80, sigmaY: 80, tileMode: TileMode.decal),
-                  child: Image(image: provider, fit: BoxFit.cover),
-                );
-              },
-              placeholder: (_, __) => Container(color: Colors.black),
-              errorWidget: (_, __, ___) => Container(color: Colors.black),
+            RepaintBoundary(
+              child: CachedNetworkImage(
+                imageUrl: _coverUrl!,
+                fit: BoxFit.cover,
+                imageBuilder: (_, provider) {
+                  _onCoverLoaded(provider);
+                  return ImageFiltered(
+                    imageFilter: _blurFilter,
+                    child: Image(image: provider, fit: BoxFit.cover),
+                  );
+                },
+                placeholder: (_, __) => Container(color: Colors.black),
+                errorWidget: (_, __, ___) => Container(color: Colors.black),
+              ),
             ),
           // Layer 2: Scrim
           Positioned.fill(
@@ -419,221 +520,199 @@ class _AbsorbingCardState extends State<_AbsorbingCard> {
                   end: Alignment.bottomCenter,
                   colors: [
                     Colors.black.withOpacity(0.3),
-                    bgDark.withOpacity(0.6),
+                    Colors.black.withOpacity(0.6),
                     Colors.black.withOpacity(0.85),
                   ],
                 ),
               ),
             ),
           ),
-          // Layer 3: Content — two halves
+          // Layer 3: Content
           Column(
             children: [
-              // ═══ TOP HALF: Hero cover with overlay info ═══
-              Expanded(
-                flex: 5,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onVerticalDragEnd: (d) {
-                    if (d.primaryVelocity != null && d.primaryVelocity! < -300) {
-                      showBookDetailSheet(context, _itemId);
-                    }
-                  },
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // Sharp cover image — fills the top area
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: _coverUrl != null
-                              ? CachedNetworkImage(imageUrl: _coverUrl!, fit: BoxFit.cover,
-                                  placeholder: (_, __) => _coverPlaceholder(),
-                                  errorWidget: (_, __, ___) => _coverPlaceholder())
-                              : _coverPlaceholder(),
-                        ),
-                      ),
-                      // Top gradient overlay for stats
-                      Positioned(
-                        top: 8, left: 20, right: 20,
-                        child: Container(
-                          padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
-                          decoration: BoxDecoration(
-                            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [Colors.black.withOpacity(0.85), Colors.black.withOpacity(0.3), Colors.transparent],
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text('${(bookProgress * 100).clamp(0, 100).toStringAsFixed(1)}%',
-                                style: tt.labelSmall?.copyWith(color: Colors.white.withOpacity(0.85), fontWeight: FontWeight.w600, fontSize: 11)),
-                              if (totalChapters > 0)
-                                Text('Ch ${(chapterIdx + 1).clamp(1, totalChapters)} / $totalChapters',
-                                  style: tt.labelSmall?.copyWith(color: Colors.white.withOpacity(0.6), fontSize: 11)),
-                            ],
-                          ),
-                        ),
-                      ),
-                      // Bottom gradient overlay for title
-                      Positioned(
-                        bottom: 0, left: 20, right: 20,
-                        child: Container(
-                          padding: const EdgeInsets.fromLTRB(14, 24, 14, 10),
-                          decoration: BoxDecoration(
-                            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
-                            gradient: LinearGradient(
-                              begin: Alignment.bottomCenter,
-                              end: Alignment.topCenter,
-                              colors: [Colors.black.withOpacity(0.92), Colors.black.withOpacity(0.5), Colors.transparent],
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(_title, maxLines: 2, overflow: TextOverflow.ellipsis,
-                                style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: Colors.white, height: 1.2)),
-                              const SizedBox(height: 2),
-                              Text(_author, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                style: tt.bodySmall?.copyWith(color: Colors.white70)),
-                              if (_isActive && widget.player.currentChapter != null) ...[
-                                const SizedBox(height: 3),
-                                Container(
-                                  height: 18,
-                                  clipBehavior: Clip.hardEdge,
-                                  decoration: BoxDecoration(
-                                    color: accent.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    child: _MarqueeText(
-                                      text: widget.player.currentChapter!['title'] ?? '',
-                                      style: tt.labelSmall?.copyWith(color: accent.withOpacity(0.9), fontWeight: FontWeight.w500, fontSize: 10) ?? const TextStyle(fontSize: 10),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // ═══ BOTTOM HALF: Fixed controls + scrollable buttons ═══
-              Expanded(
-                flex: 4,
-                child: Column(
+              // ── Stats row ──
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Fixed: Progress bars
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: _CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: progress, staticDuration: _duration, chapters: _chapters),
-                    ),
-                    const SizedBox(height: 6),
-                    // Fixed: Playback controls
-                    _CardPlaybackControls(
-                      player: widget.player,
-                      accent: accent,
-                      isActive: _isActive,
-                      isStarting: _isStarting,
-                      onStart: _startPlayback,
-                    ),
-                    const SizedBox(height: 10),
-                    // Scrollable: Action button grid
-                    Expanded(
-                      child: SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Column(
-                            children: [
-                              // Row 1
-                              Row(children: [
-                                Expanded(child: _CardWideButton(
-                                  icon: Icons.bedtime_outlined, label: 'Sleep Timer',
-                                  accent: accent, isActive: _isActive,
-                                  child: _CardSleepButtonInline(accent: accent, isActive: _isActive),
-                                )),
-                                const SizedBox(width: 10),
-                                Expanded(child: _CardWideButton(
-                                  icon: Icons.list_rounded, label: 'Chapters',
-                                  accent: accent, isActive: _isActive,
-                                  onTap: () => _showChapters(context, accent, tt),
-                                )),
-                              ]),
-                              const SizedBox(height: 10),
-                              // Row 2
-                              Row(children: [
-                                Expanded(child: _CardWideButton(
-                                  icon: Icons.bookmark_outline_rounded, label: 'Bookmarks',
-                                  accent: accent, isActive: _isActive,
-                                  child: _CardBookmarkButtonInline(
-                                    player: widget.player, accent: accent,
-                                    isActive: _isActive, itemId: _itemId,
-                                  ),
-                                )),
-                                const SizedBox(width: 10),
-                                Expanded(child: _CardWideButton(
-                                  icon: Icons.speed_rounded, label: 'Speed',
-                                  accent: accent, isActive: _isActive,
-                                  child: _CardSpeedButtonInline(player: widget.player, accent: accent, isActive: _isActive),
-                                )),
-                              ]),
-                              const SizedBox(height: 10),
-                              // Row 3
-                              Row(children: [
-                                Expanded(child: _CardWideButton(
-                                  icon: Icons.history_rounded, label: 'History',
-                                  accent: accent, isActive: _isActive,
-                                  onTap: () => _showHistory(context, accent, tt),
-                                )),
-                                const SizedBox(width: 10),
-                                Expanded(child: _DownloadWideButton(
-                                  itemId: _itemId, coverUrl: _coverUrl,
-                                  title: _title, author: _author, accent: accent,
-                                )),
-                              ]),
-                              const SizedBox(height: 10),
-                              // Details button — full width
-                              GestureDetector(
-                                onTap: () => showBookDetailSheet(context, _itemId),
-                                child: Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.06),
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(color: accent.withOpacity(0.15)),
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.info_outline_rounded, size: 16, color: accent.withOpacity(0.7)),
-                                      const SizedBox(width: 8),
-                                      Text('Details', style: TextStyle(color: accent.withOpacity(0.7), fontSize: 13, fontWeight: FontWeight.w500)),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+                    Text('${(bookProgress * 100).clamp(0, 100).toStringAsFixed(1)}%',
+                      style: tt.labelSmall?.copyWith(color: Colors.white.withOpacity(0.85), fontWeight: FontWeight.w600, fontSize: 11)),
+                    if (totalChapters > 0)
+                      Text('Ch ${(chapterIdx + 1).clamp(1, totalChapters)} / $totalChapters',
+                        style: tt.labelSmall?.copyWith(color: Colors.white.withOpacity(0.6), fontSize: 11)),
                   ],
                 ),
               ),
-            ],
-          ),
+              // ── Download + History row ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(children: [
+                  Expanded(child: _DownloadWideButton(
+                    itemId: _itemId, coverUrl: _coverUrl,
+                    title: _title, author: _author, accent: accent,
+                  )),
+                  const SizedBox(width: 10),
+                  Expanded(child: _CardWideButton(
+                    icon: Icons.history_rounded, label: 'History',
+                    accent: accent, isActive: _isActive,
+                    onTap: () => _showHistory(context, accent, tt),
+                  )),
+                ]),
+              ),
+                const SizedBox(height: 6),
+                // ── Cover with title/author/chapter overlaid ──
+                Flexible(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final coverWidth = constraints.maxWidth * 0.85;
+                      return SizedBox(
+                          width: coverWidth,
+                          height: coverWidth,
+                          child: RepaintBoundary(
+                            child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                // Cover image
+                                _coverUrl != null
+                                    ? CachedNetworkImage(imageUrl: _coverUrl!, fit: BoxFit.cover,
+                                          placeholder: (_, __) => _coverPlaceholder(),
+                                          errorWidget: (_, __, ___) => _coverPlaceholder())
+                                    : _coverPlaceholder(),
+                                // Bottom gradient for text legibility
+                                Positioned(
+                                  left: 0, right: 0, bottom: 0,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.bottomCenter,
+                                        end: Alignment.topCenter,
+                                        colors: [
+                                          Colors.black.withOpacity(0.95),
+                                          Colors.black.withOpacity(0.7),
+                                          Colors.black.withOpacity(0.0),
+                                        ],
+                                        stops: const [0.0, 0.55, 1.0],
+                                      ),
+                                    ),
+                                    child: const SizedBox(height: 120, width: double.infinity),
+                                  ),
+                                ),
+                                // Title / Author / Chapter overlaid at bottom
+                                Positioned(
+                                  left: 10, right: 10, bottom: 10,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(_title, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                                        style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: Colors.white, height: 1.2)),
+                                      const SizedBox(height: 3),
+                                      Text(_author, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                                        style: tt.bodySmall?.copyWith(color: Colors.white70)),
+                                      if (_chapterName(chapterIdx) != null) ...[
+                                        const SizedBox(height: 5),
+                                        Container(
+                                          height: 24,
+                                          clipBehavior: Clip.hardEdge,
+                                          decoration: BoxDecoration(
+                                            color: accent.withOpacity(0.25),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                                            child: _MarqueeText(
+                                              text: _chapterName(chapterIdx)!,
+                                              style: tt.labelSmall?.copyWith(color: accent.withOpacity(0.9), fontWeight: FontWeight.w500, fontSize: 11) ?? const TextStyle(fontSize: 11),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                // ── Progress bar + controls + buttons (padded) ──
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    children: [
+                      _CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: progress, staticDuration: _duration, chapters: _chapters),
+                      const SizedBox(height: 4),
+                      _CardPlaybackControls(
+                        player: widget.player,
+                        accent: accent,
+                        isActive: _isActive,
+                        isStarting: _isStarting,
+                        onStart: _startPlayback,
+                      ),
+                      const SizedBox(height: 6),
+                      Row(children: [
+                        Expanded(child: _CardWideButton(
+                          icon: Icons.bedtime_outlined, label: 'Sleep Timer',
+                          accent: accent, isActive: _isActive,
+                          child: _CardSleepButtonInline(accent: accent, isActive: _isActive),
+                        )),
+                        const SizedBox(width: 8),
+                        Expanded(child: _CardWideButton(
+                          icon: Icons.list_rounded, label: 'Chapters',
+                          accent: accent, isActive: _isActive,
+                          onTap: () => _showChapters(context, accent, tt),
+                        )),
+                      ]),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Expanded(child: _CardWideButton(
+                          icon: Icons.bookmark_outline_rounded, label: 'Bookmarks',
+                          accent: accent, isActive: _isActive,
+                          child: _CardBookmarkButtonInline(
+                            player: widget.player, accent: accent,
+                            isActive: _isActive, itemId: _itemId,
+                          ),
+                        )),
+                        const SizedBox(width: 8),
+                        Expanded(child: _CardWideButton(
+                          icon: Icons.speed_rounded, label: 'Speed',
+                          accent: accent, isActive: _isActive,
+                          child: _CardSpeedButtonInline(player: widget.player, accent: accent, isActive: _isActive),
+                        )),
+                      ]),
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () => showBookDetailSheet(context, _itemId),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: accent.withOpacity(0.15)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.info_outline_rounded, size: 14, color: accent.withOpacity(0.7)),
+                              const SizedBox(width: 6),
+                              Text('Details', style: TextStyle(color: accent.withOpacity(0.7), fontSize: 12, fontWeight: FontWeight.w500)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );
@@ -642,14 +721,35 @@ class _AbsorbingCardState extends State<_AbsorbingCard> {
   int _currentChapterIndex() {
     final chapters = _isActive ? widget.player.chapters : _chapters;
     if (chapters.isEmpty) return -1;
-    final pos = _isActive ? widget.player.position.inMilliseconds / 1000.0 : 0.0;
+    double pos;
+    if (_isActive) {
+      pos = widget.player.position.inMilliseconds / 1000.0;
+    } else {
+      // Use stored progress to calculate position when not actively playing
+      final lib = context.read<LibraryProvider>();
+      final progress = lib.getProgress(_itemId);
+      pos = progress * _duration;
+    }
     for (int i = 0; i < chapters.length; i++) {
       final ch = chapters[i] as Map<String, dynamic>;
       final start = (ch['start'] as num?)?.toDouble() ?? 0;
       final end = (ch['end'] as num?)?.toDouble() ?? 0;
       if (pos >= start && pos < end) return i;
     }
+    // If past the last chapter end, return last chapter
+    if (pos > 0 && chapters.isNotEmpty) return chapters.length - 1;
     return 0;
+  }
+
+  String? _chapterName(int chapterIdx) {
+    if (_isActive && widget.player.currentChapter != null) {
+      return widget.player.currentChapter!['title'] as String?;
+    }
+    if (chapterIdx >= 0 && chapterIdx < _chapters.length) {
+      final ch = _chapters[chapterIdx] as Map<String, dynamic>;
+      return ch['title'] as String?;
+    }
+    return null;
   }
 
   Widget _coverPlaceholder() => Container(
@@ -894,24 +994,21 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
   void _subscribePosition() {
     _posSub?.cancel();
     if (widget.isActive) {
-      // Seed from static progress first so the bar doesn't jump to 0
-      // while waiting for the first position stream event
-      if (_lastKnownPos == 0 && widget.staticProgress > 0) {
-        _lastKnownPos = widget.staticProgress * widget.staticDuration;
-        _lastPosTime = DateTime.now();
-      }
+      // Always seed from the known static position — this is truth until the player proves otherwise
+      final seedPos = widget.staticProgress * widget.staticDuration;
+      _lastKnownPos = seedPos > 0 ? seedPos : _lastKnownPos;
+      _lastPosTime = DateTime.now();
+
       _posSub = widget.player.positionStream.listen((dur) {
-        _lastKnownPos = dur.inMilliseconds / 1000.0;
+        final posSeconds = dur.inMilliseconds / 1000.0;
+        // Only accept positions that are reasonably close to where we expect
+        // (within 60s of seed, or past 2s if starting fresh)
+        if (seedPos > 5.0 && posSeconds < 2.0) return; // still loading/seeking
+        _lastKnownPos = posSeconds;
         _lastPosTime = DateTime.now();
         _currentSpeed = widget.player.speed;
         _isPlaying = widget.player.isPlaying;
       });
-      // Override with real player position if available
-      final playerPos = widget.player.position.inMilliseconds / 1000.0;
-      if (playerPos > 0) {
-        _lastKnownPos = playerPos;
-      }
-      _lastPosTime = DateTime.now();
       _currentSpeed = widget.player.speed;
       _isPlaying = widget.player.isPlaying;
     }
@@ -942,7 +1039,8 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
     return ListenableBuilder(
       listenable: _smoothTicker,
       builder: (context, _) {
-        final posS = active ? _smoothPos : widget.staticProgress * widget.staticDuration;
+        final staticPos = widget.staticProgress * widget.staticDuration;
+        final posS = active ? _smoothPos : staticPos;
         final totalDur = active ? player.totalDuration : widget.staticDuration;
         final speed = active ? _currentSpeed : 1.0;
         final isPlaying = active && _isPlaying;
@@ -1007,18 +1105,18 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
               Padding(padding: const EdgeInsets.only(top: 2, bottom: 6), child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Book', style: tt.labelSmall?.copyWith(color: Colors.white24, fontSize: 9)),
-                  Text('-${_fmt(bookRemaining)}', style: tt.labelSmall?.copyWith(color: Colors.white30, fontSize: 9)),
+                  Text(_fmt(_bookDragValue != null ? _bookDragValue! * totalDur : posS), style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white54 : Colors.white24, fontSize: 9)),
+                  Text('-${_fmt(_bookDragValue != null ? (1.0 - _bookDragValue!) * totalDur : bookRemaining)}', style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white54 : Colors.white30, fontSize: 9)),
                 ],
               )),
             ] else ...[
               Row(children: [
-                Text('Book', style: tt.labelSmall?.copyWith(color: Colors.white24, fontSize: 9)),
+                Text(_fmt(_bookDragValue != null ? _bookDragValue! * totalDur : posS), style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white54 : Colors.white24, fontSize: 9)),
                 const SizedBox(width: 8),
                 Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(value: bookProgress, minHeight: 3, backgroundColor: Colors.white.withOpacity(0.08), valueColor: AlwaysStoppedAnimation(widget.accent.withOpacity(0.5))))),
                 const SizedBox(width: 8),
-                Text('-${_fmt(bookRemaining)}', style: tt.labelSmall?.copyWith(color: Colors.white30, fontSize: 9)),
+                Text('-${_fmt(_bookDragValue != null ? (1.0 - _bookDragValue!) * totalDur : bookRemaining)}', style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white54 : Colors.white30, fontSize: 9)),
               ]),
               const SizedBox(height: 10),
             ],
@@ -1689,20 +1787,20 @@ class _CardWideButton extends StatelessWidget {
     return GestureDetector(
       onTap: isActive ? onTap : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.06),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.white.withOpacity(0.08)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 18, color: isActive ? Colors.white54 : Colors.white24),
-            const SizedBox(width: 8),
+            Icon(icon, size: 15, color: isActive ? Colors.white54 : Colors.white24),
+            const SizedBox(width: 6),
             Text(label, style: TextStyle(
               color: isActive ? Colors.white54 : Colors.white24,
-              fontSize: 12, fontWeight: FontWeight.w500)),
+              fontSize: 11, fontWeight: FontWeight.w500)),
           ],
         ),
       ),
@@ -1741,7 +1839,7 @@ class _CardSleepButtonInline extends StatelessWidget {
             if (active) { sleep.cancel(); } else { _showSleepPicker(context); }
           } : null,
           child: Container(
-            height: 44,
+            height: 36,
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               color: active ? accent.withOpacity(0.1) : Colors.white.withOpacity(0.06),
@@ -1826,10 +1924,10 @@ class _CardBookmarkButtonInlineState extends State<_CardBookmarkButtonInline> {
     return GestureDetector(
       onTap: widget.isActive ? _addBookmark : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.06),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.white.withOpacity(0.08)),
         ),
         child: Row(
@@ -1873,7 +1971,7 @@ class _CardSpeedButtonInline extends StatelessWidget {
           builder: (ctx) => _CardSpeedSheet(player: player, accent: accent));
       } : null,
       child: Container(
-        height: 44,
+        height: 36,
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.06),
           borderRadius: BorderRadius.circular(14),
@@ -1938,7 +2036,7 @@ class _DownloadWideButtonState extends State<_DownloadWideButton> {
     return GestureDetector(
       onTap: () => _handleTap(context),
       child: Container(
-        height: 44,
+        height: 36,
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: downloaded ? Colors.greenAccent.withOpacity(0.06) : Colors.white.withOpacity(0.06),
@@ -2017,6 +2115,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   Map<String, dynamic>? _rating;
   bool _isLoading = true;
   bool _chaptersExpanded = false;
+  bool _isAbsorbing = false;
 
   @override void initState() { super.initState(); _loadItem(); }
 
@@ -2152,10 +2251,16 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         const SizedBox(height: 12),
       ],
       SizedBox(height: 52, child: FilledButton.icon(
-        onPressed: () => _startAbsorb(context, auth: auth, title: title, author: authorName,
-          coverUrl: _coverUrl, duration: duration, chapters: chapters),
-        icon: const Icon(Icons.waves_rounded, size: 24),
-        label: Text('Absorb', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onPrimary)),
+        onPressed: _isAbsorbing ? null : () {
+          setState(() => _isAbsorbing = true);
+          _startAbsorb(context, auth: auth, title: title, author: authorName,
+            coverUrl: _coverUrl, duration: duration, chapters: chapters);
+        },
+        icon: _isAbsorbing
+            ? SizedBox(width: 24, height: 24, child: _AbsorbingWave(color: cs.onPrimary))
+            : const Icon(Icons.waves_rounded, size: 24),
+        label: Text(_isAbsorbing ? 'Absorbing…' : 'Absorb',
+          style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onPrimary)),
         style: FilledButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
       )),
       const SizedBox(height: 12),
@@ -2429,6 +2534,67 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
 }
 
 // ─── MARQUEE TEXT (scrolls if content overflows) ─────────────
+
+// ─── ABSORBING WAVE ANIMATION ────────────────────────────────
+class _AbsorbingWave extends StatefulWidget {
+  final Color color;
+  const _AbsorbingWave({required this.color});
+  @override State<_AbsorbingWave> createState() => _AbsorbingWaveState();
+}
+
+class _AbsorbingWaveState extends State<_AbsorbingWave> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))..repeat();
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        return CustomPaint(
+          size: const Size(24, 24),
+          painter: _WavePainter(phase: _ctrl.value, color: widget.color),
+        );
+      },
+    );
+  }
+}
+
+class _WavePainter extends CustomPainter {
+  final double phase;
+  final Color color;
+  _WavePainter({required this.phase, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    final midY = size.height / 2;
+    final path = Path();
+    final waveLength = size.width;
+    path.moveTo(0, midY);
+    for (double x = 0; x <= size.width; x += 0.5) {
+      final y = midY + 6 * math.sin((x / waveLength * 2 * math.pi) + (phase * 2 * math.pi));
+      path.lineTo(x, y);
+    }
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_WavePainter old) => old.phase != phase;
+}
 
 class _MarqueeText extends StatefulWidget {
   final String text;

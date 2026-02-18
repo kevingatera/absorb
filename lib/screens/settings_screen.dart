@@ -27,7 +27,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _shakeToResetSleep = true;
   int _shakeAddMinutes = 5;
   bool _autoContinueSeries = true;
-  bool _notificationChapterProgress = false;
   bool _loaded = false;
 
   @override
@@ -47,7 +46,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final shake = await PlayerSettings.getShakeToResetSleep();
     final shakeMins = await PlayerSettings.getShakeAddMinutes();
     final autoSeries = await PlayerSettings.getAutoContinueSeries();
-    final notifChapter = await PlayerSettings.getNotificationChapterProgress();
     if (mounted) setState(() {
       _rewindSettings = s;
       _defaultSpeed = speed;
@@ -59,7 +57,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _shakeToResetSleep = shake;
       _shakeAddMinutes = shakeMins;
       _autoContinueSeries = autoSeries;
-      _notificationChapterProgress = notifChapter;
       _loaded = true;
     });
   }
@@ -412,21 +409,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       } : null,
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
-                    SwitchListTile(
-                      title: const Text('Chapter progress in notification'),
-                      subtitle: Text(
-                        _notificationChapterProgress
-                          ? 'Notification shows chapter name and progress'
-                          : 'Notification shows full book progress',
-                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                      value: _notificationChapterProgress,
-                      onChanged: _loaded ? (v) {
-                        setState(() => _notificationChapterProgress = v);
-                        PlayerSettings.setNotificationChapterProgress(v);
-                        AudioPlayerService().reloadNotificationChapterMode();
-                      } : null,
-                    ),
-                    const Divider(height: 1, indent: 16, endIndent: 16),
                     // ── Auto-Rewind ──
                     SwitchListTile(
                       title: const Text('Auto-rewind on resume'),
@@ -685,7 +667,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ListTile(
                       leading: const Icon(Icons.info_outline_rounded),
                       title: const Text('App Version'),
-                      trailing: Text('1.0.2', style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                      trailing: Text('1.0.3', style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
                     ),
                     if (auth.serverSettings != null)
                       ListTile(

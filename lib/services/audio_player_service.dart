@@ -146,16 +146,6 @@ class PlayerSettings {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('autoContinueSeries', value);
   }
-
-  static Future<bool> getNotificationChapterProgress() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('notificationChapterProgress') ?? false;
-  }
-
-  static Future<void> setNotificationChapterProgress(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('notificationChapterProgress', value);
-  }
 }
 
 // ─── AudioHandler (runs in background, controls notification) ───
@@ -164,44 +154,15 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   final AudioPlayer _player = AudioPlayer();
   AudioPlayerService? _service; // back-reference for auto-rewind
 
-  // Chapter mode for notification progress
-  bool chapterMode = false;
-  double _chapterStart = 0;
-  double _chapterEnd = 0;
-  String? _chapterTitle;
-
   AudioPlayer get player => _player;
 
   void bindService(AudioPlayerService service) => _service = service;
-
-  void updateChapterInfo({
-    required double start,
-    required double end,
-    String? title,
-  }) {
-    _chapterStart = start;
-    _chapterEnd = end;
-    _chapterTitle = title;
-  }
 
   AudioPlayerHandler() {
     _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
   }
 
   PlaybackState _transformEvent(PlaybackEvent event) {
-    Duration reportedPosition = _player.position;
-    Duration reportedBuffered = _player.bufferedPosition;
-
-    if (chapterMode && _chapterEnd > _chapterStart) {
-      final pos = _player.position.inMilliseconds / 1000.0;
-      final chapterPos = (pos - _chapterStart).clamp(0.0, _chapterEnd - _chapterStart);
-      reportedPosition = Duration(milliseconds: (chapterPos * 1000).round());
-      // Buffered position relative to chapter
-      final buf = _player.bufferedPosition.inMilliseconds / 1000.0;
-      final chapterBuf = (buf - _chapterStart).clamp(0.0, _chapterEnd - _chapterStart);
-      reportedBuffered = Duration(milliseconds: (chapterBuf * 1000).round());
-    }
-
     return PlaybackState(
       controls: [
         MediaControl.rewind,
@@ -222,8 +183,9 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
         ProcessingState.completed: AudioProcessingState.completed,
       }[_player.processingState]!,
       playing: _player.playing,
-      updatePosition: reportedPosition,
-      bufferedPosition: reportedBuffered,
+      updatePosition: _player.position,
+      bufferedPosition: _player.bufferedPosition,
+      // Report actual speed — always
       speed: _player.speed,
       queueIndex: event.currentIndex,
     );
@@ -251,13 +213,6 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> seek(Duration position) {
-    if (chapterMode && _chapterEnd > _chapterStart) {
-      // Translate chapter-relative position to absolute
-      final absolute = _chapterStart + position.inMilliseconds / 1000.0;
-      final clamped = absolute.clamp(_chapterStart, _chapterEnd);
-      debugPrint('[Handler] seek chapter-relative ${position.inSeconds}s → absolute ${clamped.round()}s');
-      return _player.seek(Duration(milliseconds: (clamped * 1000).round()));
-    }
     debugPrint('[Handler] seek(${position.inSeconds}s)');
     return _player.seek(position);
   }
@@ -398,9 +353,8 @@ class AudioPlayerService extends ChangeNotifier {
   ApiService? _api;
   String? _playbackSessionId;
   bool _isOfflineMode = false;
-  bool _notificationChapterMode = false;
-  String? _lastNotificationChapter;
   StreamSubscription? _syncSub;
+  StreamSubscription? _completionSub;
 
   final _progressSync = ProgressSyncService();
   final _downloadService = DownloadService();
@@ -465,8 +419,7 @@ class AudioPlayerService extends ChangeNotifier {
     );
     // Bind service so handler routes play/pause through service (for auto-rewind)
     _handler!.bindService(_instance);
-    _instance._notificationChapterMode = await PlayerSettings.getNotificationChapterProgress();
-    debugPrint('[Player] AudioService initialized (notifChapterMode: ${_instance._notificationChapterMode})');
+    debugPrint('[Player] AudioService initialized');
   }
 
   Future<bool> playItem({
@@ -792,28 +745,6 @@ class AudioPlayerService extends ChangeNotifier {
 
   void _updateNotificationMediaItem(String itemId, String title, String author,
       String? coverUrl, double totalDuration) {
-    if (_notificationChapterMode && _chapters.isNotEmpty) {
-      final ch = currentChapter;
-      if (ch != null) {
-        final chTitle = ch['title'] as String? ?? '';
-        final chStart = (ch['start'] as num?)?.toDouble() ?? 0;
-        final chEnd = (ch['end'] as num?)?.toDouble() ?? 0;
-        final chDuration = chEnd - chStart;
-        _handler!.chapterMode = true;
-        _handler!.updateChapterInfo(start: chStart, end: chEnd, title: chTitle);
-        _handler!.mediaItem.add(MediaItem(
-          id: itemId,
-          title: chTitle.isNotEmpty ? chTitle : title,
-          artist: '$title — $author',
-          album: title,
-          duration: Duration(seconds: chDuration.round()),
-          artUri: coverUrl != null ? Uri.tryParse(coverUrl) : null,
-        ));
-        _lastNotificationChapter = chTitle;
-        return;
-      }
-    }
-    _handler!.chapterMode = false;
     _handler!.mediaItem.add(MediaItem(
       id: itemId,
       title: title,
@@ -822,20 +753,6 @@ class AudioPlayerService extends ChangeNotifier {
       duration: Duration(seconds: totalDuration.round()),
       artUri: coverUrl != null ? Uri.tryParse(coverUrl) : null,
     ));
-    _lastNotificationChapter = null;
-  }
-
-  /// Called periodically to update notification when chapter changes
-  void _checkNotificationChapterUpdate() {
-    if (!_notificationChapterMode || _chapters.isEmpty || _handler == null) return;
-    final ch = currentChapter;
-    if (ch == null) return;
-    final chTitle = ch['title'] as String? ?? '';
-    if (chTitle != _lastNotificationChapter && _currentItemId != null) {
-      _updateNotificationMediaItem(
-        _currentItemId!, _currentTitle ?? '', _currentAuthor ?? '',
-        _currentCoverUrl, _totalDuration);
-    }
   }
 
   void _clearState() {
@@ -845,23 +762,11 @@ class AudioPlayerService extends ChangeNotifier {
     _currentCoverUrl = null;
     _playbackSessionId = null;
     _isOfflineMode = false;
-    _lastNotificationChapter = null;
     _syncSub?.cancel();
     _syncSub = null;
+    _completionSub?.cancel();
+    _completionSub = null;
     notifyListeners();
-  }
-
-  /// Reload notification chapter mode setting (call when setting changes)
-  Future<void> reloadNotificationChapterMode() async {
-    _notificationChapterMode = await PlayerSettings.getNotificationChapterProgress();
-    if (_handler != null) {
-      _handler!.chapterMode = _notificationChapterMode;
-    }
-    if (_currentItemId != null) {
-      _updateNotificationMediaItem(
-        _currentItemId!, _currentTitle ?? '', _currentAuthor ?? '',
-        _currentCoverUrl, _totalDuration);
-    }
   }
 
   int _lastSyncSecond = -1;
@@ -874,8 +779,13 @@ class AudioPlayerService extends ChangeNotifier {
       final sec = pos.inSeconds;
       if (sec <= 0) return;
 
-      // Update notification when chapter changes
-      _checkNotificationChapterUpdate();
+      // ─── Completion detection ─────────────────────────────
+      // Check if we've reached the end of the book
+      final posSeconds = pos.inMilliseconds / 1000.0;
+      if (_totalDuration > 0 && posSeconds >= _totalDuration - 1.0) {
+        _onPlaybackComplete();
+        return;
+      }
 
       // Save locally every 5 seconds (always works, even offline)
       if (sec % 5 == 0 && sec != _lastSyncSecond && _currentItemId != null) {
@@ -911,6 +821,54 @@ class AudioPlayerService extends ChangeNotifier {
         }
       }
     });
+  }
+
+  bool _isCompletingBook = false;
+
+  Future<void> _onPlaybackComplete() async {
+    if (_isCompletingBook) return; // prevent re-entry
+    _isCompletingBook = true;
+
+    debugPrint('[Player] Book complete: $_currentTitle');
+    _logEvent(PlaybackEventType.pause, detail: 'Book finished');
+
+    // Pause immediately so audio doesn't keep running
+    await _player?.pause();
+
+    // Mark as finished on the server
+    final itemId = _currentItemId;
+    if (itemId != null && _api != null) {
+      try {
+        await _api!.markFinished(itemId, _totalDuration);
+        debugPrint('[Player] Marked as finished on server');
+      } catch (e) {
+        debugPrint('[Player] Failed to mark finished: $e');
+      }
+    }
+
+    // Also save locally as finished
+    if (itemId != null) {
+      await _progressSync.saveLocal(
+        itemId: itemId,
+        currentTime: _totalDuration,
+        duration: _totalDuration,
+        speed: speed,
+      );
+    }
+
+    // Close the playback session
+    if (_playbackSessionId != null && _api != null) {
+      try {
+        await _api!.closePlaybackSession(_playbackSessionId!);
+      } catch (_) {}
+    }
+
+    // Stop and clear state
+    await _player?.stop();
+    _clearState();
+    _chapters = [];
+    _isCompletingBook = false;
+    notifyListeners();
   }
 
   Future<void> _saveProgressLocal(Duration pos) async {
@@ -1089,6 +1047,7 @@ class AudioPlayerService extends ChangeNotifier {
   @override
   void dispose() {
     _syncSub?.cancel();
+    _completionSub?.cancel();
     _player?.dispose();
     super.dispose();
   }
