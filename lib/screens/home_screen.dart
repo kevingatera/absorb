@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -10,6 +9,7 @@ import '../widgets/library_selector.dart';
 import '../widgets/absorb_title.dart';
 import '../widgets/shimmer.dart';
 import 'absorbing_screen.dart';
+import 'app_shell.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -85,15 +85,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return sorted;
   }
 
-  List<dynamic> _continueListeningItems(LibraryProvider lib) {
-    for (final section in lib.personalizedSections) {
-      if (section['id'] == 'continue-listening') {
-        return (section['entities'] as List<dynamic>?) ?? [];
-      }
-    }
-    return [];
-  }
-
   String _titleCase(String s) {
     return s.replaceAll('-', ' ').split(' ')
         .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
@@ -107,14 +98,27 @@ class _HomeScreenState extends State<HomeScreen> {
     final lib = context.watch<LibraryProvider>();
 
     return Scaffold(
-      body: SafeArea(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            stops: const [0.0, 0.3, 1.0],
+            colors: [
+              cs.primary.withOpacity(0.06),
+              cs.surface,
+              cs.surface,
+            ],
+          ),
+        ),
+        child: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
             await lib.refresh();
           },
           child: CustomScrollView(
             slivers: [
-              // ── Top bar: ABSORB title + offline toggle + library selector ──
+              // ── Top bar: ABSORB title + library selector ──
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 12, 8, 0),
@@ -128,6 +132,66 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
+
+              // ── Currently Absorbing section ──
+              if (!lib.isLoading)
+                ...() {
+                  // Find continue-listening entities
+                  List<dynamic> clItems = [];
+                  for (final section in lib.personalizedSections) {
+                    if (section['id'] == 'continue-listening') {
+                      clItems = (section['entities'] as List<dynamic>?) ?? [];
+                      break;
+                    }
+                  }
+                  if (clItems.isEmpty) return <Widget>[];
+                  return <Widget>[
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                        child: Row(
+                          children: [
+                            Icon(Icons.play_circle_outline_rounded, size: 16,
+                              color: cs.primary.withOpacity(0.7)),
+                            const SizedBox(width: 8),
+                            Text('Continue Listening',
+                              style: tt.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w500,
+                                color: cs.onSurface.withOpacity(0.8),
+                                letterSpacing: 0.3,
+                              )),
+                            const SizedBox(width: 12),
+                            Expanded(child: Container(height: 0.5,
+                              color: cs.outlineVariant.withOpacity(0.2))),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: SizedBox(
+                          height: 72,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            physics: const BouncingScrollPhysics(),
+                            itemCount: clItems.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 10),
+                            itemBuilder: (context, i) {
+                              final item = clItems[i] as Map<String, dynamic>;
+                              return _ContinueListeningCard(
+                                item: item,
+                                lib: lib,
+                                player: _player,
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ];
+                }(),
 
               // ── Loading shimmer ──
               if (lib.isLoading)
@@ -230,229 +294,141 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
+      ),
     );
   }
 }
 
 // ══════════════════════════════════════════════════════════════
-// Absorb Card — blurred-cover card for continue listening
+// Continue Listening Card — compact card with play button
 // ══════════════════════════════════════════════════════════════
 
-class _AbsorbCard extends StatelessWidget {
+class _ContinueListeningCard extends StatefulWidget {
   final Map<String, dynamic> item;
-  final double progress;
-  final String? coverUrl;
+  final LibraryProvider lib;
+  final AudioPlayerService player;
 
-  const _AbsorbCard({
+  const _ContinueListeningCard({
     required this.item,
-    required this.progress,
-    this.coverUrl,
+    required this.lib,
+    required this.player,
   });
+
+  @override
+  State<_ContinueListeningCard> createState() => _ContinueListeningCardState();
+}
+
+class _ContinueListeningCardState extends State<_ContinueListeningCard> {
+  bool _isLoading = false;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+
+    final item = widget.item;
+    final lib = widget.lib;
+    final player = widget.player;
+
+    final itemId = item['id'] as String? ?? '';
     final media = item['media'] as Map<String, dynamic>? ?? {};
     final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-    final chapters = media['chapters'] as List<dynamic>? ?? [];
-
     final title = metadata['title'] as String? ?? 'Unknown';
     final author = metadata['authorName'] as String? ?? '';
-    final itemId = item['id'] as String?;
-
-    final duration = (media['duration'] is num)
-        ? (media['duration'] as num).toDouble() : 0.0;
-    final currentTime = progress * duration;
-
-    // Try to get chapter count from various sources
-    final numChapters = chapters.isNotEmpty
-        ? chapters.length
-        : (media['numChapters'] is num)
-            ? (media['numChapters'] as num).toInt()
-            : (metadata['chapters'] is List)
-                ? (metadata['chapters'] as List).length
-                : 0;
-
-    // Try to find current chapter from chapter timing data
-    String chapterLabel = '';
-    if (chapters.isNotEmpty) {
-      for (int i = 0; i < chapters.length; i++) {
-        final ch = chapters[i];
-        if (ch is! Map) continue;
-        final start =
-            (ch['start'] is num) ? (ch['start'] as num).toDouble() : 0.0;
-        final end =
-            (ch['end'] is num) ? (ch['end'] as num).toDouble() : 0.0;
-        if (currentTime >= start && currentTime < end) {
-          chapterLabel = 'Ch. ${i + 1} of $numChapters';
-          break;
-        }
-      }
-    }
-    // Fallback: if we have numChapters but no timing, estimate chapter
-    if (chapterLabel.isEmpty && numChapters > 0 && duration > 0) {
-      final estChapter = ((currentTime / duration) * numChapters).floor() + 1;
-      chapterLabel = 'Ch. ~$estChapter of $numChapters';
-    }
-
-    final remaining = duration - currentTime;
-    final hoursLeft = (remaining / 3600).floor();
-    final minsLeft = ((remaining % 3600) / 60).floor();
-    final timeLeft = hoursLeft > 0
-        ? '${hoursLeft}h ${minsLeft}m left'
-        : '${minsLeft}m left';
+    final coverUrl = lib.getCoverUrl(itemId);
+    final progress = lib.getProgress(itemId);
+    final isCurrentItem = player.currentItemId == itemId;
 
     return GestureDetector(
-      onTap: () {
-        if (itemId != null) {
-          showBookDetailSheet(context, itemId);
-        }
-      },
+      onTap: () => showBookDetailSheet(context, itemId),
       child: Container(
-        clipBehavior: Clip.antiAlias,
+        width: 280,
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.25),
-              blurRadius: 20,
-              spreadRadius: -4,
-              offset: const Offset(0, 6),
-            ),
-          ],
+          color: isCurrentItem
+              ? cs.primary.withOpacity(0.08)
+              : cs.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(14),
+          border: isCurrentItem
+              ? Border.all(color: cs.primary.withOpacity(0.2))
+              : null,
         ),
-        child: Stack(
-          fit: StackFit.expand,
+        child: Row(
           children: [
-            // Cover image — scaled up to avoid blur edge artifacts
-            if (coverUrl != null)
-              Positioned.fill(
-                child: Transform.scale(
-                  scale: 1.15,
-                  child: CachedNetworkImage(
-                    imageUrl: coverUrl!,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) =>
-                        Container(color: cs.surfaceContainerHigh),
-                  ),
-                ),
-              )
-            else
-              Container(color: cs.surfaceContainerHigh),
-
-            // Blur + dark overlay — no separate ClipRRect needed,
-            // outer container's clipBehavior handles it
-            Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                child: Container(color: Colors.black.withOpacity(0.5)),
+            // Cover
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                width: 48, height: 48,
+                child: coverUrl != null
+                    ? CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => Container(
+                          color: cs.surfaceContainerHighest,
+                          child: Icon(Icons.headphones_rounded, size: 18, color: cs.onSurfaceVariant)))
+                    : Container(
+                        color: cs.surfaceContainerHighest,
+                        child: Icon(Icons.headphones_rounded, size: 18, color: cs.onSurfaceVariant)),
               ),
             ),
-
-            // Content
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
+            const SizedBox(width: 10),
+            // Title + author + progress
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // ── Square cover ──
-                  AspectRatio(
-                    aspectRatio: 1,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.5),
-                            blurRadius: 16,
-                            spreadRadius: -2,
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: coverUrl != null
-                            ? CachedNetworkImage(
-                                imageUrl: coverUrl!,
-                                fit: BoxFit.cover,
-                                placeholder: (_, __) => Container(
-                                  color: cs.surfaceContainerHighest),
-                              )
-                            : Container(
-                                color: cs.surfaceContainerHighest,
-                                child: const Icon(Icons.headphones_rounded,
-                                    color: Colors.white24, size: 32)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  // ── Info ──
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: tt.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            height: 1.2,
-                          ),
-                        ),
-                        if (author.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(author,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: tt.bodySmall?.copyWith(
-                              color: Colors.white60, fontSize: 13)),
-                        ],
-                        const SizedBox(height: 14),
-                        // Progress bar
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: progress.clamp(0.0, 1.0),
-                            minHeight: 4,
-                            backgroundColor: Colors.white12,
-                            valueColor: AlwaysStoppedAnimation(cs.primary),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        // Stats row
-                        Row(
-                          children: [
-                            Text(
-                              '${(progress * 100).round()}%',
-                              style: tt.labelMedium?.copyWith(
-                                color: cs.primary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            if (chapterLabel.isNotEmpty) ...[
-                              Text('·',
-                                style: tt.labelSmall?.copyWith(
-                                  color: Colors.white30)),
-                              const SizedBox(width: 6),
-                              Text(chapterLabel,
-                                style: tt.labelSmall?.copyWith(
-                                  color: Colors.white60, fontSize: 11)),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Text(timeLeft,
-                          style: tt.labelSmall?.copyWith(
-                            color: Colors.white.withOpacity(0.4),
-                            fontSize: 11)),
-                      ],
+                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: tt.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600, color: cs.onSurface)),
+                  if (author.isNotEmpty)
+                    Text(author, maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: tt.labelSmall?.copyWith(
+                        color: cs.onSurfaceVariant, fontSize: 11)),
+                  const SizedBox(height: 4),
+                  // Thin progress bar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      value: progress.clamp(0.0, 1.0),
+                      minHeight: 3,
+                      backgroundColor: cs.outlineVariant.withOpacity(0.2),
+                      valueColor: AlwaysStoppedAnimation(cs.primary),
                     ),
                   ),
                 ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Play button
+            GestureDetector(
+              onTap: _isLoading ? null : () {
+                if (isCurrentItem) {
+                  player.togglePlayPause();
+                } else {
+                  _startBook(context, itemId);
+                }
+              },
+              child: Container(
+                width: 34, height: 34,
+                decoration: BoxDecoration(
+                  color: cs.primary.withOpacity(isCurrentItem ? 1.0 : 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: _isLoading
+                    ? Padding(
+                        padding: const EdgeInsets.all(9),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: isCurrentItem ? cs.onPrimary : cs.primary,
+                        ),
+                      )
+                    : Icon(
+                        isCurrentItem && player.isPlaying
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        size: 18,
+                        color: isCurrentItem ? cs.onPrimary : cs.primary,
+                      ),
               ),
             ),
           ],
@@ -460,10 +436,34 @@ class _AbsorbCard extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _startBook(BuildContext context, String itemId) async {
+    setState(() => _isLoading = true);
+    final auth = context.read<AuthProvider>();
+    final api = auth.apiService;
+    if (api == null) { setState(() => _isLoading = false); return; }
+
+    // Fetch full item data to get chapters
+    final fullItem = await api.getLibraryItem(itemId);
+    if (fullItem == null) { if (mounted) setState(() => _isLoading = false); return; }
+
+    final media = fullItem['media'] as Map<String, dynamic>? ?? {};
+    final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+    final title = metadata['title'] as String? ?? '';
+    final author = metadata['authorName'] as String? ?? '';
+    final coverUrl = widget.lib.getCoverUrl(itemId);
+    final duration = (media['duration'] is num)
+        ? (media['duration'] as num).toDouble() : 0.0;
+    final chapters = (media['chapters'] as List<dynamic>?) ?? [];
+
+    // Start playback
+    await widget.player.playItem(
+      api: api, itemId: itemId, title: title, author: author,
+      coverUrl: coverUrl, totalDuration: duration, chapters: chapters,
+    );
+
+    if (mounted) setState(() => _isLoading = false);
+    // Navigate to absorbing screen
+    if (context.mounted) AppShell.goToAbsorbing(context);
+  }
 }
-
-// ══════════════════════════════════════════════════════════════
-// Listening Stats Strip
-// ══════════════════════════════════════════════════════════════
-
-

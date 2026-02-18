@@ -30,6 +30,7 @@ class LibraryProvider extends ChangeNotifier {
 
   /// Toggle manual offline mode.
   Future<void> setManualOffline(bool value) async {
+    debugPrint('[Library] setManualOffline($value)');
     _manualOffline = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('manual_offline_mode', value);
@@ -74,6 +75,7 @@ class LibraryProvider extends ChangeNotifier {
   /// Build home sections from downloaded books.
   void _buildOfflineSections() {
     final downloads = DownloadService().downloadedItems;
+    debugPrint('[Library] Building offline sections: ${downloads.length} downloads');
     if (downloads.isEmpty) {
       _personalizedSections = [];
       _errorMessage = null;
@@ -137,6 +139,8 @@ class LibraryProvider extends ChangeNotifier {
   /// Checks local progress first (freshest), falls back to server data.
   double getProgress(String? itemId) {
     if (itemId == null) return 0;
+    // If item was reset this session, always return 0
+    if (_resetItems.contains(itemId)) return 0;
     // Check local override first
     final local = _localProgressOverrides[itemId];
     if (local != null) return local;
@@ -149,6 +153,7 @@ class LibraryProvider extends ChangeNotifier {
   /// Get the raw progress data map for an item (includes isFinished, currentTime, etc.)
   Map<String, dynamic>? getProgressData(String? itemId) {
     if (itemId == null) return null;
+    if (_resetItems.contains(itemId)) return null;
     return _progressMap[itemId];
   }
 
@@ -159,6 +164,8 @@ class LibraryProvider extends ChangeNotifier {
 
   // Local progress overrides (from ProgressSyncService)
   final Map<String, double> _localProgressOverrides = {};
+  // Items that have been reset — force progress to 0 until app restart
+  final Set<String> _resetItems = {};
 
   /// Merge local progress into the display. Call after playback.
   Future<void> refreshLocalProgress() async {
@@ -175,16 +182,26 @@ class LibraryProvider extends ChangeNotifier {
         final duration = (data['duration'] as num?)?.toDouble() ?? 0;
         if (duration > 0) {
           _localProgressOverrides[itemId] = (currentTime / duration).clamp(0.0, 1.0);
+          // If item was reset but is now being played, clear the reset flag
+          if (currentTime > 0) _resetItems.remove(itemId);
         }
       }
     }
     notifyListeners();
   }
 
-  /// Clear all local progress caches for an item.
+  /// Clear all local progress caches for an item (used after mark finished/not finished).
   void clearProgressFor(String itemId) {
     _progressMap.remove(itemId);
     _localProgressOverrides.remove(itemId);
+    notifyListeners();
+  }
+
+  /// Clear progress AND mark as reset — forces 0 progress until playback resumes.
+  void resetProgressFor(String itemId) {
+    _progressMap.remove(itemId);
+    _localProgressOverrides.remove(itemId);
+    _resetItems.add(itemId);
     notifyListeners();
   }
 
@@ -217,21 +234,22 @@ class LibraryProvider extends ChangeNotifier {
         _series = [];
         _progressMap = {};
         _localProgressOverrides.clear();
-
-        // Restore manual offline preference and start connectivity monitoring
-        restoreOfflineMode().then((_) {
-          _startConnectivityMonitoring();
-        });
       }
 
-      _buildProgressMap(auth);
-      if (_api != null && !isOffline) {
-        ProgressSyncService().flushPendingSync(api: _api!);
-        DownloadService().enrichMetadata(_api!);
-      }
-      if (_libraries.isEmpty || isNewUser || isFreshLogin) {
-        loadLibraries();
-      }
+      // Restore manual offline preference and start connectivity monitoring
+      // Must complete before loading libraries so offline state is correct
+      restoreOfflineMode().then((_) {
+        _startConnectivityMonitoring();
+
+        _buildProgressMap(auth);
+        if (_api != null && !isOffline) {
+          ProgressSyncService().flushPendingSync(api: _api!);
+          DownloadService().enrichMetadata(_api!);
+        }
+        if (_libraries.isEmpty || isNewUser || isFreshLogin) {
+          loadLibraries();
+        }
+      });
     } else {
       _libraries = [];
       _personalizedSections = [];
@@ -247,6 +265,12 @@ class LibraryProvider extends ChangeNotifier {
 
   void _startConnectivityMonitoring() {
     _connectivitySub?.cancel();
+    // Check current state immediately
+    Connectivity().checkConnectivity().then((result) {
+      final offline = result.contains(ConnectivityResult.none);
+      if (offline) setNetworkOffline(true);
+    });
+    // Then listen for changes
     _connectivitySub = Connectivity().onConnectivityChanged.listen((result) {
       final offline = result.contains(ConnectivityResult.none);
       setNetworkOffline(offline);

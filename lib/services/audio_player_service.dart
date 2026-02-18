@@ -459,6 +459,15 @@ class AudioPlayerService extends ChangeNotifier {
           chapters, startTime);
     }
 
+    // Check manual offline — don't stream from server
+    final prefs = await SharedPreferences.getInstance();
+    final manualOffline = prefs.getBool('manual_offline_mode') ?? false;
+    if (manualOffline) {
+      debugPrint('[Player] Manual offline — cannot stream non-downloaded book');
+      _clearState();
+      return false;
+    }
+
     // Otherwise stream from server
     return _playFromServer(api, itemId, title, author, coverUrl,
         totalDuration, chapters, startTime);
@@ -802,20 +811,19 @@ class AudioPlayerService extends ChangeNotifier {
           } else if (!_isOfflineMode && _playbackSessionId != null) {
             // Streaming/local with session: sync via session
             _syncToServer(pos);
-          } else if (_api != null && _currentItemId != null) {
-            // Fallback: sync via progress update endpoint
-            debugPrint('[Player] Offline sync — sending to server at ${pos.inSeconds}s');
+          } else if (!_isOfflineMode && _api != null && _currentItemId != null) {
+            // No session but online — sync via progress update endpoint
+            debugPrint('[Player] No-session sync — sending to server at ${pos.inSeconds}s');
             try {
               final ok = await _progressSync.syncToServer(
                   api: _api!, itemId: _currentItemId!);
               if (ok) {
-                // _logEvent(PlaybackEventType.syncServer); // too noisy for history
-                debugPrint('[Player] Offline sync succeeded');
+                debugPrint('[Player] No-session sync succeeded');
               } else {
-                debugPrint('[Player] Offline sync returned false (offline or no data)');
+                debugPrint('[Player] No-session sync returned false');
               }
             } catch (e) {
-              debugPrint('[Player] Offline sync error: $e');
+              debugPrint('[Player] No-session sync error: $e');
             }
           }
         }
@@ -956,7 +964,7 @@ class AudioPlayerService extends ChangeNotifier {
 
     if (!_isOfflineMode && _playbackSessionId != null) {
       _syncToServer(position);
-    } else if (_currentItemId != null && _api != null) {
+    } else if (!_isOfflineMode && _currentItemId != null && _api != null) {
       _progressSync.syncToServer(api: _api!, itemId: _currentItemId!);
     }
   }
@@ -1039,6 +1047,19 @@ class AudioPlayerService extends ChangeNotifier {
       }
     }
 
+    await _player?.stop();
+    _clearState();
+    _chapters = [];
+  }
+
+  /// Stop playback without saving progress — used by reset progress.
+  Future<void> stopWithoutSaving() async {
+    // Close server session without syncing position
+    if (_playbackSessionId != null && _api != null) {
+      try {
+        await _api!.closePlaybackSession(_playbackSessionId!);
+      } catch (_) {}
+    }
     await _player?.stop();
     _clearState();
     _chapters = [];

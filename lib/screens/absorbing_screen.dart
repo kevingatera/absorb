@@ -46,7 +46,6 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
   String? _lastPlayingId;
   bool _isSyncing = false;
-  bool _offlineMode = false;
 
   void _rebuild() {
     if (!mounted) return;
@@ -88,7 +87,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     
     for (final section in lib.personalizedSections) {
       final id = section['id'] as String? ?? '';
-      if (id == 'continue-listening' || id == 'continue-series') {
+      if (id == 'continue-listening' || id == 'continue-series' || id == 'downloaded-books') {
         for (final e in (section['entities'] as List<dynamic>? ?? [])) {
           if (e is Map<String, dynamic>) {
             final itemId = e['id'] as String?;
@@ -129,7 +128,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     var books = _getAbsorbingBooks(lib);
     
     // Force offline mode when actually offline
-    final effectiveOffline = _offlineMode || lib.isOffline;
+    final effectiveOffline = lib.isOffline;
     if (effectiveOffline) {
       books = books.where((b) => dl.isDownloaded(b['id'] as String? ?? '')).toList();
     }
@@ -149,8 +148,9 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                   // Offline mode toggle
                   GestureDetector(
                     onTap: () {
-                      setState(() => _offlineMode = !_offlineMode);
-                      if (_offlineMode) _stopAndRefresh(lib);
+                      final newVal = !effectiveOffline;
+                      lib.setManualOffline(newVal);
+                      if (newVal) _stopAndRefresh(lib);
                     },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 300),
@@ -206,7 +206,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                               ] else ...[
                                 const Icon(Icons.stop_rounded, size: 14, color: Colors.white38),
                                 const SizedBox(width: 4),
-                                const Text('Stop & Sync', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
+                                Text(effectiveOffline ? 'Stop' : 'Stop & Sync', style: const TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
                               ],
                             ],
                           ),
@@ -274,7 +274,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                                     ),
                                   );
                                 },
-                                child: _AbsorbingCard(item: books[i], player: _player),
+                                child: _AbsorbingCard(key: ValueKey(books[i]['id'] as String? ?? '$i'), item: books[i], player: _player),
                               );
                             },
                           ),
@@ -345,7 +345,7 @@ class _PageDots extends StatelessWidget {
 class _AbsorbingCard extends StatefulWidget {
   final Map<String, dynamic> item;
   final AudioPlayerService player;
-  const _AbsorbingCard({required this.item, required this.player});
+  const _AbsorbingCard({super.key, required this.item, required this.player});
 
   @override
   State<_AbsorbingCard> createState() => _AbsorbingCardState();
@@ -433,6 +433,14 @@ class _AbsorbingCardState extends State<_AbsorbingCard> with AutomaticKeepAliveC
   @override
   void didUpdateWidget(_AbsorbingCard old) {
     super.didUpdateWidget(old);
+    final oldId = old.item['id'] as String? ?? '';
+    if (oldId != _itemId) {
+      // Item changed — reset all stale state
+      _coverScheme = null;
+      _fetchedChapters = null;
+      _lastChapterIdx = -1;
+      _fetchChaptersIfNeeded();
+    }
     if (old.player != widget.player) _startChapterTracking();
   }
 
@@ -1253,12 +1261,6 @@ class _CardPlaybackControlsState extends State<_CardPlaybackControls> with Singl
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    // Waveform visualizer rings behind button
-                    if (isPlaying) ...[
-                      _WaveRing(accent: widget.accent, delay: 0),
-                      _WaveRing(accent: widget.accent, delay: 0.33),
-                      _WaveRing(accent: widget.accent, delay: 0.66),
-                    ],
                     // Main button
                     Container(
                       width: 64, height: 64,
@@ -1288,58 +1290,6 @@ class _CardPlaybackControlsState extends State<_CardPlaybackControls> with Singl
               child: SizedBox(width: 48, height: 48, child: Center(child: _skipIcon(_forwardSkip, true))),
             ),
           ],
-        );
-      },
-    );
-  }
-}
-
-/// Pulsing ring that radiates outward from the play button while playing
-class _WaveRing extends StatefulWidget {
-  final Color accent;
-  final double delay;
-  const _WaveRing({required this.accent, required this.delay});
-  @override State<_WaveRing> createState() => _WaveRingState();
-}
-
-class _WaveRingState extends State<_WaveRing> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
-    );
-    Future.delayed(Duration(milliseconds: (widget.delay * 2000).round()), () {
-      if (mounted) _controller.repeat();
-    });
-  }
-
-  @override void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (_, __) {
-        final t = _controller.value;
-        final scale = 1.0 + t * 0.4;
-        final opacity = (1.0 - t).clamp(0.0, 0.25);
-        return Transform.scale(
-          scale: scale,
-          child: Container(
-            width: 64, height: 64,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: widget.accent.withOpacity(opacity),
-                width: 2,
-              ),
-            ),
-          ),
         );
       },
     );
@@ -2113,6 +2063,13 @@ class _BookDetailSheetContent extends StatefulWidget {
 class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   Map<String, dynamic>? _item;
   Map<String, dynamic>? _rating;
+  int get _safeRatingCount {
+    final raw = _rating?['numRatings'];
+    if (raw == null) return 0;
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw) ?? 0;
+    return 0;
+  }
   bool _isLoading = true;
   bool _chaptersExpanded = false;
   bool _isAbsorbing = false;
@@ -2223,25 +2180,28 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       Text(authorName, textAlign: TextAlign.center, style: tt.bodyMedium?.copyWith(color: Colors.white60)),
       if (narrator.isNotEmpty) ...[const SizedBox(height: 2),
         Text('Narrated by $narrator', textAlign: TextAlign.center, style: tt.bodySmall?.copyWith(color: Colors.white38))],
-      // ─── AUDIBLE RATING ───────────────────────────────
-      if (_rating != null && (_rating!['rating'] as num).toDouble() > 0) ...[
-        const SizedBox(height: 8),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          ..._buildStars((_rating!['rating'] as num).toDouble(), cs),
-          const SizedBox(width: 6),
-          Text((_rating!['rating'] as num).toStringAsFixed(1),
-            style: tt.labelLarge?.copyWith(fontWeight: FontWeight.w600, color: Colors.white70)),
-          if (_rating!['numRatings'] != null && (_rating!['numRatings'] as num).toInt() > 0) ...[
-            const SizedBox(width: 4),
-            Text('(${_fmtCount((_rating!['numRatings'] as num).toInt())})',
-              style: tt.labelSmall?.copyWith(color: Colors.white38)),
-          ],
-          const SizedBox(width: 4),
-          Text('on Audible', style: tt.labelSmall?.copyWith(color: Colors.white38)),
-        ]),
-      ],
+      // ─── AUDIBLE RATING (space always reserved) ─────────
+      const SizedBox(height: 8),
+      SizedBox(
+        height: 20,
+        child: (_rating != null && (_rating!['rating'] as num).toDouble() > 0)
+          ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              ..._buildStars((_rating!['rating'] as num).toDouble(), cs),
+              const SizedBox(width: 6),
+              Text((_rating!['rating'] as num).toStringAsFixed(1),
+                style: tt.labelLarge?.copyWith(fontWeight: FontWeight.w600, color: Colors.white70)),
+              if (_safeRatingCount > 0) ...[
+                const SizedBox(width: 4),
+                Text('(${_fmtCount(_safeRatingCount)})',
+                  style: tt.labelSmall?.copyWith(color: Colors.white38)),
+              ],
+              const SizedBox(width: 4),
+              Text('on Audible', style: tt.labelSmall?.copyWith(color: Colors.white38)),
+            ])
+          : null,
+      ),
       const SizedBox(height: 12),
-      if (progress > 0) ...[
+      if (progress > 0 && !isFinished) ...[
         ClipRRect(borderRadius: BorderRadius.circular(3),
           child: LinearProgressIndicator(value: progress.clamp(0.0, 1.0), minHeight: 4,
             backgroundColor: Colors.white.withOpacity(0.1), valueColor: AlwaysStoppedAnimation(cs.primary))),
@@ -2267,12 +2227,34 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       Row(children: [
         Expanded(child: _DownloadWideButton(itemId: widget.itemId, coverUrl: _coverUrl, title: title, author: authorName, accent: cs.primary)),
         const SizedBox(width: 10),
-        if (isFinished)
-          Expanded(child: _sheetBtn(icon: Icons.replay_rounded,
-            label: 'Listen Again', onTap: () => _markNotFinished(context, auth, currentTime, duration)))
-        else
-          Expanded(child: _sheetBtn(icon: Icons.check_circle_outline_rounded,
-            label: 'Mark Finished', onTap: () => _markFinished(context, auth, duration))),
+        Expanded(child: GestureDetector(
+          onTap: () => isFinished
+              ? _markNotFinished(context, auth, currentTime, duration)
+              : _markFinished(context, auth, duration),
+          child: Container(
+            height: 48,
+            decoration: BoxDecoration(
+              color: isFinished ? Colors.green.withOpacity(0.15) : Colors.white.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: isFinished ? Colors.green.withOpacity(0.4) : Colors.white12),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(
+                isFinished ? Icons.check_circle_rounded : Icons.check_circle_outline_rounded,
+                size: 18,
+                color: isFinished ? Colors.green : Colors.white54,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                isFinished ? 'Fully Absorbed' : 'Fully Absorb',
+                style: tt.labelMedium?.copyWith(
+                  color: isFinished ? Colors.green : Colors.white54,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ]),
+          ),
+        )),
       ]),
       if (progress > 0 || isFinished) ...[
         const SizedBox(height: 8),
@@ -2436,11 +2418,11 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Mark as Finished?'),
+        title: const Text('Mark as Fully Absorbed?'),
         content: const Text('This will set your progress to 100% and stop playback if this book is playing.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Mark Finished')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Fully Absorb')),
         ],
       ),
     );
@@ -2453,9 +2435,9 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       await api.markFinished(widget.itemId, duration);
       await ProgressSyncService().deleteLocal(widget.itemId);
       if (context.mounted) {
-        context.read<LibraryProvider>().clearProgressFor(widget.itemId);
         await _loadItem();
-        context.read<LibraryProvider>().refresh();
+        await context.read<LibraryProvider>().refresh();
+        if (mounted) setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           duration: const Duration(seconds: 3), content: const Text('Marked as finished — nice work!'),
           behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
@@ -2486,9 +2468,9 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       await api.markNotFinished(widget.itemId, currentTime: currentTime, duration: duration);
       await ProgressSyncService().deleteLocal(widget.itemId);
       if (context.mounted) {
-        context.read<LibraryProvider>().clearProgressFor(widget.itemId);
         await _loadItem();
-        context.read<LibraryProvider>().refresh();
+        await context.read<LibraryProvider>().refresh();
+        if (mounted) setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           duration: const Duration(seconds: 3), content: const Text('Marked as not finished — back at it!'),
           behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
@@ -2518,10 +2500,20 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final api = auth.apiService;
     if (api == null) return;
     final player = AudioPlayerService();
-    if (player.currentItemId == widget.itemId) await player.stop();
+    
+    // Stop player without saving progress
+    if (player.currentItemId == widget.itemId) {
+      await player.stopWithoutSaving();
+    }
+    
+    // Clear local progress
     await ProgressSyncService().deleteLocal(widget.itemId);
-    if (context.mounted) context.read<LibraryProvider>().clearProgressFor(widget.itemId);
+    
+    // Reset server progress (PATCH to zero + hide from continue listening)
     final serverSuccess = await api.resetProgress(widget.itemId, duration);
+    
+    // Clear from library provider (mark as reset — forces 0 progress)
+    if (context.mounted) context.read<LibraryProvider>().resetProgressFor(widget.itemId);
     if (context.mounted) {
       await _loadItem();
       await context.read<LibraryProvider>().refresh();

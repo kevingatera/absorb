@@ -4,6 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
+  static const appVersion = '1.0.4';
+
   final String baseUrl;
   final String token;
 
@@ -234,6 +236,7 @@ class ApiService {
         body: jsonEncode({
           'deviceInfo': {
             'clientName': 'Absorb',
+            'clientVersion': appVersion,
             'deviceId': deviceId,
             'deviceName': '${deviceManufacturer.isNotEmpty ? "$deviceManufacturer " : ""}$deviceModel'.trim(),
             'manufacturer': deviceManufacturer,
@@ -311,6 +314,21 @@ class ApiService {
     } catch (_) {}
   }
 
+  /// Get server progress for a single item.
+  /// GET /api/me/progress/:id
+  Future<Map<String, dynamic>?> getItemProgress(String itemId) async {
+    try {
+      final resp = await http.get(
+        Uri.parse('$_cleanBaseUrl/api/me/progress/$itemId'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 10));
+      if (resp.statusCode == 200) {
+        return jsonDecode(resp.body) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// Update media progress directly (for offline sync).
   /// PATCH /api/me/progress/:id
   Future<void> updateProgress(
@@ -381,19 +399,36 @@ class ApiService {
   /// Reset progress to zero.
   Future<bool> resetProgress(String itemId, double duration) async {
     try {
-      final body = {
-        'currentTime': 0,
-        'duration': duration,
-        'progress': 0,
-        'isFinished': false,
-      };
-      final resp = await http.patch(
+      // DELETE progress entry
+      await http.delete(
         Uri.parse('$_cleanBaseUrl/api/me/progress/$itemId'),
         headers: _headers,
-        body: jsonEncode(body),
       ).timeout(const Duration(seconds: 10));
-      debugPrint('[API] resetProgress status: ${resp.statusCode}');
-      return resp.statusCode >= 200 && resp.statusCode < 300;
+
+      // Start session at 0 and close — forces server to update position
+      final sessionData = await startPlaybackSession(itemId);
+      if (sessionData != null) {
+        final sessionId = sessionData['id'] as String?;
+        if (sessionId != null) {
+          await syncPlaybackSession(sessionId, currentTime: 0, duration: duration);
+          await closePlaybackSession(sessionId);
+        }
+      }
+
+      // PATCH last to hide from continue listening (after session sync)
+      await http.patch(
+        Uri.parse('$_cleanBaseUrl/api/me/progress/$itemId'),
+        headers: _headers,
+        body: jsonEncode({
+          'currentTime': 0,
+          'progress': 0,
+          'isFinished': false,
+          'hideFromContinueListening': true,
+          'lastUpdate': DateTime.now().millisecondsSinceEpoch,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      return true;
     } catch (e) {
       debugPrint('[API] resetProgress error: $e');
       return false;
@@ -492,7 +527,10 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final rating = data['rating'] as String?;
-        final ratingCount = data['ratingCount'];
+        final rawCount = data['ratingCount'];
+        final ratingCount = rawCount is num ? rawCount.toInt()
+            : rawCount is String ? (int.tryParse(rawCount) ?? 0)
+            : 0;
         if (rating != null) {
           return {
             'rating': double.tryParse(rating) ?? 0.0,

@@ -141,7 +141,7 @@ class ProgressSyncService {
   }
 
   /// Flush all pending syncs (call when coming back online).
-  /// Uses session-based sync for reliability since PATCH doesn't always work.
+  /// Compares local vs server timestamps — last-write-wins.
   Future<void> flushPendingSync({ApiService? api}) async {
     if (!_isOnline || api == null) return;
 
@@ -156,23 +156,48 @@ class ProgressSyncService {
       final data = await getLocal(itemId);
       if (data == null) continue;
 
-      final currentTime = (data['currentTime'] as num?)?.toDouble() ?? 0;
-      final duration = (data['duration'] as num?)?.toDouble() ?? 0;
-      if (currentTime <= 0) continue;
+      final localTime = (data['currentTime'] as num?)?.toDouble() ?? 0;
+      final localDuration = (data['duration'] as num?)?.toDouble() ?? 0;
+      final localTimestamp = (data['timestamp'] as num?)?.toInt() ?? 0;
+      if (localTime <= 0) continue;
 
       try {
-        // Start a temp session, sync, then close — most reliable method
+        // Check server's progress timestamp
+        final serverProgress = await api.getItemProgress(itemId);
+        if (serverProgress != null) {
+          final serverTimestamp = (serverProgress['lastUpdate'] as num?)?.toInt() ?? 0;
+          final serverTime = (serverProgress['currentTime'] as num?)?.toDouble() ?? 0;
+
+          if (serverTimestamp > localTimestamp) {
+            // Server is newer — pull server position down to local
+            debugPrint('[Sync] Server is newer for $itemId: server=${serverTime}s (${serverTimestamp}) vs local=${localTime}s (${localTimestamp}) — pulling');
+            await saveLocal(
+              itemId: itemId,
+              currentTime: serverTime,
+              duration: localDuration,
+              speed: (data['speed'] as num?)?.toDouble() ?? 1.0,
+            );
+            // Remove from pending since we just accepted server's version
+            final updated = prefs.getStringList('pending_syncs') ?? [];
+            updated.remove(itemId);
+            await prefs.setStringList('pending_syncs', updated);
+            continue;
+          }
+          debugPrint('[Sync] Local is newer for $itemId: local=${localTime}s (${localTimestamp}) vs server=${serverTime}s (${serverTimestamp}) — pushing');
+        }
+
+        // Local is newer (or no server data) — push to server
         final session = await api.startPlaybackSession(itemId);
         if (session != null) {
           final sessionId = session['id'] as String?;
           if (sessionId != null) {
             await api.syncPlaybackSession(
               sessionId,
-              currentTime: currentTime,
-              duration: duration,
+              currentTime: localTime,
+              duration: localDuration,
             );
             await api.closePlaybackSession(sessionId);
-            debugPrint('[Sync] Flushed $itemId via session: ${currentTime}s');
+            debugPrint('[Sync] Flushed $itemId via session: ${localTime}s');
           }
         }
 

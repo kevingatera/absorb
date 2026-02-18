@@ -667,7 +667,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ListTile(
                       leading: const Icon(Icons.info_outline_rounded),
                       title: const Text('App Version'),
-                      trailing: Text('1.0.3', style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                      trailing: Text('1.0.4', style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
                     ),
                     if (auth.serverSettings != null)
                       ListTile(

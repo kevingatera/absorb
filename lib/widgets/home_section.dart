@@ -34,7 +34,7 @@ class HomeSection extends StatelessWidget {
         isContinueListening ? 120 : (isAuthorSection ? 170 : 200);
 
     return Padding(
-      padding: const EdgeInsets.only(top: 20),
+      padding: const EdgeInsets.only(top: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -43,15 +43,21 @@ class HomeSection extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                Icon(icon, size: 20, color: cs.primary),
+                Icon(icon, size: 16, color: cs.primary.withOpacity(0.7)),
                 const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: tt.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: cs.onSurface.withOpacity(0.8),
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    title,
-                    style: tt.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: cs.onSurface,
-                    ),
+                  child: Container(
+                    height: 0.5,
+                    color: cs.outlineVariant.withOpacity(0.2),
                   ),
                 ),
               ],
@@ -99,8 +105,7 @@ class HomeSection extends StatelessWidget {
   }
 }
 
-/// A horizontal scrolling list that snaps items into place with
-/// a smooth deceleration curve (M3-style carousel feel).
+/// A horizontal scrolling list with smooth snap-to-card behavior.
 class _SnapScrollList extends StatefulWidget {
   final double cardWidth;
   final int itemCount;
@@ -133,16 +138,14 @@ class _SnapScrollListState extends State<_SnapScrollList> {
 
   @override
   Widget build(BuildContext context) {
-    final itemExtent = widget.cardWidth + 12; // card + gap
+    final itemExtent = widget.cardWidth + 12;
 
     return NotificationListener<ScrollEndNotification>(
       onNotification: (notification) {
-        // Snap to nearest item
         final offset = _controller.offset;
         final targetIndex = (offset / itemExtent).round();
         final targetOffset =
             (targetIndex * itemExtent).clamp(0.0, _controller.position.maxScrollExtent);
-
         if ((offset - targetOffset).abs() > 1) {
           Future.microtask(() {
             if (_controller.hasClients) {
