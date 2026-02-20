@@ -34,15 +34,27 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   // Tabs: 0=Library, 1=Home, 2=Absorbing (default), 3=Stats, 4=Settings
   int _currentIndex = 2;
   final _libraryKey = GlobalKey<LibraryScreenState>();
+  final List<int> _tabHistory = [2]; // start on Absorbing
 
   void _switchToAbsorbing() {
     if (mounted) {
-      setState(() => _currentIndex = 2);
+      _navigateTo(2);
       // Scroll to the currently playing book after the tab switch
       WidgetsBinding.instance.addPostFrameCallback((_) {
         AbsorbingScreen.scrollToActive();
       });
     }
+  }
+
+  void _navigateTo(int index) {
+    if (index == _currentIndex) return;
+    setState(() {
+      // Don't add duplicates back-to-back
+      if (_tabHistory.isEmpty || _tabHistory.last != _currentIndex) {
+        _tabHistory.add(_currentIndex);
+      }
+      _currentIndex = index;
+    });
   }
 
   late final _pages = [
@@ -110,11 +122,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        if (_currentIndex != 2) {
-          // Not on Absorbing — go there first
-          setState(() => _currentIndex = 2);
-        } else {
-          // On Absorbing — double-press to exit
+
+        // If on Library tab with active search, clear search first
+        if (_currentIndex == 0 &&
+            _libraryKey.currentState?.isSearchActive == true) {
+          _libraryKey.currentState?.clearSearch();
+          return;
+        }
+
+        // If on Absorbing tab (2) with no history to go back to, double-press to exit
+        if (_currentIndex == 2 && _tabHistory.isEmpty) {
           final now = DateTime.now();
           if (_lastBackPress != null &&
               now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
@@ -130,6 +147,32 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 ),
               );
           }
+          return;
+        }
+
+        // If there's history, go back
+        if (_tabHistory.isNotEmpty) {
+          setState(() {
+            _currentIndex = _tabHistory.removeLast();
+          });
+          return;
+        }
+
+        // Fallback: on any tab with no history, double-press to exit
+        final now = DateTime.now();
+        if (_lastBackPress != null &&
+            now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
+          SystemNavigator.pop();
+        } else {
+          _lastBackPress = now;
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(
+              const SnackBar(
+                content: Text('Press back again to exit'),
+                duration: Duration(seconds: 2),
+              ),
+            );
         }
       },
       child: Scaffold(
@@ -143,7 +186,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           NavigationBar(
             selectedIndex: _currentIndex,
             onDestinationSelected: (i) {
-              setState(() => _currentIndex = i);
+              _navigateTo(i);
               // Refresh data on switching to Library, Home, Absorbing, or Stats
               if (i == 0 || i == 1 || i == 2 || i == 3) _refreshData();
             },

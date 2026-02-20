@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.audiobookshelf_app"
+    namespace = "com.barnabas.absorb"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.audiobookshelf_app"
+        applicationId = "com.barnabas.absorb"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

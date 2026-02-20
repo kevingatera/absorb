@@ -242,6 +242,15 @@ class LibraryProvider extends ChangeNotifier {
         _startConnectivityMonitoring();
         _loadManualAbsorbing();
 
+        // If server was unreachable on startup, force offline mode
+        if (!auth.serverReachable) {
+          _networkOffline = true;
+          _buildOfflineSections();
+          _isLoading = false;
+          notifyListeners();
+          return;
+        }
+
         _buildProgressMap(auth);
         if (_api != null && !isOffline) {
           ProgressSyncService().flushPendingSync(api: _api!);

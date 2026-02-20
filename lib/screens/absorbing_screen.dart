@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -17,7 +18,7 @@ import '../services/playback_history_service.dart';
 import '../widgets/absorb_slider.dart';
 import '../widgets/absorb_title.dart';
 import 'app_shell.dart';
-import 'series_detail_screen.dart';
+import 'library_screen.dart';
 import 'settings_screen.dart'; // for PlayerSettings
 
 class AbsorbingScreen extends StatefulWidget {
@@ -273,7 +274,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                           scrollDirection: Axis.horizontal,
                           clipBehavior: Clip.none,
                           allowImplicitScrolling: true,
-                          physics: const BouncingScrollPhysics(),
+                          physics: const PageScrollPhysics(parent: ClampingScrollPhysics()),
                           itemCount: books.length,
                           itemBuilder: (_, i) => LayoutBuilder(
                             builder: (context, constraints) {
@@ -291,16 +292,18 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                                   }
                                   final double scaleX;
                                   if (distFromCenter >= 1.0) {
-                                    scaleX = 0.5;
+                                    scaleX = 0.85;
                                   } else {
-                                    scaleX = (1.0 - distFromCenter * 0.5).clamp(0.5, 1.0);
+                                    // Use easeOut curve for smoother transition
+                                    final t = Curves.easeOut.transform(1.0 - distFromCenter);
+                                    scaleX = 0.85 + (t * 0.15); // 0.85 → 1.0
                                   }
                                   // Calculate how much space the squeeze frees up, then translate toward center
                                   final squeezedWidth = cardWidth * scaleX;
                                   final freedSpace = cardWidth - squeezedWidth;
                                   // Pull card toward center by half the freed space
                                   final direction = rawDist > 0 ? 1.0 : (rawDist < 0 ? -1.0 : 0.0);
-                                  final translateX = direction * freedSpace * 0.5;
+                                  final translateX = direction * freedSpace * 0.45;
 
                                   return Transform(
                                     alignment: Alignment.center,
@@ -313,7 +316,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                                     ),
                                   );
                                 },
-                                child: _AbsorbingCard(key: ValueKey(books[i]['id'] as String? ?? '$i'), item: books[i], player: _player),
+                                child: RepaintBoundary(child: _AbsorbingCard(key: ValueKey(books[i]['id'] as String? ?? '$i'), item: books[i], player: _player)),
                               );
                             },
                           ),
@@ -504,7 +507,7 @@ class _AbsorbingCardState extends State<_AbsorbingCard> with AutomaticKeepAliveC
   }
 
   // Cache the blur filter to avoid recreating it every build
-  static final _blurFilter = ImageFilter.blur(sigmaX: 80, sigmaY: 80, tileMode: TileMode.decal);
+  static final _blurFilter = ImageFilter.blur(sigmaX: 40, sigmaY: 40, tileMode: TileMode.decal);
 
   @override
   Widget build(BuildContext context) {
@@ -2519,40 +2522,74 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
 
   Future<void> _loadItem() async {
     final auth = context.read<AuthProvider>();
+    final lib = context.read<LibraryProvider>();
     final api = auth.apiService;
-    if (api == null) return;
-    try {
-      final item = await api.getLibraryItem(widget.itemId);
-      if (mounted) setState(() { _item = item; _isLoading = false; });
 
-      // Fetch Audible rating
-      if (item != null && !context.read<LibraryProvider>().isOffline) {
-        final media = item['media'] as Map<String, dynamic>? ?? {};
-        final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-        final asin = metadata['asin'] as String?;
-        final title = metadata['title'] as String? ?? '';
-        final author = metadata['authorName'] as String?;
+    // Try server first
+    if (api != null && !lib.isOffline) {
+      try {
+        final item = await api.getLibraryItem(widget.itemId);
+        if (item != null && mounted) {
+          setState(() { _item = item; _isLoading = false; });
 
-        Map<String, dynamic>? rating;
-        // Try ASIN first
-        if (asin != null && asin.isNotEmpty) {
-          rating = await ApiService.getAudibleRating(asin);
-        }
-        // If no rating or 0 rating, try title+author search fallback
-        if ((rating == null || (rating['rating'] as num).toDouble() <= 0) &&
-            title.isNotEmpty && api != null) {
-          final fallback = await api.searchAudibleRating(title, author);
-          if (fallback != null && (fallback['rating'] as num).toDouble() > 0) {
-            rating = fallback;
+          // Fetch Audible rating
+          final media = item['media'] as Map<String, dynamic>? ?? {};
+          final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+          final asin = metadata['asin'] as String?;
+          final title = metadata['title'] as String? ?? '';
+          final author = metadata['authorName'] as String?;
+
+          Map<String, dynamic>? rating;
+          if (asin != null && asin.isNotEmpty) {
+            rating = await ApiService.getAudibleRating(asin);
           }
+          if ((rating == null || (rating['rating'] as num).toDouble() <= 0) &&
+              title.isNotEmpty) {
+            final fallback = await api.searchAudibleRating(title, author);
+            if (fallback != null && (fallback['rating'] as num).toDouble() > 0) {
+              rating = fallback;
+            }
+          }
+          if (rating != null && mounted) {
+            setState(() => _rating = rating);
+          }
+          return;
         }
-        if (rating != null && mounted) {
-          setState(() => _rating = rating);
-        }
+      } catch (_) {
+        // Server unreachable — fall through to offline
       }
-    } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
     }
+
+    // Offline fallback: build item from local download data
+    final dl = DownloadService().getInfo(widget.itemId);
+    if (dl.sessionData != null) {
+      try {
+        final session = jsonDecode(dl.sessionData!) as Map<String, dynamic>;
+        final localItem = session['libraryItem'] as Map<String, dynamic>?;
+        if (localItem != null && mounted) {
+          setState(() { _item = localItem; _isLoading = false; });
+          return;
+        }
+      } catch (_) {}
+    }
+    // Minimal fallback from DownloadInfo metadata
+    if (dl.title != null && mounted) {
+      setState(() {
+        _item = {
+          'id': widget.itemId,
+          'media': {
+            'metadata': {
+              'title': dl.title,
+              'authorName': dl.author ?? '',
+            },
+          },
+        };
+        _isLoading = false;
+      });
+      return;
+    }
+
+    if (mounted) setState(() => _isLoading = false);
   }
 
   String? get _coverUrl {
@@ -2869,12 +2906,15 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
 
   Future<void> _openSeries(BuildContext context, String? seriesId, String seriesName) async {
     if (seriesId == null) return;
-    final seriesMap = <String, dynamic>{
-      'id': seriesId,
-      'name': seriesName,
-    };
-    Navigator.pop(context); // close sheet
-    Navigator.push(context, MaterialPageRoute(builder: (_) => SeriesDetailScreen(series: seriesMap)));
+    final auth = context.read<AuthProvider>();
+    // Show series sheet on top of the detail sheet (don't close detail)
+    showSeriesBooksSheet(
+      context,
+      seriesName: seriesName,
+      seriesId: seriesId,
+      serverUrl: auth.serverUrl,
+      token: auth.token,
+    );
   }
 
   Future<void> _startAbsorb(BuildContext context, {required AuthProvider auth, required String title, required String author, required String? coverUrl, required double duration, required List<dynamic> chapters}) async {

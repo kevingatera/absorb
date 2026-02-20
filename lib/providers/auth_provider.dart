@@ -11,6 +11,7 @@ class AuthProvider extends ChangeNotifier {
   String? _defaultLibraryId;
   Map<String, dynamic>? _userJson;
   Map<String, dynamic>? _serverSettings;
+  bool _serverReachable = true;
 
   bool _isLoading = true;
   String? _errorMessage;
@@ -18,6 +19,7 @@ class AuthProvider extends ChangeNotifier {
   // Getters
   bool get isAuthenticated => _token != null && _serverUrl != null;
   bool get isLoading => _isLoading;
+  bool get serverReachable => _serverReachable;
   String? get token => _token;
   String? get serverUrl => _serverUrl;
   String? get username => _username;
@@ -35,8 +37,10 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Try to restore a saved session from SharedPreferences.
+  /// If the server is unreachable, still restore credentials so offline mode works.
   Future<void> tryRestoreSession() async {
     _isLoading = true;
+    _serverReachable = true;
     notifyListeners();
 
     try {
@@ -47,17 +51,19 @@ class AuthProvider extends ChangeNotifier {
       final savedLibraryId = prefs.getString('default_library_id');
 
       if (savedUrl != null && savedToken != null) {
-        // Verify token is still valid by pinging
+        // Always restore credentials so we can at least go offline
+        _serverUrl = savedUrl;
+        _token = savedToken;
+        _username = savedUsername;
+        _defaultLibraryId = savedLibraryId;
+
+        // Check if server is actually reachable
         final reachable = await ApiService.pingServer(savedUrl);
-        if (reachable) {
-          _serverUrl = savedUrl;
-          _token = savedToken;
-          _username = savedUsername;
-          _defaultLibraryId = savedLibraryId;
-        }
+        _serverReachable = reachable;
       }
     } catch (_) {
-      // Ignore restore errors
+      // Restore failed — but if we already set credentials, keep them
+      _serverReachable = false;
     }
 
     _isLoading = false;
