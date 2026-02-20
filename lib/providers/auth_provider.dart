@@ -145,6 +145,49 @@ class AuthProvider extends ChangeNotifier {
     return true;
   }
 
+  /// Login using OIDC callback response data.
+  /// [result] is the JSON from /auth/openid/callback — same shape as /login response.
+  Future<bool> loginWithOidc({
+    required String serverUrl,
+    required Map<String, dynamic> result,
+  }) async {
+    _errorMessage = null;
+
+    String url = serverUrl.trim();
+    if (url.endsWith('/')) url = url.substring(0, url.length - 1);
+
+    final user = result['user'] as Map<String, dynamic>?;
+    if (user == null) {
+      _errorMessage = 'SSO returned an unexpected response';
+      notifyListeners();
+      return false;
+    }
+
+    _serverUrl = url;
+    _token = user['token'] as String?;
+    _username = user['username'] as String?;
+    _userId = user['id'] as String?;
+    _defaultLibraryId = result['userDefaultLibraryId'] as String?;
+    _userJson = user;
+    _serverSettings = result['serverSettings'] as Map<String, dynamic>?;
+    _serverReachable = true;
+
+    // Persist session
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('server_url', _serverUrl!);
+      if (_token != null) await prefs.setString('token', _token!);
+      if (_username != null) await prefs.setString('username', _username!);
+      if (_defaultLibraryId != null) {
+        await prefs.setString('default_library_id', _defaultLibraryId!);
+      }
+    } catch (_) {}
+
+    _isLoading = false;
+    notifyListeners();
+    return true;
+  }
+
   /// Logout and clear stored session.
   Future<void> logout() async {
     // Stop any active playback

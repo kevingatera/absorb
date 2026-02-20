@@ -25,6 +25,15 @@
                 <action android:name="com.ryanheise.audioservice.NOTIFICATION_CLICK"/>
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
+            
+            <!-- oidc -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="audiobookshelf" android:host="oauth" />
+            </intent-filter>
+
         </activity>
 
         <!-- audio_service: background playback and media notification -->

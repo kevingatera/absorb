@@ -3,8 +3,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
+import 'package:app_links/app_links.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../services/oidc_service.dart';
 import '../widgets/absorb_wave_icon.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -35,6 +37,11 @@ class _LoginScreenState extends State<LoginScreen>
   // Login error
   String? _loginError;
 
+  // OIDC state
+  OidcConfig? _oidcConfig;
+  bool _isOidcLoading = false;
+  StreamSubscription? _linkSub;
+
   // App version
   String _appVersion = '';
 
@@ -60,6 +67,57 @@ class _LoginScreenState extends State<LoginScreen>
     _animController.forward();
     _serverController.addListener(_onServerChanged);
     _loadVersion();
+    _initDeepLinkListener();
+  }
+
+  /// Listen for deep links (audiobookshelf://oauth callback).
+  void _initDeepLinkListener() {
+    final appLinks = AppLinks();
+    _linkSub = appLinks.uriLinkStream.listen((uri) {
+      debugPrint('[Login] Deep link received: $uri');
+      if (uri.scheme == 'audiobookshelf' && uri.host == 'oauth') {
+        _handleOidcCallback(uri);
+      }
+    });
+  }
+
+  /// Handle the OIDC callback URI from deep link.
+  Future<void> _handleOidcCallback(Uri uri) async {
+    final oidc = OidcService();
+    if (!oidc.isWaitingForCallback) {
+      debugPrint('[Login] No OIDC flow in progress, ignoring callback');
+      return;
+    }
+
+    setState(() {
+      _isOidcLoading = true;
+      _loginError = null;
+    });
+
+    final result = await oidc.handleCallback(uri);
+    if (result != null && mounted) {
+      final serverText = _serverController.text.trim();
+      final cleanUrl = serverText.replaceAll(RegExp(r'^https?://'), '');
+      final fullUrl = '$_protocol$cleanUrl';
+
+      final auth = context.read<AuthProvider>();
+      final success = await auth.loginWithOidc(
+        serverUrl: fullUrl,
+        result: result,
+      );
+
+      if (mounted) {
+        setState(() => _isOidcLoading = false);
+        if (!success) {
+          setState(() => _loginError = auth.errorMessage ?? 'SSO login failed');
+        }
+      }
+    } else if (mounted) {
+      setState(() {
+        _isOidcLoading = false;
+        _loginError = 'SSO authentication failed. Please try again.';
+      });
+    }
   }
 
   Future<void> _loadVersion() async {
@@ -72,11 +130,13 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   void dispose() {
     _debounce?.cancel();
+    _linkSub?.cancel();
     _animController.dispose();
     _serverController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
     _usernameFocus.dispose();
+    OidcService().cancel();
     super.dispose();
   }
 
@@ -118,9 +178,17 @@ class _LoginScreenState extends State<LoginScreen>
         _serverChecking = false;
         _serverValid = ok;
         _serverError = ok ? null : 'Could not reach server';
+        if (!ok) _oidcConfig = null;
       });
 
       if (ok) {
+        // Also check if OIDC is available
+        OidcService.checkOidcEnabled(fullUrl).then((config) {
+          if (mounted && _serverController.text.trim() == text) {
+            setState(() => _oidcConfig = config);
+          }
+        });
+
         Future.delayed(const Duration(milliseconds: 200), () {
           if (mounted) _usernameFocus.requestFocus();
         });
@@ -131,6 +199,7 @@ class _LoginScreenState extends State<LoginScreen>
         _serverChecking = false;
         _serverValid = false;
         _serverError = 'Could not reach server';
+        _oidcConfig = null;
       });
     }
   }
@@ -163,6 +232,29 @@ class _LoginScreenState extends State<LoginScreen>
         });
       }
     }
+  }
+
+  Future<void> _handleOidcLogin() async {
+    if (!_serverValid) return;
+
+    setState(() {
+      _isOidcLoading = true;
+      _loginError = null;
+    });
+
+    final serverText = _serverController.text.trim();
+    final cleanUrl = serverText.replaceAll(RegExp(r'^https?://'), '');
+    final fullUrl = '$_protocol$cleanUrl';
+
+    final error = await OidcService().startLogin(fullUrl);
+    if (error != null && mounted) {
+      setState(() {
+        _isOidcLoading = false;
+        _loginError = error;
+      });
+    }
+    // If no error, we're waiting for the deep link callback.
+    // _isOidcLoading stays true until callback arrives.
   }
 
   @override
@@ -533,7 +625,7 @@ class _LoginScreenState extends State<LoginScreen>
           width: double.infinity,
           height: 52,
           child: FilledButton(
-            onPressed: _isConnecting ? null : _handleLogin,
+            onPressed: _isConnecting || _isOidcLoading ? null : _handleLogin,
             style: FilledButton.styleFrom(
               backgroundColor: cs.primary,
               foregroundColor: cs.onPrimary,
@@ -565,6 +657,48 @@ class _LoginScreenState extends State<LoginScreen>
             ),
           ),
         ),
+
+        // SSO / OIDC button
+        if (_oidcConfig != null && _oidcConfig!.enabled) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(child: Divider(color: cs.outlineVariant.withOpacity(0.2))),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Text('or', style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant.withOpacity(0.5))),
+              ),
+              Expanded(child: Divider(color: cs.outlineVariant.withOpacity(0.2))),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: OutlinedButton.icon(
+              onPressed: _isConnecting || _isOidcLoading ? null : _handleOidcLogin,
+              icon: _isOidcLoading
+                  ? SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
+                    )
+                  : Icon(Icons.login_rounded, size: 20, color: cs.primary),
+              label: Text(
+                _isOidcLoading ? 'Waiting for SSO...' : _oidcConfig!.buttonText,
+                style: tt.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: cs.primary,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: cs.primary.withOpacity(0.3)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
