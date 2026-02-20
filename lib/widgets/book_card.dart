@@ -21,7 +21,7 @@ class BookCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-    final lib = context.read<LibraryProvider>();
+    final lib = context.watch<LibraryProvider>();
 
     final itemId = item['id'] as String?;
     final media = item['media'] as Map<String, dynamic>? ?? {};

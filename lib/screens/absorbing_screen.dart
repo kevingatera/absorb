@@ -95,6 +95,13 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     if (mounted) setState(() => _isSyncing = false);
   }
 
+  /// Pull-to-refresh: sync progress to/from server without stopping playback.
+  Future<void> _pullRefresh() async {
+    final lib = context.read<LibraryProvider>();
+    if (lib.isOffline) return;
+    await lib.refresh();
+  }
+
   List<Map<String, dynamic>> _getAbsorbingBooks(LibraryProvider lib) {
     final items = <Map<String, dynamic>>[];
     final seen = <String>{};
@@ -221,39 +228,78 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Stop & Sync button
-                  AnimatedOpacity(
-                    opacity: _player.hasBook ? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 300),
-                    child: IgnorePointer(
-                      ignoring: !_player.hasBook,
-                      child: GestureDetector(
-                        onTap: () => _stopAndRefresh(lib),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.06),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.white.withOpacity(0.08)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_isSyncing) ...[
-                                const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white38)),
-                                const SizedBox(width: 6),
-                                const Text('Syncing…', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
-                              ] else ...[
-                                const Icon(Icons.stop_rounded, size: 14, color: Colors.white38),
-                                const SizedBox(width: 4),
-                                Text(effectiveOffline ? 'Stop' : 'Stop & Sync', style: const TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
-                              ],
+                  // Unified button: "Sync" when idle, "Stop & Sync" when playing
+                  if (!effectiveOffline)
+                    GestureDetector(
+                      onTap: _isSyncing ? null : () {
+                        if (_player.hasBook) {
+                          _stopAndRefresh(lib);
+                        } else {
+                          () async {
+                            setState(() => _isSyncing = true);
+                            await _pullRefresh();
+                            if (mounted) setState(() => _isSyncing = false);
+                          }();
+                        }
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.white.withOpacity(0.08)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (_isSyncing) ...[
+                              const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white38)),
+                              const SizedBox(width: 6),
+                              const Text('Syncing…', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
+                            ] else if (_player.hasBook) ...[
+                              const Icon(Icons.stop_rounded, size: 14, color: Colors.white38),
+                              const SizedBox(width: 4),
+                              const Text('Stop & Sync', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
+                            ] else ...[
+                              const Icon(Icons.sync_rounded, size: 14, color: Colors.white38),
+                              const SizedBox(width: 4),
+                              const Text('Sync', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
                             ],
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    // Offline: just stop button (no sync)
+                    AnimatedOpacity(
+                      opacity: _player.hasBook ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 300),
+                      child: IgnorePointer(
+                        ignoring: !_player.hasBook,
+                        child: GestureDetector(
+                          onTap: () => _stopAndRefresh(lib),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.06),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.white.withOpacity(0.08)),
+                            ),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.stop_rounded, size: 14, color: Colors.white38),
+                                SizedBox(width: 4),
+                                Text('Stop', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),

@@ -569,12 +569,32 @@ class AudioPlayerService extends ChangeNotifier {
         if (sessionData != null) {
           _playbackSessionId = sessionData['id'] as String?;
           debugPrint('[Player] Got server session for local playback: $_playbackSessionId');
-          // If no position yet, use server's saved position
-          if (startTime == 0) {
-            final serverPos = (sessionData['currentTime'] as num?)?.toDouble() ?? 0;
-            if (serverPos > 0) {
+
+          // Compare server position vs local position — last-write-wins
+          final serverPos = (sessionData['currentTime'] as num?)?.toDouble() ?? 0;
+          if (serverPos > 0) {
+            // Get local timestamp to compare
+            final localData = await _progressSync.getLocal(itemId);
+            final localTimestamp = (localData?['timestamp'] as num?)?.toInt() ?? 0;
+
+            // Server session has updatedAt in epoch ms
+            final serverTimestamp = (sessionData['updatedAt'] as num?)?.toInt() ?? 0;
+
+            if (serverTimestamp > localTimestamp && (serverPos - startTime).abs() > 1.0) {
+              debugPrint('[Player] Server position is newer: server=${serverPos}s ($serverTimestamp) vs local=${startTime}s ($localTimestamp) — using server');
               startTime = serverPos;
-              debugPrint('[Player] Resuming from server position: ${startTime}s');
+              // Update local to match
+              await _progressSync.saveLocal(
+                itemId: itemId,
+                currentTime: serverPos,
+                duration: totalDuration,
+                speed: 1.0,
+              );
+            } else if (startTime == 0 && serverPos > 0) {
+              debugPrint('[Player] No local position, using server: ${serverPos}s');
+              startTime = serverPos;
+            } else {
+              debugPrint('[Player] Local position is newer: local=${startTime}s ($localTimestamp) vs server=${serverPos}s ($serverTimestamp) — keeping local');
             }
           }
         } else {
@@ -684,12 +704,21 @@ class AudioPlayerService extends ChangeNotifier {
       return false;
     }
 
-    // If no position from local cache, use the server's saved position
-    if (startTime == 0) {
-      final serverPos = (sessionData['currentTime'] as num?)?.toDouble() ?? 0;
-      if (serverPos > 0) {
+    // Compare server position vs local position — last-write-wins
+    final serverPos = (sessionData['currentTime'] as num?)?.toDouble() ?? 0;
+    if (serverPos > 0) {
+      final localData = await _progressSync.getLocal(itemId);
+      final localTimestamp = (localData?['timestamp'] as num?)?.toInt() ?? 0;
+      final serverTimestamp = (sessionData['updatedAt'] as num?)?.toInt() ?? 0;
+
+      if (serverTimestamp > localTimestamp && (serverPos - startTime).abs() > 1.0) {
+        debugPrint('[Player] Server position is newer: server=${serverPos}s ($serverTimestamp) vs local=${startTime}s ($localTimestamp) — using server');
         startTime = serverPos;
-        debugPrint('[Player] Resuming from server position: ${startTime}s');
+      } else if (startTime == 0) {
+        debugPrint('[Player] No local position, using server: ${serverPos}s');
+        startTime = serverPos;
+      } else {
+        debugPrint('[Player] Local position is newer: local=${startTime}s ($localTimestamp) vs server=${serverPos}s ($serverTimestamp) — keeping local');
       }
     }
 

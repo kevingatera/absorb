@@ -401,11 +401,36 @@ class LibraryProvider extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    // Flush local progress to server first, then pull fresh data
+    if (_api != null) {
+      await ProgressSyncService().flushPendingSync(api: _api!);
+    }
     await Future.wait([
       loadPersonalizedView(),
       _refreshProgress(),
     ]);
-    refreshLocalProgress();
+    // Clear stale local overrides — server data is now authoritative
+    _localProgressOverrides.clear();
+    // Update local SharedPreferences from fresh server data so they stay in sync
+    final sync = ProgressSyncService();
+    for (final entry in _progressMap.entries) {
+      final itemId = entry.key;
+      final mp = entry.value;
+      final currentTime = (mp['currentTime'] as num?)?.toDouble() ?? 0;
+      final duration = (mp['duration'] as num?)?.toDouble() ?? 0;
+      if (duration > 0 && currentTime > 0) {
+        await sync.saveLocal(
+          itemId: itemId,
+          currentTime: currentTime,
+          duration: duration,
+          speed: 1.0,
+        );
+      }
+    }
+    // Clear pending syncs since we just pulled fresh server data
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('pending_syncs', []);
+    notifyListeners();
   }
 
   /// Fetch series for the selected library.
