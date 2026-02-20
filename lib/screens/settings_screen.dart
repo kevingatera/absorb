@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:file_picker/file_picker.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
@@ -28,6 +29,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _shakeAddMinutes = 5;
   bool _autoContinueSeries = true;
   bool _loaded = false;
+  String _downloadLocationLabel = 'App Internal Storage (Default)';
+  int _totalDownloadSizeBytes = 0;
 
   @override
   void initState() {
@@ -46,6 +49,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final shake = await PlayerSettings.getShakeToResetSleep();
     final shakeMins = await PlayerSettings.getShakeAddMinutes();
     final autoSeries = await PlayerSettings.getAutoContinueSeries();
+    final dlLabel = await DownloadService().downloadLocationLabel;
+    final dlSize = await DownloadService().totalDownloadSize;
     if (mounted) setState(() {
       _rewindSettings = s;
       _defaultSpeed = speed;
@@ -57,6 +62,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _shakeToResetSleep = shake;
       _shakeAddMinutes = shakeMins;
       _autoContinueSeries = autoSeries;
+      _downloadLocationLabel = dlLabel;
+      _totalDownloadSizeBytes = dlSize;
       _loaded = true;
     });
   }
@@ -201,7 +208,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final lib = context.watch<LibraryProvider>();
 
     return Scaffold(
-      body: CustomScrollView(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            stops: const [0.0, 0.4, 0.7, 1.0],
+            colors: [
+              cs.primary.withOpacity(0.12),
+              cs.primary.withOpacity(0.04),
+              cs.surface,
+              cs.surface,
+            ],
+          ),
+        ),
+        child: CustomScrollView(
         slivers: [
           SliverAppBar.large(
             title: Column(
@@ -376,7 +397,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SwitchListTile(
                       title: const Text('Full book scrubber'),
                       subtitle: Text(
-                        _showBookSlider ? 'Drag across the whole book' : 'Simple progress bar',
+                        _showBookSlider ? 'On — seekable slider across entire book' : 'Off — progress bar only',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _showBookSlider,
                       onChanged: _loaded ? (v) {
@@ -388,7 +409,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SwitchListTile(
                       title: const Text('Speed-adjusted time'),
                       subtitle: Text(
-                        _speedAdjustedTime ? 'Shows real finish time at your speed' : 'Shows raw audio length',
+                        _speedAdjustedTime ? 'On — remaining time reflects playback speed' : 'Off — showing raw audio duration',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _speedAdjustedTime,
                       onChanged: _loaded ? (v) {
@@ -400,7 +421,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SwitchListTile(
                       title: const Text('Auto-absorb next in series'),
                       subtitle: Text(
-                        _autoContinueSeries ? 'Queues the next book automatically' : 'You choose what\'s next',
+                        _autoContinueSeries ? 'On — next book in series added to Absorbing' : 'Off',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _autoContinueSeries,
                       onChanged: _loaded ? (v) {
@@ -414,8 +435,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: const Text('Auto-rewind on resume'),
                       subtitle: Text(
                         _rewindSettings.enabled
-                            ? 'Rewinds a bit so you don\'t miss anything'
-                            : 'Jump right back in, no rewinding',
+                            ? 'On — ${_rewindSettings.minRewind.round()}s to ${_rewindSettings.maxRewind.round()}s based on pause length'
+                            : 'Off',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _rewindSettings.enabled,
                       onChanged: _loaded ? (v) => _saveRewind(
@@ -510,9 +531,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   cs: cs,
                   children: [
                     SwitchListTile(
-                      title: const Text('Shake to snooze'),
+                      title: const Text('Shake to add time'),
                       subtitle: Text(
-                        _shakeToResetSleep ? 'Shake your phone to add more time' : 'Strict bedtime mode',
+                        _shakeToResetSleep ? 'On — adds $_shakeAddMinutes min per shake' : 'Off',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _shakeToResetSleep,
                       onChanged: _loaded ? (v) {
@@ -556,7 +577,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SwitchListTile(
                       title: const Text('Download over Wi-Fi only'),
                       subtitle: Text(
-                        _wifiOnlyDownloads ? 'Saving your data plan' : 'Downloads anywhere',
+                        _wifiOnlyDownloads ? 'On — mobile data blocked for downloads' : 'Off — downloads on any connection',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _wifiOnlyDownloads,
                       onChanged: _loaded ? (v) {
@@ -564,6 +585,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         PlayerSettings.setWifiOnlyDownloads(v);
                       } : null,
                     ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    ListTile(
+                      leading: Icon(Icons.folder_outlined, color: cs.primary),
+                      title: const Text('Download location'),
+                      subtitle: Text(
+                        _downloadLocationLabel,
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _pickDownloadLocation(context, cs, tt),
+                    ),
+                    if (_totalDownloadSizeBytes > 0) ...[
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      ListTile(
+                        leading: Icon(Icons.data_usage_rounded, color: cs.onSurfaceVariant),
+                        title: const Text('Storage used'),
+                        subtitle: Text(
+                          _formatBytes(_totalDownloadSizeBytes),
+                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      ),
+                    ],
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     ListTile(
                       leading: Icon(Icons.storage_rounded, color: cs.primary),
@@ -667,7 +711,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ListTile(
                       leading: const Icon(Icons.info_outline_rounded),
                       title: const Text('App Version'),
-                      trailing: Text('1.0.4', style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                      trailing: Text('1.1.0', style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
                     ),
                     if (auth.serverSettings != null)
                       ListTile(
@@ -705,6 +749,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -752,6 +797,153 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 fontWeight: FontWeight.w600,
                 color: isSkipped ? cs.onSurfaceVariant.withOpacity(0.3) : cs.primary)),
         ],
+      ),
+    );
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  Future<void> _pickDownloadLocation(BuildContext context, ColorScheme cs, TextTheme tt) async {
+    final dl = DownloadService();
+    final hasExistingDownloads = dl.downloadedItems.isNotEmpty;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: cs.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: cs.onSurfaceVariant.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 16),
+            Text('Download Location',
+              style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text('Choose where audiobooks are saved',
+              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+            const SizedBox(height: 20),
+
+            // Current location display
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: cs.primaryContainer.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: cs.primary.withOpacity(0.2)),
+              ),
+              child: Row(children: [
+                Icon(Icons.folder_rounded, color: cs.primary, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Current location',
+                        style: tt.labelSmall?.copyWith(
+                          color: cs.primary, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(_downloadLocationLabel,
+                        style: tt.bodySmall?.copyWith(color: cs.onSurface),
+                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 16),
+
+            if (hasExistingDownloads)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: cs.errorContainer.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: cs.error.withOpacity(0.2)),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.info_outline_rounded, size: 16, color: cs.error),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Existing downloads stay in their current location. Only new downloads use the new path.',
+                        style: tt.bodySmall?.copyWith(
+                          color: cs.error.withOpacity(0.8), fontSize: 11),
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+
+            // Choose folder button
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.folder_open_rounded),
+                label: const Text('Choose folder'),
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  final result = await FilePicker.platform.getDirectoryPath(
+                    dialogTitle: 'Choose download folder',
+                  );
+                  if (result != null) {
+                    await dl.setCustomDownloadPath(result);
+                    final label = await dl.downloadLocationLabel;
+                    if (mounted) {
+                      setState(() => _downloadLocationLabel = label);
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text('Download location set to $label'),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      ));
+                    }
+                  }
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Reset to default button
+            if (dl.customDownloadPath != null)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.restart_alt_rounded),
+                  label: const Text('Reset to default'),
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await dl.setCustomDownloadPath(null);
+                    final label = await dl.downloadLocationLabel;
+                    if (mounted) {
+                      setState(() => _downloadLocationLabel = label);
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text('Reset to default storage'),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      ));
+                    }
+                  },
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

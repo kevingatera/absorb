@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../widgets/absorb_title.dart';
+import '../widgets/absorb_wave_icon.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -74,7 +75,21 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            stops: const [0.0, 0.4, 0.7, 1.0],
+            colors: [
+              cs.primary.withOpacity(0.12),
+              cs.primary.withOpacity(0.04),
+              Colors.black,
+              Colors.black,
+            ],
+          ),
+        ),
+        child: SafeArea(
         child: _isLoading
             ? const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white24))
             : _stats == null
@@ -91,6 +106,7 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
                       builder: (_, __) => _buildContent(cs, tt),
                     ),
                   ),
+      ),
       ),
     );
   }
@@ -371,6 +387,7 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
       final appLabel = clientName.isNotEmpty ? clientName : 'Unknown Client';
 
       // Pick an icon based on client name
+      final isAbsorb = clientName.toLowerCase().contains('absorb');
       final icon = _clientIcon(clientName);
       final iconColor = _clientColor(clientName);
 
@@ -391,7 +408,11 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
                 color: iconColor.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(icon, size: 18, color: iconColor.withOpacity(0.8)),
+              child: Center(
+                child: isAbsorb
+                    ? AbsorbWaveIcon(size: 20, color: iconColor.withOpacity(0.8))
+                    : Icon(icon, size: 18, color: iconColor.withOpacity(0.8)),
+              ),
             ),
             const SizedBox(width: 12),
             // Title + author + app
@@ -403,7 +424,9 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
                   style: tt.labelSmall?.copyWith(color: Colors.white30, fontSize: 10)),
               const SizedBox(height: 4),
               Row(children: [
-                Icon(icon, size: 10, color: iconColor.withOpacity(0.5)),
+                isAbsorb
+                    ? AbsorbWaveIcon(size: 10, color: iconColor.withOpacity(0.5))
+                    : Icon(icon, size: 10, color: iconColor.withOpacity(0.5)),
                 const SizedBox(width: 4),
                 Flexible(child: Text(
                   deviceStr.isNotEmpty ? '$appLabel · $deviceStr' : appLabel,

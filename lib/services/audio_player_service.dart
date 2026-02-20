@@ -528,7 +528,7 @@ class AudioPlayerService extends ChangeNotifier {
       }
 
       // Restore speed
-      if (currentSpeed != 1.0) await _player!.setSpeed(currentSpeed);
+      await _player!.setSpeed(currentSpeed);
 
       // Resume if was playing
       if (wasPlaying) _player!.play();
@@ -642,12 +642,12 @@ class AudioPlayerService extends ChangeNotifier {
       }
 
       _pushMediaItem(itemId, title, author, coverUrl, totalDuration);
-      // Apply per-book speed, falling back to default speed
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
-      if (speed != 1.0) await _player!.setSpeed(speed);
-      notifyListeners();
+      await _player!.setSpeed(speed);
+      debugPrint('[Player] Starting local playback at ${speed}x');
       _player!.play();
+      notifyListeners();
       _setupSync();
       return true;
     } catch (e, stack) {
@@ -732,12 +732,12 @@ class AudioPlayerService extends ChangeNotifier {
       }
 
       _pushMediaItem(itemId, title, author, coverUrl, totalDuration);
-      // Apply per-book speed, falling back to default speed
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
-      if (speed != 1.0) await _player!.setSpeed(speed);
-      notifyListeners();
+      await _player!.setSpeed(speed);
+      debugPrint('[Player] Starting stream playback at ${speed}x');
       _player!.play();
+      notifyListeners();
       _setupSync();
       return true;
     } catch (e, stack) {
@@ -1005,9 +1005,11 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   Future<void> setSpeed(double s) async {
-    await _player?.setSpeed(s);
+    if (_player == null) return;
+    debugPrint('[Service] setSpeed(${s}x) — before: ${_player!.speed}x');
+    await _player!.setSpeed(s);
+    debugPrint('[Service] setSpeed done — after: ${_player!.speed}x');
     _logEvent(PlaybackEventType.speedChange, detail: '${s.toStringAsFixed(2)}x');
-    // Persist speed for this specific book
     if (_currentItemId != null) {
       PlayerSettings.setBookSpeed(_currentItemId!, s);
     }

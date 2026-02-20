@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const appVersion = '1.0.4';
+  static const appVersion = '1.1.0';
 
   final String baseUrl;
   final String token;

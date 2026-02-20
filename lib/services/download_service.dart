@@ -96,6 +96,71 @@ class DownloadService extends ChangeNotifier {
   final Map<String, DownloadInfo> _downloads = {};
   String? _activeDownloadId;
   http.Client? _httpClient;
+  String? _customDownloadPath;
+
+  /// The current download directory path, or null if using default.
+  String? get customDownloadPath => _customDownloadPath;
+
+  /// Get the effective download base directory.
+  Future<String> get downloadBasePath async {
+    if (_customDownloadPath != null && _customDownloadPath!.isNotEmpty) {
+      return _customDownloadPath!;
+    }
+    final appDir = await getApplicationDocumentsDirectory();
+    return '${appDir.path}/downloads';
+  }
+
+  /// Set a custom download location. Pass null to revert to default.
+  Future<void> setCustomDownloadPath(String? path) async {
+    _customDownloadPath = path;
+    final prefs = await SharedPreferences.getInstance();
+    if (path != null && path.isNotEmpty) {
+      await prefs.setString('custom_download_path', path);
+    } else {
+      await prefs.remove('custom_download_path');
+    }
+    notifyListeners();
+  }
+
+  /// Get a human-readable label for the current download location.
+  Future<String> get downloadLocationLabel async {
+    if (_customDownloadPath != null && _customDownloadPath!.isNotEmpty) {
+      // Shorten the path for display
+      final path = _customDownloadPath!;
+      // Try to show a friendly path relative to common roots
+      if (path.contains('/emulated/0/')) {
+        return path.split('/emulated/0/').last;
+      }
+      if (path.contains('/storage/')) {
+        return path.split('/storage/').last;
+      }
+      // Last two segments
+      final segments = path.split('/').where((s) => s.isNotEmpty).toList();
+      if (segments.length >= 2) {
+        return '${segments[segments.length - 2]}/${segments.last}';
+      }
+      return path;
+    }
+    return 'App Internal Storage (Default)';
+  }
+
+  /// Calculate total size of all downloaded files.
+  Future<int> get totalDownloadSize async {
+    int total = 0;
+    for (final info in _downloads.values) {
+      if (info.status == DownloadStatus.downloaded) {
+        for (final path in info.localPaths) {
+          try {
+            final file = File(path);
+            if (file.existsSync()) {
+              total += file.lengthSync();
+            }
+          } catch (_) {}
+        }
+      }
+    }
+    return total;
+  }
 
   DownloadInfo getInfo(String itemId) =>
       _downloads[itemId] ?? DownloadInfo(itemId: itemId);
@@ -117,6 +182,7 @@ class DownloadService extends ChangeNotifier {
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
+    _customDownloadPath = prefs.getString('custom_download_path');
     final json = prefs.getString('downloads');
     if (json != null) {
       try {
@@ -254,8 +320,8 @@ class DownloadService extends ChangeNotifier {
         throw Exception('No audio tracks');
       }
 
-      final appDir = await getApplicationDocumentsDirectory();
-      final bookDir = Directory('${appDir.path}/downloads/$itemId');
+      final basePath = await downloadBasePath;
+      final bookDir = Directory('$basePath/$itemId');
       if (!bookDir.existsSync()) {
         bookDir.createSync(recursive: true);
       }
@@ -415,8 +481,8 @@ class DownloadService extends ChangeNotifier {
     }
 
     try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final bookDir = Directory('${appDir.path}/downloads/$itemId');
+      final basePath = await downloadBasePath;
+      final bookDir = Directory('$basePath/$itemId');
       if (bookDir.existsSync()) bookDir.deleteSync(recursive: true);
     } catch (_) {}
 

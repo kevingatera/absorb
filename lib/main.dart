@@ -14,9 +14,16 @@ import 'services/download_notification_service.dart';
 import 'services/progress_sync_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/app_shell.dart';
+import 'widgets/absorb_wave_icon.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Lock to portrait — no landscape support
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
 
   // Dark status bar to match Absorb theme
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -209,6 +216,11 @@ class _AuthGateState extends State<AuthGate> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              AbsorbWaveIcon(
+                size: 48,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(height: 20),
               Text(
                 'A B S O R B',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(

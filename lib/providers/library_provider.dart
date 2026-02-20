@@ -240,6 +240,7 @@ class LibraryProvider extends ChangeNotifier {
       // Must complete before loading libraries so offline state is correct
       restoreOfflineMode().then((_) {
         _startConnectivityMonitoring();
+        _loadManualAbsorbing();
 
         _buildProgressMap(auth);
         if (_api != null && !isOffline) {
@@ -432,5 +433,57 @@ class LibraryProvider extends ChangeNotifier {
     // Fallback: check download info for cached cover URL
     final dl = DownloadService().getInfo(itemId);
     return dl.coverUrl;
+  }
+
+  // ── Manual Absorbing List ──
+
+  Set<String> _manualAbsorbAdds = {};
+  Set<String> _manualAbsorbRemoves = {};
+
+  Set<String> get manualAbsorbAdds => _manualAbsorbAdds;
+  Set<String> get manualAbsorbRemoves => _manualAbsorbRemoves;
+
+  Future<void> _loadManualAbsorbing() async {
+    final prefs = await SharedPreferences.getInstance();
+    _manualAbsorbAdds = (prefs.getStringList('absorbing_manual_adds') ?? []).toSet();
+    _manualAbsorbRemoves = (prefs.getStringList('absorbing_manual_removes') ?? []).toSet();
+  }
+
+  Future<void> _saveManualAbsorbing() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('absorbing_manual_adds', _manualAbsorbAdds.toList());
+    await prefs.setStringList('absorbing_manual_removes', _manualAbsorbRemoves.toList());
+  }
+
+  /// Add a book to the absorbing list manually.
+  Future<void> addToAbsorbing(String itemId) async {
+    _manualAbsorbAdds.add(itemId);
+    _manualAbsorbRemoves.remove(itemId);
+    await _saveManualAbsorbing();
+    notifyListeners();
+  }
+
+  /// Remove a book from the absorbing list manually.
+  Future<void> removeFromAbsorbing(String itemId) async {
+    _manualAbsorbRemoves.add(itemId);
+    _manualAbsorbAdds.remove(itemId);
+    await _saveManualAbsorbing();
+    notifyListeners();
+  }
+
+  /// Check if a book is manually added or on the absorbing page.
+  bool isOnAbsorbingList(String itemId) {
+    if (_manualAbsorbRemoves.contains(itemId)) return false;
+    if (_manualAbsorbAdds.contains(itemId)) return true;
+    // Check if it's in the server sections
+    for (final section in _personalizedSections) {
+      final id = section['id'] as String? ?? '';
+      if (id == 'continue-listening' || id == 'continue-series' || id == 'downloaded-books') {
+        for (final e in (section['entities'] as List<dynamic>? ?? [])) {
+          if (e is Map<String, dynamic> && e['id'] == itemId) return true;
+        }
+      }
+    }
+    return false;
   }
 }

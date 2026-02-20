@@ -23,6 +23,14 @@ import 'settings_screen.dart'; // for PlayerSettings
 class AbsorbingScreen extends StatefulWidget {
   const AbsorbingScreen({super.key});
 
+  /// Global key for accessing the absorbing screen state
+  static final globalKey = GlobalKey<_AbsorbingScreenState>();
+
+  /// Scroll to the currently playing book card
+  static void scrollToActive() {
+    globalKey.currentState?._scrollToActiveCard();
+  }
+
   @override
   State<AbsorbingScreen> createState() => _AbsorbingScreenState();
 }
@@ -59,13 +67,18 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     }
   }
 
-  void _scrollToActiveCard() {
+  void _scrollToActiveCard({int retries = 2}) {
     if (!_player.hasBook || !mounted) return;
     final lib = context.read<LibraryProvider>();
     final books = _getAbsorbingBooks(lib);
     final idx = books.indexWhere((b) => (b['id'] as String?) == _player.currentItemId);
     if (idx >= 0 && _pageController.hasClients) {
       _pageController.animateToPage(idx, duration: const Duration(milliseconds: 350), curve: Curves.easeOutCubic);
+    } else if (retries > 0) {
+      // Book might not be in the list yet — retry after a rebuild
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) _scrollToActiveCard(retries: retries - 1);
+      });
     }
   }
 
@@ -85,34 +98,60 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     final items = <Map<String, dynamic>>[];
     final seen = <String>{};
     
+    // Exclude manually removed items
+    final removes = lib.manualAbsorbRemoves;
+
     for (final section in lib.personalizedSections) {
       final id = section['id'] as String? ?? '';
       if (id == 'continue-listening' || id == 'continue-series' || id == 'downloaded-books') {
         for (final e in (section['entities'] as List<dynamic>? ?? [])) {
           if (e is Map<String, dynamic>) {
             final itemId = e['id'] as String?;
-            if (itemId != null && seen.add(itemId)) items.add(e);
+            if (itemId != null && seen.add(itemId) && !removes.contains(itemId)) {
+              items.add(e);
+            }
+          }
+        }
+      }
+    }
+
+    // Add manually added items that aren't already in the list
+    for (final section in lib.personalizedSections) {
+      for (final e in (section['entities'] as List<dynamic>? ?? [])) {
+        if (e is Map<String, dynamic>) {
+          final itemId = e['id'] as String?;
+          if (itemId != null && lib.manualAbsorbAdds.contains(itemId) && seen.add(itemId)) {
+            items.add(e);
           }
         }
       }
     }
     
     // If the currently playing book isn't in the list, add it at the front
-    // (e.g. book was just started and server hasn't been refreshed yet)
+    // If it IS in the list, move it to the front
     if (_player.hasBook && _player.currentItemId != null) {
       final playingId = _player.currentItemId!;
-      if (!seen.contains(playingId)) {
-        items.insert(0, {
-          'id': playingId,
-          'media': {
-            'metadata': {
-              'title': _player.currentTitle,
-              'authorName': _player.currentAuthor,
+      if (!removes.contains(playingId)) {
+        final existingIdx = items.indexWhere((b) => (b['id'] as String?) == playingId);
+        if (existingIdx > 0) {
+          // Move to front
+          final item = items.removeAt(existingIdx);
+          items.insert(0, item);
+        } else if (existingIdx < 0) {
+          // Not in list at all — add to front
+          items.insert(0, {
+            'id': playingId,
+            'media': {
+              'metadata': {
+                'title': _player.currentTitle,
+                'authorName': _player.currentAuthor,
+              },
+              'duration': _player.totalDuration,
+              'chapters': _player.chapters,
             },
-            'duration': _player.totalDuration,
-            'chapters': _player.chapters,
-          },
-        });
+          });
+        }
+        // existingIdx == 0 means it's already at front, do nothing
       }
     }
     
@@ -494,14 +533,15 @@ class _AbsorbingCardState extends State<_AbsorbingCard> with AutomaticKeepAliveC
     }
 
     return Container(
-      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: accent.withOpacity(0.15), width: 1),
       ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(23),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
           // Layer 1: Pre-blurred cover image (isolated for performance)
           if (_coverUrl != null)
             RepaintBoundary(
@@ -545,10 +585,10 @@ class _AbsorbingCardState extends State<_AbsorbingCard> with AutomaticKeepAliveC
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('${(bookProgress * 100).clamp(0, 100).toStringAsFixed(1)}%',
-                      style: tt.labelSmall?.copyWith(color: Colors.white.withOpacity(0.85), fontWeight: FontWeight.w600, fontSize: 11)),
+                      style: tt.labelSmall?.copyWith(color: Colors.white.withOpacity(0.9), fontWeight: FontWeight.w700, fontSize: 13)),
                     if (totalChapters > 0)
                       Text('Ch ${(chapterIdx + 1).clamp(1, totalChapters)} / $totalChapters',
-                        style: tt.labelSmall?.copyWith(color: Colors.white.withOpacity(0.6), fontSize: 11)),
+                        style: tt.labelSmall?.copyWith(color: Colors.white.withOpacity(0.7), fontWeight: FontWeight.w600, fontSize: 13)),
                   ],
                 ),
               ),
@@ -574,9 +614,13 @@ class _AbsorbingCardState extends State<_AbsorbingCard> with AutomaticKeepAliveC
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       final coverWidth = constraints.maxWidth * 0.85;
+                      // Use the smaller of desired width or available height to prevent squishing
+                      final coverSize = coverWidth < constraints.maxHeight
+                          ? coverWidth
+                          : constraints.maxHeight;
                       return SizedBox(
-                          width: coverWidth,
-                          height: coverWidth,
+                          width: coverSize,
+                          height: coverSize,
                           child: RepaintBoundary(
                             child: ClipRRect(
                             borderRadius: BorderRadius.circular(12),
@@ -722,6 +766,7 @@ class _AbsorbingCardState extends State<_AbsorbingCard> with AutomaticKeepAliveC
               ],
             ),
         ],
+      ),
       ),
     );
   }
@@ -1113,18 +1158,18 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
               Padding(padding: const EdgeInsets.only(top: 2, bottom: 6), child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(_fmt(_bookDragValue != null ? _bookDragValue! * totalDur : posS), style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white54 : Colors.white24, fontSize: 9)),
-                  Text('-${_fmt(_bookDragValue != null ? (1.0 - _bookDragValue!) * totalDur : bookRemaining)}', style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white54 : Colors.white30, fontSize: 9)),
+                  Text(_fmt(_bookDragValue != null ? _bookDragValue! * totalDur : posS), style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white60 : Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
+                  Text('-${_fmt(_bookDragValue != null ? (1.0 - _bookDragValue!) * totalDur : bookRemaining)}', style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white60 : Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
                 ],
               )),
             ] else ...[
               Row(children: [
-                Text(_fmt(_bookDragValue != null ? _bookDragValue! * totalDur : posS), style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white54 : Colors.white24, fontSize: 9)),
+                Text(_fmt(_bookDragValue != null ? _bookDragValue! * totalDur : posS), style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white60 : Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
                 const SizedBox(width: 8),
                 Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(value: bookProgress, minHeight: 3, backgroundColor: Colors.white.withOpacity(0.08), valueColor: AlwaysStoppedAnimation(widget.accent.withOpacity(0.5))))),
                 const SizedBox(width: 8),
-                Text('-${_fmt(_bookDragValue != null ? (1.0 - _bookDragValue!) * totalDur : bookRemaining)}', style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white54 : Colors.white30, fontSize: 9)),
+                Text('-${_fmt(_bookDragValue != null ? (1.0 - _bookDragValue!) * totalDur : bookRemaining)}', style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white60 : Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
               ]),
               const SizedBox(height: 10),
             ],
@@ -1151,8 +1196,8 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(_fmt(_chapterDragValue != null ? (_chapterDragValue! * chapterDur) / speedDiv : chapterElapsed),
-                  style: tt.labelSmall?.copyWith(color: Colors.white38, fontSize: 10)),
-                Text('-${_fmt(chapterRemaining)}', style: tt.labelSmall?.copyWith(color: Colors.white38, fontSize: 10)),
+                  style: tt.labelSmall?.copyWith(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600)),
+                Text('-${_fmt(chapterRemaining)}', style: tt.labelSmall?.copyWith(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600)),
               ],
             )),
           ]),
@@ -1193,8 +1238,17 @@ class _CardPlaybackControlsState extends State<_CardPlaybackControls> with Singl
       duration: const Duration(milliseconds: 300),
       value: 0, // 0 = play icon, 1 = pause icon
     );
-    PlayerSettings.getBackSkip().then((v) { if (mounted) setState(() => _backSkip = v); });
-    PlayerSettings.getForwardSkip().then((v) { if (mounted) setState(() => _forwardSkip = v); });
+    _loadSkipSettings();
+  }
+
+  @override void didUpdateWidget(covariant _CardPlaybackControls old) {
+    super.didUpdateWidget(old);
+    _loadSkipSettings();
+  }
+
+  void _loadSkipSettings() {
+    PlayerSettings.getBackSkip().then((v) { if (mounted && v != _backSkip) setState(() => _backSkip = v); });
+    PlayerSettings.getForwardSkip().then((v) { if (mounted && v != _forwardSkip) setState(() => _forwardSkip = v); });
   }
 
   @override void dispose() {
@@ -1332,11 +1386,7 @@ class _CardSleepButton extends StatelessWidget {
         final timerActive = sleep.isActive;
         return GestureDetector(
           onTap: isActive ? () {
-            if (timerActive) {
-              sleep.cancel();
-            } else {
-              _showSetSheet(context);
-            }
+            showSleepTimerSheet(context, accent);
           } : null,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(width: 44, height: 44,
@@ -1355,46 +1405,353 @@ class _CardSleepButton extends StatelessWidget {
       },
     );
   }
+}
 
-  void _showSetSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context, backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-        decoration: const BoxDecoration(
-          color: Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 16),
-          const Text('Sleep Timer', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 16),
-          Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.center, children: [
-            for (final mins in [5, 10, 15, 30, 45, 60])
-              _timerChip(ctx, '${mins}m', () {
-                SleepTimerService().setTimeSleep(Duration(minutes: mins));
-                Navigator.pop(ctx);
-              }),
-            _timerChip(ctx, '1 Ch', () {
-              SleepTimerService().setChapterSleep(1);
-              Navigator.pop(ctx);
-            }),
-            _timerChip(ctx, '2 Ch', () {
-              SleepTimerService().setChapterSleep(2);
-              Navigator.pop(ctx);
-            }),
+// ─── SHARED SLEEP TIMER SHEET ─────────────────────────────────
+void showSleepTimerSheet(BuildContext context, Color accent) {
+  showModalBottomSheet(
+    context: context, backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (ctx) => _SleepTimerSheet(accent: accent),
+  );
+}
+
+class _SleepTimerSheet extends StatefulWidget {
+  final Color accent;
+  const _SleepTimerSheet({required this.accent});
+  @override State<_SleepTimerSheet> createState() => _SleepTimerSheetState();
+}
+
+class _SleepTimerSheetState extends State<_SleepTimerSheet> {
+  int _tabIndex = 0; // 0 = Timer, 1 = End of Chapter
+  double _customMinutes = 30;
+  int _customChapters = 1;
+  bool _shakeEnabled = true;
+  int _shakeAddMinutes = 5;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadShakeSettings();
+  }
+
+  Future<void> _loadShakeSettings() async {
+    final shake = await PlayerSettings.getShakeToResetSleep();
+    final mins = await PlayerSettings.getShakeAddMinutes();
+    if (mounted) setState(() { _shakeEnabled = shake; _shakeAddMinutes = mins; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final accent = widget.accent;
+
+    return ListenableBuilder(
+      listenable: SleepTimerService(),
+      builder: (_, __) {
+        final sleep = SleepTimerService();
+        final isActive = sleep.isActive;
+
+        final navBarPad = MediaQuery.of(context).viewPadding.bottom;
+
+        return Container(
+            padding: EdgeInsets.fromLTRB(20, 16, 20, 24 + navBarPad),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A1A),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border(top: BorderSide(color: accent.withOpacity(0.2), width: 1)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 16),
+            Text('Sleep Timer', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: Colors.white)),
+            const SizedBox(height: 16),
+
+            if (isActive)
+              _buildActiveState(sleep, accent, tt)
+            else ...[
+              // Tab bar
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.all(3),
+                child: Row(children: [
+                  _tab('Timer', Icons.timer_outlined, 0, accent),
+                  const SizedBox(width: 4),
+                  _tab('End of Chapter', Icons.auto_stories_outlined, 1, accent),
+                ]),
+              ),
+              const SizedBox(height: 20),
+
+              // Tab content
+              if (_tabIndex == 0) _buildTimerTab(accent, tt)
+              else _buildChapterTab(accent, tt),
+
+              const SizedBox(height: 16),
+              Container(height: 0.5, color: Colors.white.withOpacity(0.08)),
+              const SizedBox(height: 12),
+
+              // Shake toggle
+              _buildShakeToggle(accent, tt),
+            ],
           ]),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildActiveState(SleepTimerService sleep, Color accent, TextTheme tt) {
+    final isTime = sleep.mode == SleepTimerMode.time;
+
+    String countdownLabel;
+    if (isTime) {
+      final r = sleep.timeRemaining;
+      final m = r.inMinutes;
+      final s = r.inSeconds % 60;
+      countdownLabel = '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    } else {
+      countdownLabel = '${sleep.chaptersRemaining} ${sleep.chaptersRemaining == 1 ? 'chapter' : 'chapters'} left';
+    }
+
+    return Column(children: [
+      // Countdown display
+      if (isTime) ...[
+        Text(countdownLabel,
+          style: TextStyle(color: accent, fontSize: 40, fontWeight: FontWeight.w700,
+            fontFeatures: const [FontFeature.tabularFigures()])),
+        const SizedBox(height: 8),
+        // Progress bar
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: sleep.timeProgress,
+            minHeight: 4,
+            backgroundColor: Colors.white.withOpacity(0.08),
+            valueColor: AlwaysStoppedAnimation(accent.withOpacity(0.6)),
+          ),
+        ),
+      ] else ...[
+        Icon(Icons.auto_stories_outlined, size: 28, color: accent.withOpacity(0.6)),
+        const SizedBox(height: 8),
+        Text(countdownLabel,
+          style: TextStyle(color: accent, fontSize: 24, fontWeight: FontWeight.w700)),
+      ],
+      const SizedBox(height: 20),
+
+      // Quick add buttons
+      Text('Add more time', style: TextStyle(color: Colors.white38, fontSize: 12)),
+      const SizedBox(height: 10),
+      if (isTime)
+        Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
+          for (final mins in [5, 10, 15, 30])
+            _presetChip(accent, '+${mins}m', false, () {
+              sleep.addTime(Duration(minutes: mins));
+            }),
+        ])
+      else
+        Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
+          for (final ch in [1, 2, 3])
+            _presetChip(accent, '+$ch ch', false, () {
+              for (int i = 0; i < ch; i++) sleep.addChapter();
+            }),
         ]),
+      const SizedBox(height: 20),
+
+      // Cancel button
+      SizedBox(width: double.infinity, height: 44, child: OutlinedButton.icon(
+        icon: const Icon(Icons.close_rounded, size: 18),
+        label: const Text('Cancel timer'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white54,
+          side: BorderSide(color: Colors.white.withOpacity(0.12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        onPressed: () {
+          sleep.cancel();
+          Navigator.pop(context);
+        },
+      )),
+
+      const SizedBox(height: 12),
+      Container(height: 0.5, color: Colors.white.withOpacity(0.08)),
+      const SizedBox(height: 12),
+      _buildShakeToggle(accent, tt),
+    ]);
+  }
+
+  Widget _tab(String label, IconData icon, int index, Color accent) {
+    final selected = _tabIndex == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _tabIndex = index),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? accent.withOpacity(0.2) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon, size: 15, color: selected ? accent : Colors.white38),
+            const SizedBox(width: 6),
+            Text(label, style: TextStyle(
+              color: selected ? accent : Colors.white38,
+              fontSize: 12, fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            )),
+          ]),
+        ),
       ),
     );
   }
 
-  Widget _timerChip(BuildContext ctx, String label, VoidCallback onTap) {
-    return GestureDetector(onTap: onTap, child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.12))),
-      child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500)),
+  Widget _buildTimerTab(Color accent, TextTheme tt) {
+    return Column(children: [
+      // Custom slider
+      Text('${_customMinutes.round()} min',
+        style: TextStyle(color: accent, fontSize: 28, fontWeight: FontWeight.w700,
+          fontFeatures: const [FontFeature.tabularFigures()])),
+      const SizedBox(height: 8),
+      SliderTheme(
+        data: SliderThemeData(
+          activeTrackColor: accent,
+          inactiveTrackColor: Colors.white.withOpacity(0.1),
+          thumbColor: accent,
+          overlayColor: accent.withOpacity(0.1),
+          trackHeight: 4,
+        ),
+        child: Slider(
+          value: _customMinutes,
+          min: 1, max: 120, divisions: 119,
+          onChanged: (v) => setState(() => _customMinutes = v),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const [
+          Text('1m', style: TextStyle(color: Colors.white30, fontSize: 11)),
+          Text('120m', style: TextStyle(color: Colors.white30, fontSize: 11)),
+        ]),
+      ),
+      const SizedBox(height: 12),
+      // Presets
+      Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
+        for (final mins in [5, 10, 15, 30, 45, 60])
+          _presetChip(accent, '${mins}m', _customMinutes.round() == mins, () {
+            setState(() => _customMinutes = mins.toDouble());
+          }),
+      ]),
+      const SizedBox(height: 16),
+      // Start button
+      SizedBox(width: double.infinity, height: 44, child: FilledButton(
+        style: FilledButton.styleFrom(backgroundColor: accent, foregroundColor: Colors.black,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        onPressed: () {
+          SleepTimerService().setTimeSleep(Duration(minutes: _customMinutes.round()));
+          Navigator.pop(context);
+        },
+        child: Text('Start ${_customMinutes.round()} min timer',
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+      )),
+    ]);
+  }
+
+  Widget _buildChapterTab(Color accent, TextTheme tt) {
+    return Column(children: [
+      Text('$_customChapters ${_customChapters == 1 ? 'chapter' : 'chapters'}',
+        style: TextStyle(color: accent, fontSize: 28, fontWeight: FontWeight.w700)),
+      const SizedBox(height: 16),
+      // Chapter count selector
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        _circleButton(Icons.remove_rounded, accent, _customChapters > 1 ? () {
+          setState(() => _customChapters--);
+        } : null),
+        const SizedBox(width: 32),
+        _circleButton(Icons.add_rounded, accent, _customChapters < 20 ? () {
+          setState(() => _customChapters++);
+        } : null),
+      ]),
+      const SizedBox(height: 12),
+      // Quick presets
+      Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
+        for (final ch in [1, 2, 3, 5])
+          _presetChip(accent, '$ch ch', _customChapters == ch, () {
+            setState(() => _customChapters = ch);
+          }),
+      ]),
+      const SizedBox(height: 16),
+      // Start button
+      SizedBox(width: double.infinity, height: 44, child: FilledButton(
+        style: FilledButton.styleFrom(backgroundColor: accent, foregroundColor: Colors.black,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        onPressed: () {
+          SleepTimerService().setChapterSleep(_customChapters);
+          Navigator.pop(context);
+        },
+        child: Text('Sleep after $_customChapters ${_customChapters == 1 ? 'chapter' : 'chapters'}',
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+      )),
+    ]);
+  }
+
+  Widget _buildShakeToggle(Color accent, TextTheme tt) {
+    return Row(children: [
+      Icon(Icons.vibration_rounded, size: 18, color: _shakeEnabled ? accent : Colors.white24),
+      const SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Shake to add time',
+          style: TextStyle(color: _shakeEnabled ? Colors.white70 : Colors.white38, fontSize: 13, fontWeight: FontWeight.w500)),
+        Text(_shakeEnabled
+            ? (_tabIndex == 0 ? 'Adds $_shakeAddMinutes min' : 'Adds 1 chapter')
+            : 'Off',
+          style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 11)),
+      ])),
+      SizedBox(
+        height: 28,
+        child: Switch(
+          value: _shakeEnabled,
+          activeColor: accent,
+          onChanged: (v) {
+            setState(() => _shakeEnabled = v);
+            PlayerSettings.setShakeToResetSleep(v);
+          },
+        ),
+      ),
+    ]);
+  }
+
+  Widget _circleButton(IconData icon, Color accent, VoidCallback? onTap) {
+    final enabled = onTap != null;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 48, height: 48,
+        decoration: BoxDecoration(
+          color: enabled ? accent.withOpacity(0.15) : Colors.white.withOpacity(0.04),
+          shape: BoxShape.circle,
+          border: Border.all(color: enabled ? accent.withOpacity(0.3) : Colors.white.withOpacity(0.06)),
+        ),
+        child: Icon(icon, color: enabled ? accent : Colors.white24, size: 24),
+      ),
+    );
+  }
+
+  Widget _presetChip(Color accent, String label, bool active, VoidCallback onTap) {
+    return GestureDetector(onTap: onTap, child: AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: active ? accent.withOpacity(0.2) : Colors.white.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: active ? accent.withOpacity(0.4) : Colors.white.withOpacity(0.1)),
+      ),
+      child: Text(label, style: TextStyle(
+        color: active ? accent : Colors.white54,
+        fontSize: 13, fontWeight: active ? FontWeight.w600 : FontWeight.w400)),
     ));
   }
 }
@@ -1506,18 +1863,61 @@ class _SimpleBookmarkSheetState extends State<_SimpleBookmarkSheet> {
         Expanded(child: _bookmarks == null
             ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
             : _bookmarks!.isEmpty
-                ? Center(child: Text('No bookmarks yet', style: tt.bodyMedium?.copyWith(color: Colors.white38)))
+                ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.bookmark_outline_rounded, size: 48, color: Colors.white.withOpacity(0.1)),
+                    const SizedBox(height: 12),
+                    Text('No bookmarks yet', style: tt.bodyMedium?.copyWith(color: Colors.white38)),
+                    const SizedBox(height: 4),
+                    Text('Long-press the bookmark button to quick save', style: tt.bodySmall?.copyWith(color: Colors.white24, fontSize: 11)),
+                  ]))
                 : ListView.builder(
                     controller: widget.scrollController, padding: const EdgeInsets.only(bottom: 24), itemCount: _bookmarks!.length,
                     itemBuilder: (ctx, i) {
                       final bm = _bookmarks![i];
-                      return ListTile(
-                        leading: Icon(Icons.bookmark_rounded, size: 20, color: widget.accent),
-                        title: Text(bm.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodyMedium?.copyWith(color: Colors.white70)),
-                        subtitle: Text(bm.formattedPosition, style: tt.labelSmall?.copyWith(color: Colors.white38)),
-                        trailing: IconButton(icon: const Icon(Icons.delete_outline, size: 18, color: Colors.white24),
-                          onPressed: () async { await BookmarkService().deleteBookmark(itemId: widget.itemId, bookmarkId: bm.id); _load(); }),
+                      final hasNote = bm.note != null && bm.note!.isNotEmpty;
+                      return InkWell(
                         onTap: () { widget.player.seekTo(Duration(seconds: bm.positionSeconds.round())); Navigator.pop(ctx); },
+                        onLongPress: () => _editBookmark(bm),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Icon(Icons.bookmark_rounded, size: 20, color: widget.accent),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(bm.title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                style: tt.bodyMedium?.copyWith(color: Colors.white70)),
+                              const SizedBox(height: 2),
+                              Text(bm.formattedPosition, style: tt.labelSmall?.copyWith(color: Colors.white38)),
+                              if (hasNote) ...[
+                                const SizedBox(height: 4),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.04),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(bm.note!, maxLines: 3, overflow: TextOverflow.ellipsis,
+                                    style: tt.bodySmall?.copyWith(color: Colors.white38, fontSize: 11, height: 1.4)),
+                                ),
+                              ],
+                            ])),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () async {
+                                await BookmarkService().deleteBookmark(itemId: widget.itemId, bookmarkId: bm.id);
+                                _load();
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.all(4),
+                                child: Icon(Icons.close_rounded, size: 16, color: Colors.white24),
+                              ),
+                            ),
+                          ]),
+                        ),
                       );
                     })),
       ]),
@@ -1528,17 +1928,57 @@ class _SimpleBookmarkSheetState extends State<_SimpleBookmarkSheet> {
     final pos = widget.player.position.inMilliseconds / 1000.0;
     final h = pos ~/ 3600; final m = (pos % 3600) ~/ 60; final s = pos.toInt() % 60;
     final posStr = h > 0 ? '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}' : '$m:${s.toString().padLeft(2, '0')}';
-    final tc = TextEditingController(text: 'Bookmark at $posStr');
-    final result = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
+
+    // Find current chapter name for default title
+    String defaultTitle = 'Bookmark at $posStr';
+    for (final ch in widget.player.chapters) {
+      final cm = ch as Map<String, dynamic>;
+      final cs = (cm['start'] as num?)?.toDouble() ?? 0;
+      final ce = (cm['end'] as num?)?.toDouble() ?? 0;
+      if (pos >= cs && pos < ce) { defaultTitle = cm['title'] as String? ?? defaultTitle; break; }
+    }
+
+    final titleC = TextEditingController(text: defaultTitle);
+    final noteC = TextEditingController();
+    final result = await showDialog<Map<String, String>>(context: context, builder: (ctx) => AlertDialog(
       title: const Text('Add Bookmark'),
-      content: TextField(controller: tc, autofocus: true, decoration: const InputDecoration(labelText: 'Title', border: OutlineInputBorder())),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: titleC, autofocus: true, decoration: const InputDecoration(labelText: 'Title', border: OutlineInputBorder())),
+        const SizedBox(height: 12),
+        TextField(controller: noteC, maxLines: 3, decoration: const InputDecoration(labelText: 'Note (optional)', border: OutlineInputBorder(), alignLabelWithHint: true)),
+      ]),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, tc.text), child: const Text('Save')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, {'title': titleC.text, 'note': noteC.text}), child: const Text('Save')),
       ],
     ));
-    if (result != null && result.isNotEmpty) {
-      await BookmarkService().addBookmark(itemId: widget.itemId, positionSeconds: pos, title: result);
+    if (result != null && result['title']!.isNotEmpty) {
+      final note = result['note']?.isNotEmpty == true ? result['note'] : null;
+      await BookmarkService().addBookmark(itemId: widget.itemId, positionSeconds: pos, title: result['title']!, note: note);
+      _load();
+    }
+  }
+
+  Future<void> _editBookmark(Bookmark bm) async {
+    final titleC = TextEditingController(text: bm.title);
+    final noteC = TextEditingController(text: bm.note ?? '');
+    final result = await showDialog<Map<String, String>>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Edit Bookmark'),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: titleC, decoration: const InputDecoration(labelText: 'Title', border: OutlineInputBorder())),
+        const SizedBox(height: 12),
+        TextField(controller: noteC, maxLines: 3, decoration: const InputDecoration(labelText: 'Note (optional)', border: OutlineInputBorder(), alignLabelWithHint: true)),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, {'title': titleC.text, 'note': noteC.text}), child: const Text('Save')),
+      ],
+    ));
+    if (result != null && result['title']!.isNotEmpty) {
+      await BookmarkService().updateBookmark(
+        itemId: widget.itemId, bookmarkId: bm.id,
+        title: result['title']!, note: result['note']?.isNotEmpty == true ? result['note'] : null,
+      );
       _load();
     }
   }
@@ -1568,6 +2008,7 @@ class _CardSpeedButton extends StatelessWidget {
 
   void _showSpeedSheet(BuildContext context) {
     showModalBottomSheet(context: context, backgroundColor: Colors.transparent,
+      useSafeArea: true,
       builder: (ctx) => _CardSpeedSheet(player: player, accent: accent));
   }
 }
@@ -1587,8 +2028,9 @@ class _CardSpeedSheetState extends State<_CardSpeedSheet> {
 
   @override Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
+    final navBarPad = MediaQuery.of(context).viewPadding.bottom;
     return Container(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+      padding: EdgeInsets.fromLTRB(24, 16, 24, 24 + navBarPad),
       decoration: BoxDecoration(color: const Color(0xFF1A1A1A), borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         border: Border(top: BorderSide(color: widget.accent.withOpacity(0.2), width: 1))),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -1786,7 +2228,7 @@ class _CardSleepButtonInline extends StatelessWidget {
 
         return GestureDetector(
           onTap: isActive ? () {
-            if (active) { sleep.cancel(); } else { _showSleepPicker(context); }
+            _showSleepPicker(context);
           } : null,
           child: Container(
             height: 36,
@@ -1829,33 +2271,7 @@ class _CardSleepButtonInline extends StatelessWidget {
   }
 
   void _showSleepPicker(BuildContext context) {
-    showModalBottomSheet(
-      context: context, backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-        decoration: const BoxDecoration(color: Color(0xFF1A1A1A), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 16),
-          const Text('Sleep Timer', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 16),
-          Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.center, children: [
-            for (final mins in [5, 10, 15, 30, 45, 60])
-              _timerChip(ctx, '${mins}m', () { SleepTimerService().setTimeSleep(Duration(minutes: mins)); Navigator.pop(ctx); }),
-            _timerChip(ctx, '1 Ch', () { SleepTimerService().setChapterSleep(1); Navigator.pop(ctx); }),
-            _timerChip(ctx, '2 Ch', () { SleepTimerService().setChapterSleep(2); Navigator.pop(ctx); }),
-          ]),
-        ]),
-      ),
-    );
-  }
-
-  Widget _timerChip(BuildContext ctx, String label, VoidCallback onTap) {
-    return GestureDetector(onTap: onTap, child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.12))),
-      child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500)),
-    ));
+    showSleepTimerSheet(context, accent);
   }
 }
 
@@ -1870,9 +2286,17 @@ class _CardBookmarkButtonInline extends StatefulWidget {
 }
 
 class _CardBookmarkButtonInlineState extends State<_CardBookmarkButtonInline> {
+  int _count = 0;
+  @override void initState() { super.initState(); _loadCount(); }
+  Future<void> _loadCount() async {
+    final c = await BookmarkService().getCount(widget.itemId);
+    if (mounted) setState(() => _count = c);
+  }
+
   @override Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: widget.isActive ? _addBookmark : null,
+      onTap: widget.isActive ? () => _showBookmarks(context) : null,
+      onLongPress: widget.isActive ? () => _quickAdd(context) : null,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
@@ -1886,7 +2310,7 @@ class _CardBookmarkButtonInlineState extends State<_CardBookmarkButtonInline> {
             Icon(Icons.bookmark_outline_rounded, size: 18,
               color: widget.isActive ? Colors.white54 : Colors.white24),
             const SizedBox(width: 8),
-            Text('Bookmark', style: TextStyle(
+            Text(_count > 0 ? 'Bookmarks ($_count)' : 'Bookmark', style: TextStyle(
               color: widget.isActive ? Colors.white54 : Colors.white24,
               fontSize: 12, fontWeight: FontWeight.w500)),
           ],
@@ -1895,15 +2319,31 @@ class _CardBookmarkButtonInlineState extends State<_CardBookmarkButtonInline> {
     );
   }
 
-  void _addBookmark() {
-    final pos = widget.player.position;
-    BookmarkService().addBookmark(itemId: widget.itemId, positionSeconds: pos.inMilliseconds / 1000.0, title: 'Bookmark');
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      duration: const Duration(seconds: 2),
-      content: const Text('Bookmark added'),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+  void _quickAdd(BuildContext ctx) async {
+    final pos = widget.player.position.inMilliseconds / 1000.0;
+    String? chTitle;
+    for (final ch in widget.player.chapters) {
+      final m = ch as Map<String, dynamic>;
+      final s = (m['start'] as num?)?.toDouble() ?? 0;
+      final e = (m['end'] as num?)?.toDouble() ?? 0;
+      if (pos >= s && pos < e) { chTitle = m['title'] as String?; break; }
+    }
+    await BookmarkService().addBookmark(itemId: widget.itemId, positionSeconds: pos, title: chTitle ?? 'Bookmark');
+    _loadCount();
+    if (ctx.mounted) {
+      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(duration: const Duration(seconds: 2), content: const Text('Bookmark added'), behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+    }
+  }
+
+  void _showBookmarks(BuildContext context) {
+    showModalBottomSheet(
+      context: context, backgroundColor: Colors.transparent, isScrollControlled: true, useSafeArea: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.6, minChildSize: 0.3, maxChildSize: 0.9, expand: false,
+        builder: (ctx, sc) => _SimpleBookmarkSheet(itemId: widget.itemId, player: widget.player, accent: widget.accent, scrollController: sc, onChanged: _loadCount),
+      ),
+    );
   }
 }
 
@@ -1918,6 +2358,7 @@ class _CardSpeedButtonInline extends StatelessWidget {
     return GestureDetector(
       onTap: isActive ? () {
         showModalBottomSheet(context: context, backgroundColor: Colors.transparent,
+          useSafeArea: true,
           builder: (ctx) => _CardSpeedSheet(player: player, accent: accent));
       } : null,
       child: Container(
@@ -2232,30 +2673,91 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
               ? _markNotFinished(context, auth, currentTime, duration)
               : _markFinished(context, auth, duration),
           child: Container(
-            height: 48,
+            height: 36,
             decoration: BoxDecoration(
-              color: isFinished ? Colors.green.withOpacity(0.15) : Colors.white.withOpacity(0.08),
+              color: isFinished ? Colors.green.withOpacity(0.06) : Colors.white.withOpacity(0.06),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: isFinished ? Colors.green.withOpacity(0.4) : Colors.white12),
+              border: Border.all(color: isFinished ? Colors.green.withOpacity(0.15) : Colors.white.withOpacity(0.08)),
             ),
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               Icon(
                 isFinished ? Icons.check_circle_rounded : Icons.check_circle_outline_rounded,
-                size: 18,
+                size: 16,
                 color: isFinished ? Colors.green : Colors.white54,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Text(
                 isFinished ? 'Fully Absorbed' : 'Fully Absorb',
-                style: tt.labelMedium?.copyWith(
+                style: TextStyle(
                   color: isFinished ? Colors.green : Colors.white54,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 12, fontWeight: FontWeight.w500,
                 ),
               ),
             ]),
           ),
         )),
       ]),
+      const SizedBox(height: 8),
+      Builder(builder: (ctx) {
+        final lib = ctx.watch<LibraryProvider>();
+        final isOnList = lib.isOnAbsorbingList(widget.itemId);
+        return GestureDetector(
+          onTap: () async {
+            if (isOnList) {
+              final confirmed = await showDialog<bool>(
+                context: ctx,
+                builder: (dCtx) => AlertDialog(
+                  title: const Text('Remove from Absorbing?'),
+                  content: const Text('This will only remove it from the absorbing page. Your progress will be kept and it will still appear in Continue Listening on the library.'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
+                    FilledButton(onPressed: () => Navigator.pop(dCtx, true), child: const Text('Remove')),
+                  ],
+                ),
+              );
+              if (confirmed == true && ctx.mounted) {
+                // Stop playback if this book is currently playing
+                final player = AudioPlayerService();
+                if (player.currentItemId == widget.itemId) {
+                  await player.pause();
+                  await player.stop();
+                }
+                await lib.removeFromAbsorbing(widget.itemId);
+              }
+            } else {
+              await lib.addToAbsorbing(widget.itemId);
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                  content: Text('Added to absorbing list'),
+                  behavior: SnackBarBehavior.floating, duration: Duration(seconds: 2)));
+              }
+            }
+          },
+          child: Container(
+            height: 36,
+            decoration: BoxDecoration(
+              color: isOnList ? cs.primary.withOpacity(0.06) : Colors.white.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: isOnList ? cs.primary.withOpacity(0.15) : Colors.white.withOpacity(0.08)),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(
+                isOnList ? Icons.remove_circle_outline_rounded : Icons.add_circle_outline_rounded,
+                size: 16,
+                color: isOnList ? cs.primary : Colors.white54,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                isOnList ? 'Remove from Absorbing' : 'Add to Absorbing',
+                style: TextStyle(
+                  color: isOnList ? cs.primary : Colors.white54,
+                  fontSize: 12, fontWeight: FontWeight.w500,
+                ),
+              ),
+            ]),
+          ),
+        );
+      }),
       if (progress > 0 || isFinished) ...[
         const SizedBox(height: 8),
         _sheetBtn(icon: Icons.restart_alt_rounded,
@@ -2379,16 +2881,16 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final player = AudioPlayerService();
     // Grab the root navigator before we pop the sheet
     final rootNav = Navigator.of(context, rootNavigator: true);
+
+    // Ensure this book is on the absorbing list (clear any manual remove)
+    if (context.mounted) {
+      final lib = context.read<LibraryProvider>();
+      lib.addToAbsorbing(widget.itemId);
+    }
     
     if (player.currentItemId == widget.itemId) {
       if (!player.isPlaying) player.play();
-      // Close the sheet, then go to absorbing
       rootNav.pop();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) return; // sheet is gone, use the app shell context instead
-        // Find app shell from the navigator's context
-      });
-      // Use a slight delay to let the sheet close
       Future.delayed(const Duration(milliseconds: 100), () {
         AppShell.goToAbsorbingGlobal();
       });

@@ -1,11 +1,12 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import 'absorbing_screen.dart';
 import 'home_screen.dart';
-import 'search_screen.dart';
+import 'library_screen.dart';
 import 'stats_screen.dart';
 import 'settings_screen.dart';
 
@@ -30,18 +31,24 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   static _AppShellState? _instance;
 
-  // Tabs: 0=Library, 1=Search, 2=Absorbing (default), 3=Stats, 4=Settings
+  // Tabs: 0=Library, 1=Home, 2=Absorbing (default), 3=Stats, 4=Settings
   int _currentIndex = 2;
-  final _searchKey = GlobalKey<SearchScreenState>();
+  final _libraryKey = GlobalKey<LibraryScreenState>();
 
   void _switchToAbsorbing() {
-    if (mounted) setState(() => _currentIndex = 2);
+    if (mounted) {
+      setState(() => _currentIndex = 2);
+      // Scroll to the currently playing book after the tab switch
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        AbsorbingScreen.scrollToActive();
+      });
+    }
   }
 
   late final _pages = [
+    LibraryScreen(key: _libraryKey),
     const HomeScreen(),
-    SearchScreen(key: _searchKey),
-    const AbsorbingScreen(),
+    AbsorbingScreen(key: AbsorbingScreen.globalKey),
     const StatsScreen(),
     const SettingsScreen(),
   ];
@@ -95,9 +102,37 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
+  DateTime? _lastBackPress;
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_currentIndex != 2) {
+          // Not on Absorbing — go there first
+          setState(() => _currentIndex = 2);
+        } else {
+          // On Absorbing — double-press to exit
+          final now = DateTime.now();
+          if (_lastBackPress != null &&
+              now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
+            SystemNavigator.pop();
+          } else {
+            _lastBackPress = now;
+            ScaffoldMessenger.of(context)
+              ..clearSnackBars()
+              ..showSnackBar(
+                const SnackBar(
+                  content: Text('Press back again to exit'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+          }
+        }
+      },
+      child: Scaffold(
       body: IndexedStack(
         index: _currentIndex,
         children: _pages,
@@ -109,13 +144,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             selectedIndex: _currentIndex,
             onDestinationSelected: (i) {
               setState(() => _currentIndex = i);
-              // Refresh data on switching to Library, Absorbing, or Stats (not Search/Settings)
-              if (i == 0 || i == 2 || i == 3) _refreshData();
-              if (i == 1) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _searchKey.currentState?.requestSearchFocus();
-                });
-              }
+              // Refresh data on switching to Library, Home, Absorbing, or Stats
+              if (i == 0 || i == 1 || i == 2 || i == 3) _refreshData();
             },
             destinations: [
               const NavigationDestination(
@@ -124,9 +154,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 label: 'Library',
               ),
               const NavigationDestination(
-                icon: Icon(Icons.search_rounded),
-                selectedIcon: Icon(Icons.search_rounded),
-                label: 'Search',
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home_rounded),
+                label: 'Home',
               ),
               NavigationDestination(
                 icon: const _AnimatedWaveIcon(size: 24, active: false),
@@ -147,6 +177,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           ),
         ],
       ),
+    ),
     );
   }
 }

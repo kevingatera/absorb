@@ -1,7 +1,7 @@
 name: audiobookshelf_app
 description: A Material 3 Audiobookshelf client for Android.
 publish_to: 'none'
-version: 1.0.4+1
+version: 1.1.0+1
 
 environment:
   sdk: '>=3.1.0 <4.0.0'
@@ -29,7 +29,9 @@ dependencies:
   material_design_icons_flutter: ^7.0.7296
   
   # Audio playback
-  just_audio: ^0.9.36
+  just_audio:
+    path: packages/just_audio
+    
   audio_service: ^0.18.13
   
   # Permissions
@@ -46,6 +48,11 @@ dependencies:
   flutter_local_notifications: ^17.2.1
 
   device_info_plus: ^11.0.0
+
+  # choose file location
+  file_picker: ^8.0.0
+
+  package_info_plus: ^8.0.0
 
 dev_dependencies:
   flutter_test:

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'audio_player_service.dart';
 
@@ -31,8 +32,12 @@ class SleepTimerService extends ChangeNotifier {
   bool _shakeEnabled = true;
   StreamSubscription? _accelSub;
   DateTime _lastShake = DateTime(2000);
-  static const _shakeThreshold = 15.0; // m/s²
-  static const _shakeCooldown = Duration(seconds: 2);
+  static const _shakeThreshold = 25.0; // m/s² — raised from 15 to require a deliberate shake
+  static const _shakeCooldown = Duration(seconds: 3);
+
+  // Wind-down warning
+  bool _warningSent = false;
+  static const _warningThreshold = Duration(seconds: 30);
 
   // ── Getters ──
   SleepTimerMode get mode => _mode;
@@ -63,6 +68,7 @@ class SleepTimerService extends ChangeNotifier {
     _mode = SleepTimerMode.time;
     _timeRemaining = duration;
     _initialDuration = duration;
+    _warningSent = false;
     _startTimeCountdown();
     _startShakeDetection();
     notifyListeners();
@@ -79,15 +85,28 @@ class SleepTimerService extends ChangeNotifier {
       // Only count down when playing
       if (_player.isPlaying) {
         _timeRemaining -= const Duration(seconds: 1);
+
+        // Wind-down warning vibration at 30 seconds
+        if (!_warningSent && _timeRemaining <= _warningThreshold && _timeRemaining.inSeconds > 0) {
+          _warningSent = true;
+          _vibrateWarning();
+          onToast?.call('Sleep timer ending soon…');
+          debugPrint('[SleepTimer] Warning: ${_timeRemaining.inSeconds}s remaining');
+        }
+
         notifyListeners();
       }
     });
   }
 
-  /// Add time (used by shake reset in time mode)
+  /// Add time (used by shake reset in time mode, or manual add)
   void addTime(Duration extra) {
     if (_mode != SleepTimerMode.time) return;
     _timeRemaining += extra;
+    // Reset warning if we're above threshold again
+    if (_timeRemaining > _warningThreshold) {
+      _warningSent = false;
+    }
     notifyListeners();
     debugPrint('[SleepTimer] Added ${extra.inMinutes}m — now ${_timeRemaining.inMinutes}m');
   }
@@ -130,15 +149,13 @@ class SleepTimerService extends ChangeNotifier {
         
         // Check if we've reached the end of the target chapter
         if (currentIdx >= _targetChapterIndex) {
-          // We want to stop at the END of the target chapter, 
-          // which is when we enter the NEXT chapter
           _triggerSleep();
         }
       }
     });
   }
 
-  /// Add a chapter (used by shake reset in chapter mode)
+  /// Add a chapter (used by shake reset in chapter mode, or manual add)
   void addChapter() {
     if (_mode != SleepTimerMode.chapters) return;
     _chaptersRemaining++;
@@ -164,6 +181,7 @@ class SleepTimerService extends ChangeNotifier {
 
   void _triggerSleep() {
     debugPrint('[SleepTimer] Triggering sleep — pausing playback');
+    _vibrateSleep();
     _player.pause();
     cancel();
   }
@@ -179,8 +197,35 @@ class SleepTimerService extends ChangeNotifier {
     _timeRemaining = Duration.zero;
     _chaptersRemaining = 0;
     _targetChapterIndex = -1;
+    _warningSent = false;
     notifyListeners();
     debugPrint('[SleepTimer] Cancelled');
+  }
+
+  // ── Haptic feedback ──
+
+  /// Medium buzz when shake-snooze adds time
+  void _vibrateSnooze() {
+    HapticFeedback.mediumImpact();
+  }
+
+  /// Double heavy buzz when timer is almost done (30s left)
+  void _vibrateWarning() {
+    HapticFeedback.heavyImpact();
+    Future.delayed(const Duration(milliseconds: 200), () {
+      HapticFeedback.heavyImpact();
+    });
+  }
+
+  /// Triple heavy buzz when sleep actually triggers
+  void _vibrateSleep() {
+    HapticFeedback.heavyImpact();
+    Future.delayed(const Duration(milliseconds: 150), () {
+      HapticFeedback.heavyImpact();
+    });
+    Future.delayed(const Duration(milliseconds: 300), () {
+      HapticFeedback.heavyImpact();
+    });
   }
 
   // ── Shake detection ──
@@ -211,6 +256,8 @@ class SleepTimerService extends ChangeNotifier {
     if (!isActive) return;
     debugPrint('[SleepTimer] Shake detected!');
     
+    _vibrateSnooze();
+
     if (_mode == SleepTimerMode.time) {
       final addMins = await PlayerSettings.getShakeAddMinutes();
       addTime(Duration(minutes: addMins));

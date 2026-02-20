@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../widgets/absorb_wave_icon.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -32,6 +35,9 @@ class _LoginScreenState extends State<LoginScreen>
   // Login error
   String? _loginError;
 
+  // App version
+  String _appVersion = '';
+
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
   late Animation<double> _slideAnim;
@@ -41,18 +47,26 @@ class _LoginScreenState extends State<LoginScreen>
     super.initState();
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 1200),
     );
     _fadeAnim = CurvedAnimation(
       parent: _animController,
-      curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+      curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
     );
     _slideAnim = CurvedAnimation(
       parent: _animController,
-      curve: const Interval(0.2, 1.0, curve: Curves.easeOutCubic),
+      curve: const Interval(0.3, 1.0, curve: Curves.easeOutCubic),
     );
     _animController.forward();
     _serverController.addListener(_onServerChanged);
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) setState(() => _appVersion = 'v${info.version}');
+    } catch (_) {}
   }
 
   @override
@@ -98,7 +112,7 @@ class _LoginScreenState extends State<LoginScreen>
     try {
       final ok = await ApiService.pingServer(fullUrl);
       if (!mounted) return;
-      if (_serverController.text.trim() != text) return; // stale
+      if (_serverController.text.trim() != text) return;
 
       setState(() {
         _serverChecking = false;
@@ -157,165 +171,278 @@ class _LoginScreenState extends State<LoginScreen>
     final tt = Theme.of(context).textTheme;
 
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Animated logo
-                FadeTransition(
-                  opacity: _fadeAnim,
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 88,
-                        height: 88,
-                        decoration: BoxDecoration(
-                          color: cs.primaryContainer,
-                          borderRadius: BorderRadius.circular(28),
-                        ),
-                        child: Icon(
-                          Icons.waves_rounded,
-                          size: 44,
-                          color: cs.onPrimaryContainer,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        'A B S O R B',
-                        style: tt.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.w300,
-                          color: cs.primary,
-                          letterSpacing: 8,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Connect to your server',
-                        style: tt.bodyLarge?.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 36),
-
-                // Slide-in form
-                SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.15),
-                    end: Offset.zero,
-                  ).animate(_slideAnim),
-                  child: FadeTransition(
-                    opacity: _slideAnim,
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        children: [
-                          // Server URL with protocol dropdown
-                          TextFormField(
-                            controller: _serverController,
-                            keyboardType: TextInputType.url,
-                            textInputAction: TextInputAction.next,
-                            onFieldSubmitted: (_) {
-                              if (!_serverValid && !_serverChecking) _checkServer();
-                            },
-                            decoration: InputDecoration(
-                              labelText: 'Server address',
-                              hintText: 'abs.example.com',
-                              prefixIcon: Padding(
-                                padding: const EdgeInsets.only(left: 8),
-                                child: DropdownButtonHideUnderline(
-                                  child: DropdownButton<String>(
-                                    value: _protocol,
-                                    isDense: true,
-                                    style: TextStyle(
-                                      color: cs.primary,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                    items: const [
-                                      DropdownMenuItem(
-                                        value: 'https://',
-                                        child: Text('https://'),
-                                      ),
-                                      DropdownMenuItem(
-                                        value: 'http://',
-                                        child: Text('http://'),
-                                      ),
-                                    ],
-                                    onChanged: (v) {
-                                      if (v != null) {
-                                        setState(() {
-                                          _protocol = v;
-                                          _serverValid = false;
-                                        });
-                                        _onServerChanged();
-                                      }
-                                    },
-                                  ),
-                                ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            stops: const [0.0, 0.4, 0.7, 1.0],
+            colors: [
+              cs.primary.withOpacity(0.15),
+              cs.primary.withOpacity(0.05),
+              cs.surface,
+              cs.surface,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // ── Logo + Tagline ──
+                  FadeTransition(
+                    opacity: _fadeAnim,
+                    child: Column(
+                      children: [
+                        // Wave icon with glow
+                        Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: cs.primary.withOpacity(0.3),
+                                blurRadius: 40,
+                                spreadRadius: 8,
                               ),
-                              suffixIcon: _serverChecking
-                                  ? const Padding(
-                                      padding: EdgeInsets.all(14),
-                                      child: SizedBox(
-                                        width: 20, height: 20,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
-                                      ),
-                                    )
-                                  : _serverValid
-                                      ? Icon(Icons.check_circle_rounded,
-                                          color: Colors.green.shade400)
-                                      : _serverError != null
-                                          ? Icon(Icons.error_outline_rounded,
-                                              color: cs.error)
-                                          : null,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
+                            ],
+                          ),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: cs.primary.withOpacity(0.1),
+                              border: Border.all(
+                                color: cs.primary.withOpacity(0.15),
+                                width: 1.5,
                               ),
-                              enabledBorder: _serverValid
-                                  ? OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                      borderSide: BorderSide(
-                                        color: Colors.green.shade400.withOpacity(0.5),
-                                      ),
-                                    )
-                                  : _serverError != null
-                                      ? OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(16),
-                                          borderSide: BorderSide(
-                                            color: cs.error.withOpacity(0.5),
-                                          ),
-                                        )
-                                      : null,
-                              filled: true,
-                              fillColor: cs.surfaceContainerHighest.withOpacity(0.3),
-                              errorText: _serverError,
+                            ),
+                            child: Center(
+                              child: AbsorbWaveIcon(
+                                size: 44,
+                                color: cs.primary,
+                              ),
                             ),
                           ),
-
-                          // Credentials — animated in when server is valid
-                          AnimatedSize(
-                            duration: const Duration(milliseconds: 350),
-                            curve: Curves.easeOutCubic,
-                            alignment: Alignment.topCenter,
-                            child: _serverValid
-                                ? _buildCredentialFields(cs, tt)
-                                : const SizedBox.shrink(),
+                        ),
+                        const SizedBox(height: 28),
+                        Text(
+                          'A B S O R B',
+                          style: tt.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.w200,
+                            color: cs.onSurface,
+                            letterSpacing: 10,
                           ),
-                        ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Start Absorbing',
+                          style: tt.bodyLarge?.copyWith(
+                            color: cs.onSurfaceVariant.withOpacity(0.6),
+                            fontWeight: FontWeight.w400,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+
+                  // ── Glass form card ──
+                  SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.12),
+                      end: Offset.zero,
+                    ).animate(_slideAnim),
+                    child: FadeTransition(
+                      opacity: _slideAnim,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                          child: Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              color: cs.surfaceContainerHighest.withOpacity(0.35),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: cs.outlineVariant.withOpacity(0.15),
+                              ),
+                            ),
+                            child: Form(
+                              key: _formKey,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Section label
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 4, bottom: 16),
+                                    child: Text(
+                                      'Connect to your server',
+                                      style: tt.titleSmall?.copyWith(
+                                        color: cs.onSurfaceVariant.withOpacity(0.7),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+
+                                  // Server URL
+                                  _buildInputField(
+                                    controller: _serverController,
+                                    label: 'Server address',
+                                    hint: 'abs.example.com',
+                                    keyboardType: TextInputType.url,
+                                    textInputAction: TextInputAction.next,
+                                    onFieldSubmitted: (_) {
+                                      if (!_serverValid && !_serverChecking) _checkServer();
+                                    },
+                                    cs: cs,
+                                    prefixIcon: Padding(
+                                      padding: const EdgeInsets.only(left: 8),
+                                      child: DropdownButtonHideUnderline(
+                                        child: DropdownButton<String>(
+                                          value: _protocol,
+                                          isDense: true,
+                                          style: TextStyle(
+                                            color: cs.primary,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                          items: const [
+                                            DropdownMenuItem(
+                                              value: 'https://',
+                                              child: Text('https://'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'http://',
+                                              child: Text('http://'),
+                                            ),
+                                          ],
+                                          onChanged: (v) {
+                                            if (v != null) {
+                                              setState(() {
+                                                _protocol = v;
+                                                _serverValid = false;
+                                              });
+                                              _onServerChanged();
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                    suffixIcon: _serverChecking
+                                        ? const Padding(
+                                            padding: EdgeInsets.all(14),
+                                            child: SizedBox(
+                                              width: 18, height: 18,
+                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                            ),
+                                          )
+                                        : _serverValid
+                                            ? Icon(Icons.check_circle_rounded,
+                                                color: Colors.green.shade400, size: 22)
+                                            : _serverError != null
+                                                ? Icon(Icons.error_outline_rounded,
+                                                    color: cs.error, size: 22)
+                                                : null,
+                                    borderColor: _serverValid
+                                        ? Colors.green.shade400.withOpacity(0.4)
+                                        : _serverError != null
+                                            ? cs.error.withOpacity(0.4)
+                                            : null,
+                                    errorText: _serverError,
+                                  ),
+
+                                  // Credentials — animated in when server is valid
+                                  AnimatedSize(
+                                    duration: const Duration(milliseconds: 350),
+                                    curve: Curves.easeOutCubic,
+                                    alignment: Alignment.topCenter,
+                                    child: _serverValid
+                                        ? _buildCredentialFields(cs, tt)
+                                        : const SizedBox.shrink(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+
+                  // ── Version label ──
+                  const SizedBox(height: 32),
+                  FadeTransition(
+                    opacity: _fadeAnim,
+                    child: Text(
+                      _appVersion,
+                      style: tt.labelSmall?.copyWith(
+                        color: cs.onSurfaceVariant.withOpacity(0.3),
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildInputField({
+    required TextEditingController controller,
+    required String label,
+    required ColorScheme cs,
+    String? hint,
+    TextInputType? keyboardType,
+    TextInputAction? textInputAction,
+    FocusNode? focusNode,
+    Widget? prefixIcon,
+    Widget? suffixIcon,
+    Color? borderColor,
+    String? errorText,
+    bool obscureText = false,
+    void Function(String)? onFieldSubmitted,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      focusNode: focusNode,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      obscureText: obscureText,
+      onFieldSubmitted: onFieldSubmitted,
+      validator: validator,
+      style: TextStyle(color: cs.onSurface),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        prefixIcon: prefixIcon,
+        suffixIcon: suffixIcon,
+        errorText: errorText,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: cs.outlineVariant.withOpacity(0.2)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(
+            color: borderColor ?? cs.outlineVariant.withOpacity(0.15),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: cs.primary.withOpacity(0.6), width: 1.5),
+        ),
+        filled: true,
+        fillColor: cs.surface.withOpacity(0.4),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
     );
   }
@@ -353,19 +480,14 @@ class _LoginScreenState extends State<LoginScreen>
           ),
 
         // Username
-        TextFormField(
+        _buildInputField(
           controller: _usernameController,
           focusNode: _usernameFocus,
+          label: 'Username',
+          cs: cs,
           textInputAction: TextInputAction.next,
-          decoration: InputDecoration(
-            labelText: 'Username',
-            prefixIcon: const Icon(Icons.person_outline_rounded),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            filled: true,
-            fillColor: cs.surfaceContainerHighest.withOpacity(0.3),
-          ),
+          prefixIcon: Icon(Icons.person_outline_rounded, size: 20,
+            color: cs.onSurfaceVariant.withOpacity(0.5)),
           validator: (v) {
             if (v == null || v.trim().isEmpty) {
               return 'Please enter your username';
@@ -373,32 +495,29 @@ class _LoginScreenState extends State<LoginScreen>
             return null;
           },
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
 
         // Password
-        TextFormField(
+        _buildInputField(
           controller: _passwordController,
+          label: 'Password',
+          cs: cs,
           obscureText: _obscurePassword,
           textInputAction: TextInputAction.done,
           onFieldSubmitted: (_) => _handleLogin(),
-          decoration: InputDecoration(
-            labelText: 'Password',
-            prefixIcon: const Icon(Icons.lock_outline_rounded),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _obscurePassword
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined,
-              ),
-              onPressed: () {
-                setState(() => _obscurePassword = !_obscurePassword);
-              },
+          prefixIcon: Icon(Icons.lock_outline_rounded, size: 20,
+            color: cs.onSurfaceVariant.withOpacity(0.5)),
+          suffixIcon: IconButton(
+            icon: Icon(
+              _obscurePassword
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
+              size: 20,
+              color: cs.onSurfaceVariant.withOpacity(0.5),
             ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            filled: true,
-            fillColor: cs.surfaceContainerHighest.withOpacity(0.3),
+            onPressed: () {
+              setState(() => _obscurePassword = !_obscurePassword);
+            },
           ),
           validator: (v) {
             if (v == null || v.isEmpty) {
@@ -407,26 +526,29 @@ class _LoginScreenState extends State<LoginScreen>
             return null;
           },
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 24),
 
         // Sign In button
         SizedBox(
           width: double.infinity,
-          height: 56,
+          height: 52,
           child: FilledButton(
             onPressed: _isConnecting ? null : _handleLogin,
             style: FilledButton.styleFrom(
+              backgroundColor: cs.primary,
+              foregroundColor: cs.onPrimary,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(14),
               ),
+              elevation: 0,
             ),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
               child: _isConnecting
                   ? SizedBox(
                       key: const ValueKey('loading'),
-                      width: 24,
-                      height: 24,
+                      width: 22,
+                      height: 22,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
                         color: cs.onPrimary,

@@ -462,6 +462,11 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       coverUrl: coverUrl, totalDuration: duration, chapters: chapters,
     );
 
+    // Ensure this book is on the absorbing list (clear any manual remove)
+    if (context.mounted) {
+      context.read<LibraryProvider>().addToAbsorbing(itemId);
+    }
+
     if (mounted) setState(() => _isLoading = false);
     // Navigate to absorbing screen
     if (context.mounted) AppShell.goToAbsorbing(context);
