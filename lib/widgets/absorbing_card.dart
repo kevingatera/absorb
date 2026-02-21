@@ -86,7 +86,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
 
   void _startChapterTracking() {
     _chapterTrackSub?.cancel();
-    _chapterTrackSub = widget.player.positionStream.listen((pos) {
+    _chapterTrackSub = widget.player.absolutePositionStream.listen((pos) {
       if (!_isActive) return;
       final posS = pos.inMilliseconds / 1000.0;
       final chapters = widget.player.chapters.isNotEmpty ? widget.player.chapters : _chapters;
@@ -215,50 +215,57 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
             children: [
               // ── Stats row ──
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
+                padding: const EdgeInsets.fromLTRB(24, 10, 24, 0),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('${(bookProgress * 100).clamp(0, 100).toStringAsFixed(1)}%',
-                      style: tt.labelSmall?.copyWith(color: Colors.white.withValues(alpha: 0.9), fontWeight: FontWeight.w700, fontSize: 13)),
+                      style: tt.labelMedium?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.95),
+                        fontWeight: FontWeight.w800, fontSize: 15,
+                        shadows: [Shadow(color: Colors.black.withValues(alpha: 0.6), blurRadius: 4)],
+                      )),
                     if (totalChapters > 0)
                       Text('Ch ${(chapterIdx + 1).clamp(1, totalChapters)} / $totalChapters',
-                        style: tt.labelSmall?.copyWith(color: Colors.white.withValues(alpha: 0.7), fontWeight: FontWeight.w600, fontSize: 13)),
+                        style: tt.labelMedium?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontWeight: FontWeight.w700, fontSize: 14,
+                          shadows: [Shadow(color: Colors.black.withValues(alpha: 0.6), blurRadius: 4)],
+                        )),
                   ],
                 ),
               ),
-              // ── Download + History row ──
+              // ── Book progress bar ──
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(children: [
-                  Expanded(child: DownloadWideButton(
-                    itemId: _itemId, coverUrl: _coverUrl,
-                    title: _title, author: _author, accent: accent,
-                  )),
-                  const SizedBox(width: 10),
-                  Expanded(child: _CardWideButton(
-                    icon: Icons.history_rounded, label: 'History',
-                    accent: accent, isActive: _isActive,
-                    onTap: () => _showHistory(context, accent, tt),
-                  )),
-                ]),
+                child: _CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: progress, staticDuration: _duration, chapters: _chapters, showBookBar: true, showChapterBar: false),
               ),
-                const SizedBox(height: 6),
-                // ── Cover with title/author/chapter overlaid ──
+                const SizedBox(height: 10),
+                // ── Cover with title/author/chapter overlaid + download badge ──
                 Flexible(
-                  child: LayoutBuilder(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: LayoutBuilder(
                     builder: (context, constraints) {
                       final coverWidth = constraints.maxWidth * 0.85;
                       // Use the smaller of desired width or available height to prevent squishing
                       final coverSize = coverWidth < constraints.maxHeight
                           ? coverWidth
                           : constraints.maxHeight;
-                      return SizedBox(
+                      final isDownloaded = DownloadService().isDownloaded(_itemId);
+                      return Container(
                           width: coverSize,
                           height: coverSize,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 20, spreadRadius: -2, offset: const Offset(0, 6)),
+                              BoxShadow(color: accent.withValues(alpha: 0.15), blurRadius: 30, spreadRadius: -5),
+                            ],
+                          ),
                           child: RepaintBoundary(
                             child: ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(16),
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
@@ -268,7 +275,27 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                           placeholder: (_, __) => _coverPlaceholder(),
                                           errorWidget: (_, __, ___) => _coverPlaceholder())
                                     : _coverPlaceholder(),
-                                // Bottom gradient for text legibility
+                                // Downloaded badge (top-right)
+                                if (isDownloaded)
+                                  Positioned(
+                                    top: 8, right: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.6),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.download_done_rounded, size: 13, color: accent.withValues(alpha: 0.9)),
+                                          const SizedBox(width: 4),
+                                          Text('Downloaded', style: TextStyle(color: accent.withValues(alpha: 0.9), fontSize: 10, fontWeight: FontWeight.w600)),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                // Subtle bottom gradient for chapter pill legibility
                                 Positioned(
                                   left: 0, right: 0, bottom: 0,
                                   child: DecoratedBox(
@@ -277,49 +304,39 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                         begin: Alignment.bottomCenter,
                                         end: Alignment.topCenter,
                                         colors: [
-                                          Colors.black.withValues(alpha: 0.95),
                                           Colors.black.withValues(alpha: 0.7),
+                                          Colors.black.withValues(alpha: 0.3),
                                           Colors.black.withValues(alpha: 0.0),
                                         ],
-                                        stops: const [0.0, 0.55, 1.0],
+                                        stops: const [0.0, 0.5, 1.0],
                                       ),
                                     ),
-                                    child: const SizedBox(height: 120, width: double.infinity),
+                                    child: const SizedBox(height: 70, width: double.infinity),
                                   ),
                                 ),
-                                // Title / Author / Chapter overlaid at bottom
-                                Positioned(
-                                  left: 10, right: 10, bottom: 10,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.center,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(_title, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-                                        style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: Colors.white, height: 1.2)),
-                                      const SizedBox(height: 3),
-                                      Text(_author, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-                                        style: tt.bodySmall?.copyWith(color: Colors.white70)),
-                                      if (_chapterName(chapterIdx) != null) ...[
-                                        const SizedBox(height: 5),
-                                        Container(
-                                          height: 24,
-                                          clipBehavior: Clip.hardEdge,
-                                          decoration: BoxDecoration(
-                                            color: accent.withValues(alpha: 0.25),
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                                            child: _MarqueeText(
-                                              text: _chapterName(chapterIdx)!,
-                                              style: tt.labelSmall?.copyWith(color: accent.withValues(alpha: 0.9), fontWeight: FontWeight.w500, fontSize: 11) ?? const TextStyle(fontSize: 11),
-                                            ),
+                                // Chapter pill overlaid at bottom center
+                                if (_chapterName(chapterIdx) != null)
+                                  Positioned(
+                                    left: 10, right: 10, bottom: 10,
+                                    child: Center(
+                                      child: Container(
+                                        height: 30,
+                                        clipBehavior: Clip.hardEdge,
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(alpha: 0.55),
+                                          borderRadius: BorderRadius.circular(15),
+                                          border: Border.all(color: accent.withValues(alpha: 0.3), width: 0.5),
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                                          child: _MarqueeText(
+                                            text: _chapterName(chapterIdx)!,
+                                            style: tt.labelMedium?.copyWith(color: Colors.white.withValues(alpha: 0.95), fontWeight: FontWeight.w600, fontSize: 13) ?? const TextStyle(fontSize: 13),
                                           ),
                                         ),
-                                      ],
-                                    ],
+                                      ),
+                                    ),
                                   ),
-                                ),
                               ],
                             ),
                           ),
@@ -327,14 +344,19 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                       );
                     },
                   ),
+                  ),
                 ),
-                // ── Progress bar + controls + buttons (padded) ──
-                Padding(
+                const SizedBox(height: 6),
+                // ── Chapter bar + controls + buttons ──
+                Expanded(
+                  child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Column(
                     children: [
-                      _CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: progress, staticDuration: _duration, chapters: _chapters),
-                      const SizedBox(height: 4),
+                      _CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: progress, staticDuration: _duration, chapters: _chapters, showBookBar: false, showChapterBar: true),
+                      // Flex 2:3 biases controls slightly upward to visually center
+                      // (compensates for chapter time labels adding weight above)
+                      const Spacer(flex: 2),
                       _CardPlaybackControls(
                         player: widget.player,
                         accent: accent,
@@ -342,29 +364,14 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                         isStarting: _isStarting,
                         onStart: _startPlayback,
                       ),
-                      const SizedBox(height: 6),
+                      const Spacer(flex: 3),
+                      // ── Button grid (hugs bottom) ──
+                      // Primary actions: Chapters + Speed (larger, more prominent)
                       Row(children: [
-                        Expanded(child: _CardWideButton(
-                          icon: Icons.bedtime_outlined, label: 'Sleep Timer',
-                          accent: accent, isActive: _isActive,
-                          child: _CardSleepButtonInline(accent: accent, isActive: _isActive),
-                        )),
-                        const SizedBox(width: 8),
                         Expanded(child: _CardWideButton(
                           icon: Icons.list_rounded, label: 'Chapters',
                           accent: accent, isActive: _isActive,
                           onTap: () => _showChapters(context, accent, tt),
-                        )),
-                      ]),
-                      const SizedBox(height: 8),
-                      Row(children: [
-                        Expanded(child: _CardWideButton(
-                          icon: Icons.bookmark_outline_rounded, label: 'Bookmarks',
-                          accent: accent, isActive: _isActive,
-                          child: _CardBookmarkButtonInline(
-                            player: widget.player, accent: accent,
-                            isActive: _isActive, itemId: _itemId,
-                          ),
                         )),
                         const SizedBox(width: 8),
                         Expanded(child: _CardWideButton(
@@ -374,28 +381,36 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                         )),
                       ]),
                       const SizedBox(height: 8),
-                      GestureDetector(
-                        onTap: () => showBookDetailSheet(context, _itemId),
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.06),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: accent.withValues(alpha: 0.15)),
+                      // Secondary actions: Sleep Timer + Bookmarks
+                      Row(children: [
+                        Expanded(child: _CardWideButton(
+                          icon: Icons.bedtime_outlined, label: 'Sleep Timer',
+                          accent: accent, isActive: _isActive,
+                          child: _CardSleepButtonInline(accent: accent, isActive: _isActive),
+                        )),
+                        const SizedBox(width: 8),
+                        Expanded(child: _CardWideButton(
+                          icon: Icons.bookmark_outline_rounded, label: 'Bookmarks',
+                          accent: accent, isActive: _isActive,
+                          child: _CardBookmarkButtonInline(
+                            player: widget.player, accent: accent,
+                            isActive: _isActive, itemId: _itemId,
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.info_outline_rounded, size: 14, color: accent.withValues(alpha: 0.7)),
-                              const SizedBox(width: 6),
-                              Text('Details', style: TextStyle(color: accent.withValues(alpha: 0.7), fontSize: 12, fontWeight: FontWeight.w500)),
-                            ],
+                        )),
+                      ]),
+                      // More menu: Details + History (centered below buttons)
+                      Center(
+                        child: GestureDetector(
+                          onTap: () => _showMoreMenu(context, accent, tt),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Icon(Icons.more_horiz_rounded, size: 22, color: Colors.white38),
                           ),
                         ),
                       ),
                       const SizedBox(height: 8),
                     ],
+                  ),
                   ),
                 ),
               ],
@@ -505,6 +520,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                     Text(_fmtDur(end - start), style: tt.labelSmall?.copyWith(color: Colors.white38)),
                   ]),
                   onTap: _isActive ? () {
+                    debugPrint('[MFDBG-UI] chapterList tap: chapter $i start=${start.toStringAsFixed(1)}s');
                     widget.player.seekTo(Duration(seconds: start.round()));
                     Navigator.pop(ctx);
                   } : null,
@@ -583,6 +599,50 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     );
   }
 
+  void _showMoreMenu(BuildContext context, Color accent, TextTheme tt) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A1A),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border(top: BorderSide(color: accent.withValues(alpha: 0.2), width: 1)),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Drag handle
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+                const SizedBox(height: 16),
+                // Details option
+                _MoreMenuItem(
+                  icon: Icons.info_outline_rounded,
+                  label: 'Book Details',
+                  accent: accent,
+                  onTap: () { Navigator.pop(ctx); showBookDetailSheet(context, _itemId); },
+                ),
+                const SizedBox(height: 6),
+                // History option
+                _MoreMenuItem(
+                  icon: Icons.history_rounded,
+                  label: 'Playback History',
+                  accent: accent,
+                  enabled: _isActive,
+                  onTap: () { Navigator.pop(ctx); _showHistory(context, accent, tt); },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   IconData _historyIcon(PlaybackEventType type) {
     switch (type) {
       case PlaybackEventType.play: return Icons.play_arrow_rounded;
@@ -628,7 +688,9 @@ class _CardDualProgressBar extends StatefulWidget {
   final double staticProgress;
   final double staticDuration;
   final List<dynamic> chapters;
-  const _CardDualProgressBar({required this.player, required this.accent, required this.isActive, required this.staticProgress, required this.staticDuration, required this.chapters});
+  final bool showBookBar;
+  final bool showChapterBar;
+  const _CardDualProgressBar({required this.player, required this.accent, required this.isActive, required this.staticProgress, required this.staticDuration, required this.chapters, this.showBookBar = true, this.showChapterBar = true});
   @override State<_CardDualProgressBar> createState() => _CardDualProgressBarState();
 }
 
@@ -682,12 +744,47 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
       final seedPos = widget.staticProgress * widget.staticDuration;
       _lastKnownPos = seedPos > 0 ? seedPos : _lastKnownPos;
       _lastPosTime = DateTime.now();
+      debugPrint('[MFDBG-UI] subscribePosition: seedPos=${seedPos.toStringAsFixed(1)}s '
+          '_lastKnownPos=${_lastKnownPos.toStringAsFixed(1)}s');
 
-      _posSub = widget.player.positionStream.listen((dur) {
+      _posSub = widget.player.absolutePositionStream.listen((dur) {
         final posSeconds = dur.inMilliseconds / 1000.0;
-        // Only accept positions that are reasonably close to where we expect
-        // (within 60s of seed, or past 2s if starting fresh)
-        if (seedPos > 5.0 && posSeconds < 2.0) return; // still loading/seeking
+
+        // If a seek just happened, check if this position event is the real
+        // post-seek value or a transient glitch. Accept values near the seek
+        // target; reject obvious transitional near-zero values.
+        final seekTarget = widget.player.activeSeekTarget;
+        if (seekTarget != null) {
+          // Accept if close to the seek target (within 5s tolerance)
+          if ((posSeconds - seekTarget).abs() < 5.0) {
+            debugPrint('[MFDBG-UI] ACCEPT (near seekTarget): pos=${posSeconds.toStringAsFixed(1)}s '
+                'seekTarget=${seekTarget.toStringAsFixed(1)}s diff=${((posSeconds - seekTarget).abs()).toStringAsFixed(1)}s');
+            _lastKnownPos = posSeconds;
+            _lastPosTime = DateTime.now();
+            _currentSpeed = widget.player.speed;
+            _isPlaying = widget.player.isPlaying;
+            return;
+          }
+          // Reject transient values far from the seek target
+          debugPrint('[MFDBG-UI] REJECT (far from seekTarget): pos=${posSeconds.toStringAsFixed(1)}s '
+              'seekTarget=${seekTarget.toStringAsFixed(1)}s diff=${((posSeconds - seekTarget).abs()).toStringAsFixed(1)}s '
+              '_lastKnownPos=${_lastKnownPos.toStringAsFixed(1)}s');
+          return;
+        }
+
+        // Normal playback: reject transient near-zero during track changes
+        if (_lastKnownPos > 10.0 && posSeconds < 2.0) {
+          debugPrint('[MFDBG-UI] REJECT (near-zero transient): pos=${posSeconds.toStringAsFixed(1)}s '
+              '_lastKnownPos=${_lastKnownPos.toStringAsFixed(1)}s');
+          return;
+        }
+
+        // Log significant position changes
+        final delta = posSeconds - _lastKnownPos;
+        if (delta.abs() > 5.0 || posSeconds.toInt() % 5 == 0) {
+          debugPrint('[MFDBG-UI] ACCEPT (normal): pos=${posSeconds.toStringAsFixed(1)}s '
+              'prev=${_lastKnownPos.toStringAsFixed(1)}s delta=${delta.toStringAsFixed(1)}s');
+        }
         _lastKnownPos = posSeconds;
         _lastPosTime = DateTime.now();
         _currentSpeed = widget.player.speed;
@@ -698,8 +795,15 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
     }
   }
 
-  /// Smoothly interpolated position — predicts where playback is right now
+  /// Smoothly interpolated position — predicts where playback is right now.
+  /// Snaps immediately to seek target when a seek is in progress.
   double get _smoothPos {
+    // If a seek just happened, snap to the target immediately
+    final seekTarget = widget.player.activeSeekTarget;
+    if (seekTarget != null && (seekTarget - _lastKnownPos).abs() > 2.0) {
+      // Don't log every frame — only when it changes significantly
+      return seekTarget;
+    }
     if (!widget.isActive || !_isPlaying) return _lastKnownPos;
     final elapsed = DateTime.now().difference(_lastPosTime).inMilliseconds / 1000.0;
     return _lastKnownPos + elapsed * _currentSpeed;
@@ -773,6 +877,7 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(children: [
             // Book bar
+            if (widget.showBookBar) ...[
             if (_showBookSlider) ...[
               SizedBox(height: 32, child: LayoutBuilder(builder: (_, cons) {
                 final w = cons.maxWidth;
@@ -781,16 +886,16 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
                   behavior: HitTestBehavior.opaque,
                   onHorizontalDragStart: active ? (d) { setState(() => _bookDragValue = (d.localPosition.dx / w).clamp(0.0, 1.0)); } : null,
                   onHorizontalDragUpdate: active ? (d) { setState(() => _bookDragValue = (d.localPosition.dx / w).clamp(0.0, 1.0)); } : null,
-                  onHorizontalDragEnd: active ? (_) { if (_bookDragValue != null) player.seekTo(Duration(milliseconds: (_bookDragValue! * totalDur * 1000).round())); setState(() => _bookDragValue = null); } : null,
-                  onTapUp: active ? (d) { final v = (d.localPosition.dx / w).clamp(0.0, 1.0); player.seekTo(Duration(milliseconds: (v * totalDur * 1000).round())); } : null,
+                  onHorizontalDragEnd: active ? (_) { if (_bookDragValue != null) { final seekMs = (_bookDragValue! * totalDur * 1000).round(); debugPrint('[MFDBG-UI] bookBar dragEnd: dragValue=${_bookDragValue!.toStringAsFixed(3)} totalDur=$totalDur seekMs=$seekMs (${(seekMs/1000.0).toStringAsFixed(1)}s)'); player.seekTo(Duration(milliseconds: seekMs)); } setState(() => _bookDragValue = null); } : null,
+                  onTapUp: active ? (d) { final v = (d.localPosition.dx / w).clamp(0.0, 1.0); final seekMs = (v * totalDur * 1000).round(); debugPrint('[MFDBG-UI] bookBar tap: value=${v.toStringAsFixed(3)} totalDur=$totalDur seekMs=$seekMs (${(seekMs/1000.0).toStringAsFixed(1)}s)'); player.seekTo(Duration(milliseconds: seekMs)); } : null,
                   child: CustomPaint(size: Size(w, 32), painter: AbsorbProgressPainter(progress: p, accent: widget.accent.withValues(alpha: 0.5), isDragging: _bookDragValue != null)),
                 );
               })),
               Padding(padding: const EdgeInsets.only(top: 2, bottom: 6), child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(_fmt(_bookDragValue != null ? _bookDragValue! * totalDur : posS), style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white60 : Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
-                  Text('-${_fmt(_bookDragValue != null ? (1.0 - _bookDragValue!) * totalDur : bookRemaining)}', style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white60 : Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
+                  Text(_fmt(_bookDragValue != null ? _bookDragValue! * totalDur : posS), style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white70 : Colors.white54, fontSize: 12, fontWeight: FontWeight.w600, shadows: [Shadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 3)])),
+                  Text('-${_fmt(_bookDragValue != null ? (1.0 - _bookDragValue!) * totalDur : bookRemaining)}', style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? Colors.white70 : Colors.white54, fontSize: 12, fontWeight: FontWeight.w600, shadows: [Shadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 3)])),
                 ],
               )),
             ] else ...[
@@ -804,7 +909,9 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
               ]),
               const SizedBox(height: 10),
             ],
+            ], // end showBookBar
             // Chapter bar
+            if (widget.showChapterBar) ...[
             SizedBox(height: 32, child: LayoutBuilder(builder: (_, cons) {
               final w = cons.maxWidth;
               final p = _chapterDragValue ?? chapterProgress;
@@ -812,8 +919,8 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
                 behavior: HitTestBehavior.opaque,
                 onHorizontalDragStart: active ? (d) { setState(() => _chapterDragValue = (d.localPosition.dx / w).clamp(0.0, 1.0)); } : null,
                 onHorizontalDragUpdate: active ? (d) { setState(() => _chapterDragValue = (d.localPosition.dx / w).clamp(0.0, 1.0)); } : null,
-                onHorizontalDragEnd: active ? (_) { if (_chapterDragValue != null) player.seekTo(Duration(milliseconds: ((chapterStart + _chapterDragValue! * chapterDur) * 1000).round())); setState(() => _chapterDragValue = null); } : null,
-                onTapUp: active ? (d) { final v = (d.localPosition.dx / w).clamp(0.0, 1.0); player.seekTo(Duration(milliseconds: ((chapterStart + v * chapterDur) * 1000).round())); } : null,
+                onHorizontalDragEnd: active ? (_) { if (_chapterDragValue != null) { final seekMs = ((chapterStart + _chapterDragValue! * chapterDur) * 1000).round(); debugPrint('[MFDBG-UI] chapterBar dragEnd: chapterStart=$chapterStart chapterDur=$chapterDur dragValue=${_chapterDragValue!.toStringAsFixed(3)} seekMs=$seekMs (${(seekMs/1000.0).toStringAsFixed(1)}s)'); player.seekTo(Duration(milliseconds: seekMs)); } setState(() => _chapterDragValue = null); } : null,
+                onTapUp: active ? (d) { final v = (d.localPosition.dx / w).clamp(0.0, 1.0); final seekMs = ((chapterStart + v * chapterDur) * 1000).round(); debugPrint('[MFDBG-UI] chapterBar tap: chapterStart=$chapterStart chapterDur=$chapterDur v=${v.toStringAsFixed(3)} seekMs=$seekMs (${(seekMs/1000.0).toStringAsFixed(1)}s)'); player.seekTo(Duration(milliseconds: seekMs)); } : null,
                 child: ListenableBuilder(
                   listenable: _waveController,
                   builder: (_, __) => CustomPaint(
@@ -831,6 +938,7 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
                 Text('-${_fmt(chapterRemaining)}', style: tt.labelSmall?.copyWith(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600)),
               ],
             )),
+            ], // end showChapterBar
           ]),
         );
       },
@@ -894,11 +1002,11 @@ class _CardPlaybackControlsState extends State<_CardPlaybackControls> with Singl
       IconData icon;
       if (isForward) { icon = seconds == 5 ? Icons.forward_5_rounded : seconds == 10 ? Icons.forward_10_rounded : Icons.forward_30_rounded; }
       else { icon = seconds == 5 ? Icons.replay_5_rounded : seconds == 10 ? Icons.replay_10_rounded : Icons.replay_30_rounded; }
-      return Icon(icon, size: 32, color: widget.isActive ? Colors.white70 : Colors.white24);
+      return Icon(icon, size: 38, color: widget.isActive ? Colors.white70 : Colors.white24);
     }
     return Stack(alignment: Alignment.center, children: [
-      Icon(isForward ? Icons.rotate_right_rounded : Icons.rotate_left_rounded, size: 32, color: widget.isActive ? Colors.white70 : Colors.white24),
-      Padding(padding: const EdgeInsets.only(top: 2), child: Text('$seconds', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: widget.isActive ? Colors.white : Colors.white24))),
+      Icon(isForward ? Icons.rotate_right_rounded : Icons.rotate_left_rounded, size: 38, color: widget.isActive ? Colors.white70 : Colors.white24),
+      Padding(padding: const EdgeInsets.only(top: 2), child: Text('$seconds', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: widget.isActive ? Colors.white : Colors.white24))),
     ]);
   }
 
@@ -935,11 +1043,19 @@ class _CardPlaybackControlsState extends State<_CardPlaybackControls> with Singl
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // Previous chapter
+            GestureDetector(
+              onTap: widget.isActive ? widget.player.skipToPreviousChapter : null,
+              child: SizedBox(width: 40, height: 40, child: Center(
+                child: Icon(Icons.skip_previous_rounded, size: 24, color: widget.isActive ? Colors.white38 : Colors.white12),
+              )),
+            ),
+            const SizedBox(width: 4),
             GestureDetector(
               onTap: widget.isActive ? () => widget.player.skipBackward(_backSkip) : null,
-              child: SizedBox(width: 48, height: 48, child: Center(child: _skipIcon(_backSkip, false))),
+              child: SizedBox(width: 52, height: 52, child: Center(child: _skipIcon(_backSkip, false))),
             ),
-            const SizedBox(width: 20),
+            const SizedBox(width: 16),
             GestureDetector(
               onTap: widget.isActive ? widget.player.togglePlayPause : widget.onStart,
               child: SizedBox(
@@ -970,10 +1086,18 @@ class _CardPlaybackControlsState extends State<_CardPlaybackControls> with Singl
                 ),
               ),
             ),
-            const SizedBox(width: 20),
+            const SizedBox(width: 16),
             GestureDetector(
               onTap: widget.isActive ? () => widget.player.skipForward(_forwardSkip) : null,
-              child: SizedBox(width: 48, height: 48, child: Center(child: _skipIcon(_forwardSkip, true))),
+              child: SizedBox(width: 52, height: 52, child: Center(child: _skipIcon(_forwardSkip, true))),
+            ),
+            const SizedBox(width: 4),
+            // Next chapter
+            GestureDetector(
+              onTap: widget.isActive ? widget.player.skipToNextChapter : null,
+              child: SizedBox(width: 40, height: 40, child: Center(
+                child: Icon(Icons.skip_next_rounded, size: 24, color: widget.isActive ? Colors.white38 : Colors.white12),
+              )),
             ),
           ],
         );
@@ -1450,21 +1574,24 @@ class _CardWideButton extends StatelessWidget {
   final String label;
   final Color accent;
   final bool isActive;
+  final bool alwaysEnabled;
   final VoidCallback? onTap;
   final Widget? child; // if provided, renders child instead (for stateful buttons)
 
   const _CardWideButton({
     required this.icon, required this.label,
     required this.accent, required this.isActive,
+    this.alwaysEnabled = false,
     this.onTap, this.child,
   });
 
   @override Widget build(BuildContext context) {
     if (child != null) return child!;
+    final enabled = isActive || alwaysEnabled;
     return GestureDetector(
-      onTap: isActive ? onTap : null,
+      onTap: enabled ? onTap : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(12),
@@ -1473,11 +1600,50 @@ class _CardWideButton extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 15, color: isActive ? Colors.white54 : Colors.white24),
+            Icon(icon, size: 15, color: enabled ? Colors.white54 : Colors.white24),
             const SizedBox(width: 6),
             Text(label, style: TextStyle(
-              color: isActive ? Colors.white54 : Colors.white24,
+              color: enabled ? Colors.white54 : Colors.white24,
               fontSize: 11, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Menu item for the More bottom sheet
+class _MoreMenuItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color accent;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _MoreMenuItem({
+    required this.icon, required this.label,
+    required this.accent, required this.onTap,
+    this.enabled = true,
+  });
+
+  @override Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: enabled ? accent.withValues(alpha: 0.7) : Colors.white24),
+            const SizedBox(width: 14),
+            Expanded(child: Text(label, style: TextStyle(
+              color: enabled ? Colors.white.withValues(alpha: 0.8) : Colors.white24,
+              fontSize: 14, fontWeight: FontWeight.w500))),
+            Icon(Icons.chevron_right_rounded, size: 18, color: enabled ? Colors.white24 : Colors.white12),
           ],
         ),
       ),

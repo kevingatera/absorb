@@ -217,18 +217,28 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> fastForward() async {
     debugPrint('[Handler] fastForward() — seeking forward');
-    final skipAmount = await PlayerSettings.getForwardSkip();
-    await _player.seek(_player.position + Duration(seconds: skipAmount));
+    if (_service != null) {
+      final skipAmount = await PlayerSettings.getForwardSkip();
+      await _service!.skipForward(skipAmount);
+    } else {
+      final skipAmount = await PlayerSettings.getForwardSkip();
+      await _player.seek(_player.position + Duration(seconds: skipAmount));
+    }
     debugPrint('[Handler] fastForward done — playing=${_player.playing}');
   }
 
   @override
   Future<void> rewind() async {
     debugPrint('[Handler] rewind() — seeking back');
-    final skipAmount = await PlayerSettings.getBackSkip();
-    var pos = _player.position - Duration(seconds: skipAmount);
-    if (pos < Duration.zero) pos = Duration.zero;
-    await _player.seek(pos);
+    if (_service != null) {
+      final skipAmount = await PlayerSettings.getBackSkip();
+      await _service!.skipBackward(skipAmount);
+    } else {
+      final skipAmount = await PlayerSettings.getBackSkip();
+      var pos = _player.position - Duration(seconds: skipAmount);
+      if (pos < Duration.zero) pos = Duration.zero;
+      await _player.seek(pos);
+    }
     debugPrint('[Handler] rewind done — playing=${_player.playing}');
   }
 
@@ -332,6 +342,33 @@ class AudioPlayerService extends ChangeNotifier {
   StreamSubscription? _syncSub;
   StreamSubscription? _completionSub;
 
+  // ── Multi-file track offset tracking ──
+  // For ConcatenatingAudioSource, _player.position is track-relative.
+  // We store cumulative start offsets so we can compute absolute book position.
+  List<double> _trackStartOffsets = []; // [0, dur0, dur0+dur1, ...]
+  int _currentTrackIndex = 0;
+  StreamSubscription? _indexSub;
+
+  /// The last seek target in seconds (absolute book position).
+  /// UI can use this to immediately snap to the target before stream catches up.
+  double? _lastSeekTargetSeconds;
+  DateTime? _lastSeekTime;
+
+  /// If a seek happened within the last 2 seconds, returns the seek target.
+  /// Otherwise returns null (use the stream position).
+  double? get activeSeekTarget {
+    if (_lastSeekTargetSeconds == null || _lastSeekTime == null) return null;
+    final elapsed = DateTime.now().difference(_lastSeekTime!).inMilliseconds;
+    if (elapsed > 2000) {
+      debugPrint('[MFDBG] activeSeekTarget: EXPIRED after ${elapsed}ms '
+          '(target was ${_lastSeekTargetSeconds!.toStringAsFixed(1)}s)');
+      _lastSeekTargetSeconds = null;
+      _lastSeekTime = null;
+      return null;
+    }
+    return _lastSeekTargetSeconds;
+  }
+
   final _progressSync = ProgressSyncService();
   final _downloadService = DownloadService();
   final _history = PlaybackHistoryService();
@@ -377,9 +414,104 @@ class AudioPlayerService extends ChangeNotifier {
   Stream<PlayerState> get playerStateStream =>
       _player?.playerStateStream ?? const Stream.empty();
 
-  Duration get position => _player?.position ?? Duration.zero;
+  /// Absolute book position (accounts for multi-file track offsets).
+  Duration get position {
+    if (_player == null) return Duration.zero;
+    final trackRelative = _player!.position;
+    if (_trackStartOffsets.length <= 1) return trackRelative; // single file
+    final offsetMs = (_trackStartOffsets[_currentTrackIndex] * 1000).round();
+    final result = trackRelative + Duration(milliseconds: offsetMs);
+    // Don't log every call — this is called very frequently by sync and UI
+    return result;
+  }
+
+  /// Absolute book position stream (adjusted for multi-file offsets).
+  /// IMPORTANT: Always returns a mapped stream that checks offsets at event time.
+  /// Do NOT short-circuit to raw positionStream — the caller may subscribe before
+  /// track offsets are built, and would miss the offset transform forever.
+  Stream<Duration> get absolutePositionStream {
+    if (_player == null) return const Stream.empty();
+    return _player!.positionStream.map((trackRelative) {
+      if (_trackStartOffsets.length <= 1) return trackRelative; // single file, no offset
+      final trackIdx = _currentTrackIndex;
+      final offsetMs = (_trackStartOffsets[trackIdx] * 1000).round();
+      final absolute = trackRelative + Duration(milliseconds: offsetMs);
+      // Log every ~2s to avoid flooding
+      if (trackRelative.inMilliseconds % 2000 < 250) {
+        debugPrint('[MFDBG] posStream: trackRel=${trackRelative.inMilliseconds}ms '
+            'trackIdx=$trackIdx offset=${offsetMs}ms → abs=${absolute.inMilliseconds}ms '
+            '(${(absolute.inMilliseconds / 1000.0).toStringAsFixed(1)}s)');
+      }
+      return absolute;
+    });
+  }
+
   Duration get duration => _player?.duration ?? Duration.zero;
   double get speed => _player?.speed ?? 1.0;
+
+  /// Build track start offsets from audioTracks list.
+  void _buildTrackOffsets(List<dynamic> audioTracks) {
+    _trackStartOffsets = [0.0];
+    double acc = 0;
+    for (final t in audioTracks) {
+      final track = t as Map<String, dynamic>;
+      final dur = (track['duration'] as num?)?.toDouble() ?? 0;
+      acc += dur;
+      _trackStartOffsets.add(acc);
+    }
+    debugPrint('[Player] Track offsets: $_trackStartOffsets');
+  }
+
+  /// Subscribe to track index changes for multi-file playback.
+  void _subscribeTrackIndex() {
+    _indexSub?.cancel();
+    if (_player == null || _trackStartOffsets.length <= 1) return;
+    _indexSub = _player!.currentIndexStream.listen((index) {
+      if (index != null) {
+        final old = _currentTrackIndex;
+        _currentTrackIndex = index.clamp(0, _trackStartOffsets.length - 2);
+        debugPrint('[MFDBG] trackIndex changed: $old → $_currentTrackIndex '
+            '(raw=$index, offset=${_trackStartOffsets[_currentTrackIndex]}s)');
+      }
+    });
+  }
+
+  /// Seek to an absolute book position, handling multi-file offset conversion.
+  Future<void> _seekAbsolute(double absoluteSeconds) async {
+    if (_player == null) return;
+
+    debugPrint('[MFDBG] _seekAbsolute called: target=${absoluteSeconds.toStringAsFixed(1)}s '
+        'trackOffsets=$_trackStartOffsets currentTrackIdx=$_currentTrackIndex');
+
+    // Record seek target so UI can snap immediately
+    _lastSeekTargetSeconds = absoluteSeconds;
+    _lastSeekTime = DateTime.now();
+
+    if (_trackStartOffsets.length <= 1) {
+      // Single file — seek directly
+      debugPrint('[MFDBG] _seekAbsolute: single file, seeking directly');
+      await _player!.seek(Duration(milliseconds: (absoluteSeconds * 1000).round()));
+      return;
+    }
+    // Multi-file — find the right track and local offset
+    for (int i = 0; i < _trackStartOffsets.length - 1; i++) {
+      final trackStart = _trackStartOffsets[i];
+      final trackEnd = _trackStartOffsets[i + 1];
+      if (absoluteSeconds < trackEnd || i == _trackStartOffsets.length - 2) {
+        final localOffset = absoluteSeconds - trackStart;
+        debugPrint('[MFDBG] _seekAbsolute: ${absoluteSeconds.toStringAsFixed(1)}s → '
+            'track $i (range ${trackStart.toStringAsFixed(1)}-${trackEnd.toStringAsFixed(1)}s) '
+            'localOffset=${localOffset.toStringAsFixed(1)}s');
+        // Update index BEFORE seeking so positionStream events use the right offset
+        _currentTrackIndex = i;
+        debugPrint('[MFDBG] _seekAbsolute: set _currentTrackIndex=$i, now calling _player.seek()');
+        await _player!.seek(Duration(milliseconds: (localOffset * 1000).round()), index: i);
+        debugPrint('[MFDBG] _seekAbsolute: _player.seek() returned. '
+            'playerPos=${_player!.position.inMilliseconds}ms playerIndex=${_player!.currentIndex}');
+        return;
+      }
+    }
+  }
 
   /// MUST be called after Activity is ready.
   static Future<void> init() async {
@@ -498,10 +630,10 @@ class AudioPlayerService extends ChangeNotifier {
     if (_player == null) return false;
 
     final wasPlaying = _player!.playing;
-    final currentPos = _player!.position;
+    final currentAbsolutePos = position; // use absolute position getter
     final currentSpeed = _player!.speed;
 
-    debugPrint('[Player] Hot-swapping to local files at ${currentPos.inSeconds}s');
+    debugPrint('[Player] Hot-swapping to local files at ${currentAbsolutePos.inSeconds}s');
 
     final localPaths = _downloadService.getLocalPaths(itemId);
     if (localPaths == null || localPaths.isEmpty) return false;
@@ -516,6 +648,14 @@ class AudioPlayerService extends ChangeNotifier {
       } catch (_) {}
     }
 
+    // Rebuild track offsets for local files
+    if (audioTracks != null) {
+      _buildTrackOffsets(audioTracks);
+    } else {
+      _trackStartOffsets = [0.0];
+    }
+    _currentTrackIndex = 0;
+
     try {
       AudioSource source;
       if (localPaths.length == 1) {
@@ -527,22 +667,11 @@ class AudioPlayerService extends ChangeNotifier {
 
       await _player!.setAudioSource(source);
 
-      // Seek to the same position
-      final posSeconds = currentPos.inMilliseconds / 1000.0;
-      if (localPaths.length == 1) {
-        await _player!.seek(currentPos);
-      } else if (audioTracks != null) {
-        double acc = 0;
-        for (int i = 0; i < audioTracks.length && i < localPaths.length; i++) {
-          final t = audioTracks[i] as Map<String, dynamic>;
-          final dur = (t['duration'] as num?)?.toDouble() ?? 0;
-          if (posSeconds < acc + dur) {
-            await _player!.seek(Duration(seconds: (posSeconds - acc).round()), index: i);
-            break;
-          }
-          acc += dur;
-        }
-      }
+      // Seek to the same absolute position
+      final posSeconds = currentAbsolutePos.inMilliseconds / 1000.0;
+      await _seekAbsolute(posSeconds);
+
+      _subscribeTrackIndex();
 
       // Restore speed
       await _player!.setSpeed(currentSpeed);
@@ -648,6 +777,14 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     try {
+      // Build multi-file track offsets for absolute position tracking
+      if (audioTracks != null) {
+        _buildTrackOffsets(audioTracks);
+      } else {
+        _trackStartOffsets = [0.0]; // single file fallback
+      }
+      _currentTrackIndex = 0;
+
       AudioSource source;
       if (localPaths.length == 1) {
         source = AudioSource.file(localPaths.first);
@@ -661,23 +798,10 @@ class AudioPlayerService extends ChangeNotifier {
       await _player!.setAudioSource(source);
 
       if (startTime > 0) {
-        if (localPaths.length == 1) {
-          await _player!.seek(Duration(seconds: startTime.round()));
-        } else if (audioTracks != null) {
-          double acc = 0;
-          for (int i = 0; i < audioTracks.length && i < localPaths.length; i++) {
-            final t = audioTracks[i] as Map<String, dynamic>;
-            final dur = (t['duration'] as num?)?.toDouble() ?? 0;
-            if (startTime < acc + dur) {
-              await _player!.seek(
-                  Duration(seconds: (startTime - acc).round()), index: i);
-              break;
-            }
-            acc += dur;
-          }
-        }
+        await _seekAbsolute(startTime);
       }
 
+      _subscribeTrackIndex();
       _pushMediaItem(itemId, title, author, coverUrl, totalDuration);
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
@@ -740,6 +864,10 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     try {
+      // Build multi-file track offsets for absolute position tracking
+      _buildTrackOffsets(audioTracks);
+      _currentTrackIndex = 0;
+
       AudioSource source;
       if (audioTracks.length == 1) {
         final track = audioTracks.first as Map<String, dynamic>;
@@ -760,23 +888,10 @@ class AudioPlayerService extends ChangeNotifier {
       await _player!.setAudioSource(source);
 
       if (startTime > 0) {
-        if (audioTracks.length == 1) {
-          await _player!.seek(Duration(seconds: startTime.round()));
-        } else {
-          double acc = 0;
-          for (int i = 0; i < audioTracks.length; i++) {
-            final t = audioTracks[i] as Map<String, dynamic>;
-            final dur = (t['duration'] as num?)?.toDouble() ?? 0;
-            if (startTime < acc + dur) {
-              await _player!.seek(
-                  Duration(seconds: (startTime - acc).round()), index: i);
-              break;
-            }
-            acc += dur;
-          }
-        }
+        await _seekAbsolute(startTime);
       }
 
+      _subscribeTrackIndex();
       _pushMediaItem(itemId, title, author, coverUrl, totalDuration);
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
@@ -817,6 +932,12 @@ class AudioPlayerService extends ChangeNotifier {
     _currentCoverUrl = null;
     _playbackSessionId = null;
     _isOfflineMode = false;
+    _trackStartOffsets = [];
+    _currentTrackIndex = 0;
+    _lastSeekTargetSeconds = null;
+    _lastSeekTime = null;
+    _indexSub?.cancel();
+    _indexSub = null;
     _syncSub?.cancel();
     _syncSub = null;
     _completionSub?.cancel();
@@ -830,13 +951,23 @@ class AudioPlayerService extends ChangeNotifier {
     _syncSub?.cancel();
     _lastSyncSecond = -1;
 
-    _syncSub = _player?.positionStream.listen((pos) async {
-      final sec = pos.inSeconds;
+    _syncSub = _player?.positionStream.listen((trackRelativePos) async {
+      // Convert track-relative position to absolute book position
+      final absolutePos = position; // uses the getter which adds track offset
+      final sec = absolutePos.inSeconds;
       if (sec <= 0) return;
+
+      // Log every ~5s to trace what sync is seeing
+      if (sec % 5 == 0 && sec != _lastSyncSecond) {
+        debugPrint('[MFDBG] sync: trackRel=${trackRelativePos.inMilliseconds}ms '
+            'trackIdx=$_currentTrackIndex abs=${absolutePos.inMilliseconds}ms '
+            '(${(absolutePos.inMilliseconds / 1000.0).toStringAsFixed(1)}s) '
+            'totalDur=$_totalDuration');
+      }
 
       // ─── Completion detection ─────────────────────────────
       // Check if we've reached the end of the book
-      final posSeconds = pos.inMilliseconds / 1000.0;
+      final posSeconds = absolutePos.inMilliseconds / 1000.0;
       if (_totalDuration > 0 && posSeconds >= _totalDuration - 1.0) {
         _onPlaybackComplete();
         return;
@@ -845,7 +976,7 @@ class AudioPlayerService extends ChangeNotifier {
       // Save locally every 5 seconds (always works, even offline)
       if (sec % 5 == 0 && sec != _lastSyncSecond && _currentItemId != null) {
         _lastSyncSecond = sec;
-        _saveProgressLocal(pos);
+        _saveProgressLocal(absolutePos);
 
         // Also sync to server every 15 seconds (unless manual offline)
         if (sec % 15 == 0) {
@@ -856,10 +987,10 @@ class AudioPlayerService extends ChangeNotifier {
             // Manual offline — local save only, no server sync
           } else if (!_isOfflineMode && _playbackSessionId != null) {
             // Streaming/local with session: sync via session
-            _syncToServer(pos);
+            _syncToServer(absolutePos);
           } else if (!_isOfflineMode && _api != null && _currentItemId != null) {
             // No session but online — sync via progress update endpoint
-            debugPrint('[Player] No-session sync — sending to server at ${pos.inSeconds}s');
+            debugPrint('[Player] No-session sync — sending to server at ${absolutePos.inSeconds}s');
             try {
               final ok = await _progressSync.syncToServer(
                   api: _api!, itemId: _currentItemId!);
@@ -927,9 +1058,12 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> _saveProgressLocal(Duration pos) async {
     if (_currentItemId == null) return;
+    final ct = pos.inMilliseconds / 1000.0;
+    debugPrint('[MFDBG] saveLocal: ${ct.toStringAsFixed(1)}s / ${_totalDuration.toStringAsFixed(1)}s '
+        'trackIdx=$_currentTrackIndex rawPlayerPos=${_player?.position.inMilliseconds}ms');
     await _progressSync.saveLocal(
       itemId: _currentItemId!,
-      currentTime: pos.inMilliseconds / 1000.0,
+      currentTime: ct,
       duration: _totalDuration,
       speed: speed,
     );
@@ -938,10 +1072,12 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> _syncToServer(Duration pos) async {
     if (_api == null || _playbackSessionId == null) return;
+    final ct = pos.inMilliseconds / 1000.0;
+    debugPrint('[MFDBG] syncServer: ${ct.toStringAsFixed(1)}s / ${_totalDuration.toStringAsFixed(1)}s');
     try {
       await _api!.syncPlaybackSession(
         _playbackSessionId!,
-        currentTime: pos.inMilliseconds / 1000.0,
+        currentTime: ct,
         duration: _totalDuration,
       );
       // _logEvent(PlaybackEventType.syncServer); // too noisy for history
@@ -978,10 +1114,10 @@ class AudioPlayerService extends ChangeNotifier {
             pauseDuration, settings.minRewind, settings.maxRewind,
             activationDelay: settings.activationDelay);
         if (rewindSeconds > 0.5) {
-          var newPos = _player!.position -
-              Duration(milliseconds: (rewindSeconds * 1000).round());
-          if (newPos < Duration.zero) newPos = Duration.zero;
-          await _player!.seek(newPos);
+          final currentAbsolutePos = position.inMilliseconds / 1000.0;
+          var newPosSeconds = currentAbsolutePos - rewindSeconds;
+          if (newPosSeconds < 0) newPosSeconds = 0;
+          await _seekAbsolute(newPosSeconds);
           _logEvent(PlaybackEventType.autoRewind,
               detail: '${rewindSeconds.toStringAsFixed(1)}s rewind');
           debugPrint(
@@ -1026,8 +1162,9 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   Future<void> seekTo(Duration pos) async {
-    debugPrint('[Service] seekTo(${pos.inSeconds}s)');
-    await _player?.seek(pos);
+    debugPrint('[MFDBG] seekTo(${pos.inSeconds}s / ${pos.inMilliseconds}ms) '
+        'trackOffsetCount=${_trackStartOffsets.length} currentTrack=$_currentTrackIndex');
+    await _seekAbsolute(pos.inMilliseconds / 1000.0);
     _logEvent(PlaybackEventType.seek,
         detail: 'to ${_formatPos(pos)}');
     notifyListeners();
@@ -1036,7 +1173,8 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> skipForward([int seconds = 30]) async {
     if (_player == null) return;
     debugPrint('[Service] skipForward(${seconds}s) — playing=${_player!.playing}');
-    await _player!.seek(_player!.position + Duration(seconds: seconds));
+    final newPos = position + Duration(seconds: seconds);
+    await _seekAbsolute(newPos.inMilliseconds / 1000.0);
     _logEvent(PlaybackEventType.skipForward, detail: '+${seconds}s');
     debugPrint('[Service] skipForward done — playing=${_player!.playing}');
   }
@@ -1044,11 +1182,46 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> skipBackward([int seconds = 10]) async {
     if (_player == null) return;
     debugPrint('[Service] skipBackward(${seconds}s) — playing=${_player!.playing}');
-    var n = _player!.position - Duration(seconds: seconds);
+    var n = position - Duration(seconds: seconds);
     if (n < Duration.zero) n = Duration.zero;
-    await _player!.seek(n);
+    await _seekAbsolute(n.inMilliseconds / 1000.0);
     _logEvent(PlaybackEventType.skipBackward, detail: '-${seconds}s');
     debugPrint('[Service] skipBackward done — playing=${_player!.playing}');
+  }
+
+  Future<void> skipToNextChapter() async {
+    if (_player == null || _chapters.isEmpty) return;
+    final posS = position.inMilliseconds / 1000.0;
+    for (int i = 0; i < _chapters.length; i++) {
+      final start = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
+      if (start > posS + 1.0) {
+        debugPrint('[Service] skipToNextChapter → chapter $i at ${start}s');
+        await _seekAbsolute(start);
+        _logEvent(PlaybackEventType.seek, detail: 'next chapter');
+        notifyListeners();
+        return;
+      }
+    }
+  }
+
+  Future<void> skipToPreviousChapter() async {
+    if (_player == null || _chapters.isEmpty) return;
+    final posS = position.inMilliseconds / 1000.0;
+    // If more than 3s into current chapter, go to start of current chapter
+    // Otherwise go to previous chapter
+    for (int i = _chapters.length - 1; i >= 0; i--) {
+      final start = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
+      if (start < posS - 3.0) {
+        debugPrint('[Service] skipToPreviousChapter → chapter $i at ${start}s');
+        await _seekAbsolute(start);
+        _logEvent(PlaybackEventType.seek, detail: 'prev chapter');
+        notifyListeners();
+        return;
+      }
+    }
+    // If at the very start, seek to 0
+    await _seekAbsolute(0);
+    notifyListeners();
   }
 
   Future<void> setSpeed(double s) async {
@@ -1065,7 +1238,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   Map<String, dynamic>? get currentChapter {
     if (_chapters.isEmpty || _player == null) return null;
-    final pos = _player!.position.inMilliseconds / 1000.0;
+    final pos = position.inMilliseconds / 1000.0; // absolute book position
     for (final ch in _chapters) {
       final start = (ch['start'] as num?)?.toDouble() ?? 0;
       final end = (ch['end'] as num?)?.toDouble() ?? 0;
@@ -1118,6 +1291,7 @@ class AudioPlayerService extends ChangeNotifier {
   void dispose() {
     _syncSub?.cancel();
     _completionSub?.cancel();
+    _indexSub?.cancel();
     _player?.dispose();
     super.dispose();
   }
