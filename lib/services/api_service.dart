@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const appVersion = '1.2.2';
+  static const appVersion = '1.2.1';
 
   final String baseUrl;
   final String token;
@@ -74,6 +74,22 @@ class ApiService {
     } catch (_) {
       return false;
     }
+  }
+
+  /// Get the server version via the /status endpoint (no auth needed).
+  static Future<String?> getServerVersion(String serverUrl) async {
+    final url = serverUrl.endsWith('/')
+        ? '${serverUrl}status'
+        : '$serverUrl/status';
+    try {
+      final response = await http.get(Uri.parse(url))
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['serverVersion'] as String?;
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// Get all libraries.

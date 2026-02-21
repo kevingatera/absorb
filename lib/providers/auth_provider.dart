@@ -11,6 +11,7 @@ class AuthProvider extends ChangeNotifier {
   String? _defaultLibraryId;
   Map<String, dynamic>? _userJson;
   Map<String, dynamic>? _serverSettings;
+  String? _serverVersion;
   bool _serverReachable = true;
 
   bool _isLoading = true;
@@ -28,6 +29,7 @@ class AuthProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   Map<String, dynamic>? get userJson => _userJson;
   Map<String, dynamic>? get serverSettings => _serverSettings;
+  String? get serverVersion => _serverVersion;
 
   ApiService? get apiService {
     if (_serverUrl != null && _token != null) {
@@ -129,6 +131,9 @@ class AuthProvider extends ChangeNotifier {
     _userJson = user;
     _serverSettings = result['serverSettings'] as Map<String, dynamic>?;
 
+    // Fetch server version from /status endpoint (fire and forget)
+    _fetchServerVersion(url);
+
     // Persist session
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -172,6 +177,9 @@ class AuthProvider extends ChangeNotifier {
     _serverSettings = result['serverSettings'] as Map<String, dynamic>?;
     _serverReachable = true;
 
+    // Fetch server version
+    _fetchServerVersion(url);
+
     // Persist session
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -189,6 +197,17 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Logout and clear stored session.
+  /// Fetch server version asynchronously (non-blocking).
+  void _fetchServerVersion(String url) async {
+    try {
+      final version = await ApiService.getServerVersion(url);
+      if (version != null) {
+        _serverVersion = version;
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
   Future<void> logout() async {
     // Stop any active playback
     try {
@@ -206,6 +225,7 @@ class AuthProvider extends ChangeNotifier {
     _defaultLibraryId = null;
     _userJson = null;
     _serverSettings = null;
+    _serverVersion = null;
     _errorMessage = null;
 
     try {

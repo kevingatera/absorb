@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
@@ -702,27 +703,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 8),
 
-                // ── About ──
-                _CollapsibleSection(
-                  icon: Icons.info_outline_rounded,
-                  title: 'About',
-                  cs: cs,
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.info_outline_rounded),
-                      title: const Text('App Version'),
-                      trailing: Text('1.2.2', style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
-                    ),
-                    if (auth.serverSettings != null)
-                      ListTile(
-                        leading: const Icon(Icons.dns_outlined),
-                        title: const Text('Server Version'),
-                        trailing: Text(
-                          (auth.serverSettings!['version'] as String?) ?? '—',
-                          style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                // ── Support & Info ──
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    children: [
+                      Card(
+                        color: cs.surfaceContainerHigh,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                        clipBehavior: Clip.antiAlias,
+                        child: ListTile(
+                          leading: Icon(Icons.feedback_outlined,
+                              color: cs.onSurfaceVariant),
+                          title: const Text('Bugs & Feature Requests'),
+                          subtitle: Text('Open an issue on GitHub',
+                              style: tt.bodySmall
+                                  ?.copyWith(color: cs.onSurfaceVariant)),
+                          trailing: Icon(Icons.open_in_new_rounded,
+                              size: 18, color: cs.onSurfaceVariant),
+                          onTap: () => launchUrl(
+                              Uri.parse(
+                                  'https://github.com/pounat/absorb/issues'),
+                              mode: LaunchMode.externalApplication),
+                        ),
                       ),
-                  ],
+                      const SizedBox(height: 12),
+                      Text(
+                        auth.serverVersion != null
+                            ? 'Absorb v1.2.1  ·  Server ${auth.serverVersion}'
+                            : 'Absorb v1.2.1',
+                        style: tt.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+                      ),
+                    ],
+                  ),
                 ),
+
                 const SizedBox(height: 24),
 
                 // ── Sign out ──

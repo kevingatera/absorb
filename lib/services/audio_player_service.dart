@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'download_service.dart';
@@ -124,7 +125,9 @@ class PlayerSettings {
 // ─── AudioHandler (runs in background, controls notification) ───
 
 class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
-  final AudioPlayer _player = AudioPlayer();
+  final AudioPlayer _player = AudioPlayer(
+    handleInterruptions: false,
+  );
   AudioPlayerService? _service; // back-reference for auto-rewind
 
   AudioPlayer get player => _player;
@@ -393,6 +396,47 @@ class AudioPlayerService extends ChangeNotifier {
     // Bind service so handler routes play/pause through service (for auto-rewind)
     _handler!.bindService(_instance);
     debugPrint('[Player] AudioService initialized');
+
+    // Configure audio session for audiobook playback
+    await _configureAudioSession();
+  }
+
+  static StreamSubscription? _interruptSub;
+  static StreamSubscription? _noisySub;
+
+  static Future<void> _configureAudioSession() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.speech());
+
+    _interruptSub?.cancel();
+    _interruptSub = session.interruptionEventStream.listen((event) async {
+      final service = _instance;
+
+      if (event.begin) {
+        if (service.isPlaying) {
+          debugPrint('[AudioSession] Interrupted (${event.type}) — pausing');
+          service._wasPlayingBeforeInterrupt = true;
+          await service.pause();
+        }
+      } else {
+        if (service._wasPlayingBeforeInterrupt) {
+          debugPrint('[AudioSession] Interruption ended — resuming');
+          service._wasPlayingBeforeInterrupt = false;
+          await Future.delayed(const Duration(milliseconds: 300));
+          await service.play();
+        }
+      }
+    });
+
+    // Headphones unplugged — pause, no auto-resume
+    _noisySub?.cancel();
+    _noisySub = session.becomingNoisyEventStream.listen((_) async {
+      final service = _instance;
+      if (service.isPlaying) {
+        debugPrint('[AudioSession] Becoming noisy — pausing');
+        await service.pause();
+      }
+    });
   }
 
   Future<bool> playItem({
@@ -905,6 +949,7 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   DateTime? _lastPauseTime;
+  bool _wasPlayingBeforeInterrupt = false;
 
   /// Auto-rewind calculation using exponential curve.
   /// activationDelay = minimum pause before rewind kicks in (0 = always).

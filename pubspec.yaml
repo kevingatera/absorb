@@ -59,6 +59,9 @@ dependencies:
   url_launcher: ^6.2.5
   app_links: ^6.1.1
 
+  # Pausing for interruptions
+  audio_session: ^0.1.21
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
