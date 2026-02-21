@@ -43,13 +43,13 @@ class HomeSection extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                Icon(icon, size: 16, color: cs.primary.withOpacity(0.7)),
+                Icon(icon, size: 16, color: cs.primary.withValues(alpha: 0.7)),
                 const SizedBox(width: 8),
                 Text(
                   title,
                   style: tt.titleSmall?.copyWith(
                     fontWeight: FontWeight.w500,
-                    color: cs.onSurface.withOpacity(0.8),
+                    color: cs.onSurface.withValues(alpha: 0.8),
                     letterSpacing: 0.3,
                   ),
                 ),
@@ -57,7 +57,7 @@ class HomeSection extends StatelessWidget {
                 Expanded(
                   child: Container(
                     height: 0.5,
-                    color: cs.outlineVariant.withOpacity(0.2),
+                    color: cs.outlineVariant.withValues(alpha: 0.2),
                   ),
                 ),
               ],

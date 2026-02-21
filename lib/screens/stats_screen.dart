@@ -82,8 +82,8 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
             end: Alignment.bottomRight,
             stops: const [0.0, 0.4, 0.7, 1.0],
             colors: [
-              cs.primary.withOpacity(0.12),
-              cs.primary.withOpacity(0.04),
+              cs.primary.withValues(alpha: 0.12),
+              cs.primary.withValues(alpha: 0.04),
               Colors.black,
               Colors.black,
             ],
@@ -113,7 +113,7 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
 
   Widget _errorState(TextTheme tt) {
     return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.signal_wifi_off_rounded, size: 48, color: Colors.white.withOpacity(0.15)),
+      Icon(Icons.signal_wifi_off_rounded, size: 48, color: Colors.white.withValues(alpha: 0.15)),
       const SizedBox(height: 12),
       Text('Couldn\'t load stats', style: tt.bodyMedium?.copyWith(color: Colors.white38)),
       const SizedBox(height: 8),
@@ -212,11 +212,11 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
         gradient: LinearGradient(
           begin: Alignment.topLeft, end: Alignment.bottomRight,
           colors: [
-            Colors.white.withOpacity(0.06),
-            Colors.white.withOpacity(0.02),
+            Colors.white.withValues(alpha: 0.06),
+            Colors.white.withValues(alpha: 0.02),
           ],
         ),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
       child: Column(children: [
         Text('Total Listening Time', style: tt.labelMedium?.copyWith(
@@ -255,12 +255,12 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
+        color: Colors.white.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
       child: Column(children: [
-        Icon(icon, color: color.withOpacity(0.8), size: 22),
+        Icon(icon, color: color.withValues(alpha: 0.8), size: 22),
         const SizedBox(height: 8),
         Text(value, style: tt.headlineSmall?.copyWith(
           fontWeight: FontWeight.w800, color: Colors.white, height: 1)),
@@ -277,9 +277,9 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
+        color: Colors.white.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
       child: Column(children: [
         Text(_formatDuration(seconds), style: tt.titleMedium?.copyWith(
@@ -301,9 +301,9 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
       height: 140,
       padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.03),
+        color: Colors.white.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -323,12 +323,12 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
                 height: (ratio * 80).clamp(2.0, 80.0),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(4),
-                  color: isToday ? Colors.white.withOpacity(0.5) : Colors.white.withOpacity(0.15),
+                  color: isToday ? Colors.white.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.15),
                 ),
               ),
               const SizedBox(height: 6),
               Text(d.label, style: TextStyle(
-                color: isToday ? Colors.white60 : Colors.white.withOpacity(0.2),
+                color: isToday ? Colors.white60 : Colors.white.withValues(alpha: 0.2),
                 fontSize: 10, fontWeight: isToday ? FontWeight.w600 : FontWeight.w400)),
               const SizedBox(height: 8),
             ]),
@@ -354,8 +354,8 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(3),
               color: intensity > 0
-                  ? Colors.white.withOpacity(0.08 + intensity * 0.4)
-                  : Colors.white.withOpacity(0.03),
+                  ? Colors.white.withValues(alpha: 0.08 + intensity * 0.4)
+                  : Colors.white.withValues(alpha: 0.03),
             ),
           ),
         );
@@ -396,22 +396,22 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.04),
+            color: Colors.white.withValues(alpha: 0.04),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.06)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
           ),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             // App icon
             Container(
               width: 36, height: 36,
               decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.15),
+                color: iconColor.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Center(
                 child: isAbsorb
-                    ? AbsorbWaveIcon(size: 20, color: iconColor.withOpacity(0.8))
-                    : Icon(icon, size: 18, color: iconColor.withOpacity(0.8)),
+                    ? AbsorbWaveIcon(size: 20, color: iconColor.withValues(alpha: 0.8))
+                    : Icon(icon, size: 18, color: iconColor.withValues(alpha: 0.8)),
               ),
             ),
             const SizedBox(width: 12),
@@ -425,13 +425,13 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
               const SizedBox(height: 4),
               Row(children: [
                 isAbsorb
-                    ? AbsorbWaveIcon(size: 10, color: iconColor.withOpacity(0.5))
-                    : Icon(icon, size: 10, color: iconColor.withOpacity(0.5)),
+                    ? AbsorbWaveIcon(size: 10, color: iconColor.withValues(alpha: 0.5))
+                    : Icon(icon, size: 10, color: iconColor.withValues(alpha: 0.5)),
                 const SizedBox(width: 4),
                 Flexible(child: Text(
                   deviceStr.isNotEmpty ? '$appLabel · $deviceStr' : appLabel,
                   maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 9),
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 9),
                 )),
               ]),
             ])),
@@ -442,7 +442,7 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
                 style: tt.labelSmall?.copyWith(color: Colors.white38, fontWeight: FontWeight.w600)),
               if (updatedAt != null)
                 Text(_relativeDate(updatedAt),
-                  style: tt.labelSmall?.copyWith(color: Colors.white.withOpacity(0.2), fontSize: 9)),
+                  style: tt.labelSmall?.copyWith(color: Colors.white.withValues(alpha: 0.2), fontSize: 9)),
             ]),
           ]),
         ),

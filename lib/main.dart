@@ -117,7 +117,7 @@ class AbsorbApp extends StatelessWidget {
             ),
             navigationBarTheme: NavigationBarThemeData(
               backgroundColor: const Color(0xFF0E0E0E),
-              indicatorColor: darkScheme.primary.withOpacity(0.15),
+              indicatorColor: darkScheme.primary.withValues(alpha: 0.15),
               labelTextStyle: WidgetStatePropertyAll(
                 TextStyle(
                   fontSize: 11,
@@ -236,7 +236,7 @@ class _AuthGateState extends State<AuthGate> {
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
                   color:
-                      Theme.of(context).colorScheme.primary.withOpacity(0.5),
+                      Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
                 ),
               ),
             ],

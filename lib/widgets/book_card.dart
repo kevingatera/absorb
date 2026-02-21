@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/library_provider.dart';
 import '../services/download_service.dart';
-import '../screens/absorbing_screen.dart';
+import 'book_detail_sheet.dart';
 
 class BookCard extends StatelessWidget {
   final Map<String, dynamic> item;
@@ -284,7 +284,7 @@ class _CoverImage extends StatelessWidget {
         child: Icon(
           Icons.headphones_rounded,
           size: 32,
-          color: cs.onSurfaceVariant.withOpacity(0.4),
+          color: cs.onSurfaceVariant.withValues(alpha: 0.4),
         ),
       ),
     );

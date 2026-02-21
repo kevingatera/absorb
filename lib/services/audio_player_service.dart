@@ -46,106 +46,79 @@ class AutoRewindSettings {
 }
 
 class PlayerSettings {
-  static Future<double> getDefaultSpeed() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getDouble('defaultSpeed') ?? 1.0;
+  /// Notifier that fires when any player setting changes.
+  /// Widgets can listen to this instead of polling SharedPreferences.
+  static final ChangeNotifier settingsChanged = ChangeNotifier();
+  static void _notify() {
+    // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+    settingsChanged.notifyListeners();
   }
 
-  static Future<void> setDefaultSpeed(double speed) async {
+  // ── Private helpers to eliminate boilerplate ──
+
+  static Future<T> _get<T>(String key, T defaultValue) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('defaultSpeed', speed);
+    final value = prefs.get(key);
+    if (value is T) return value;
+    return defaultValue;
   }
 
-  static Future<bool> getWifiOnlyDownloads() async {
+  static Future<void> _set<T>(String key, T value, {bool notify = false}) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('wifiOnlyDownloads') ?? false;
+    if (value is bool) {
+      await prefs.setBool(key, value);
+    } else if (value is int) {
+      await prefs.setInt(key, value);
+    } else if (value is double) {
+      await prefs.setDouble(key, value);
+    } else if (value is String) {
+      await prefs.setString(key, value);
+    }
+    if (notify) _notify();
   }
 
-  static Future<void> setWifiOnlyDownloads(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('wifiOnlyDownloads', value);
-  }
+  // ── General settings ──
 
-  static Future<bool> getShowBookSlider() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('showBookSlider') ?? false;
-  }
+  static Future<double> getDefaultSpeed() => _get('defaultSpeed', 1.0);
+  static Future<void> setDefaultSpeed(double speed) => _set('defaultSpeed', speed);
 
-  static Future<void> setShowBookSlider(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('showBookSlider', value);
-  }
+  static Future<bool> getWifiOnlyDownloads() => _get('wifiOnlyDownloads', false);
+  static Future<void> setWifiOnlyDownloads(bool value) => _set('wifiOnlyDownloads', value);
 
-  static Future<int> getForwardSkip() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt('forwardSkip') ?? 30;
-  }
+  static Future<bool> getAutoContinueSeries() => _get('autoContinueSeries', true);
+  static Future<void> setAutoContinueSeries(bool value) => _set('autoContinueSeries', value);
 
-  static Future<void> setForwardSkip(int seconds) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('forwardSkip', seconds);
-  }
+  // ── Player UI settings (notify listeners on change) ──
 
-  static Future<int> getBackSkip() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt('backSkip') ?? 10;
-  }
+  static Future<bool> getShowBookSlider() => _get('showBookSlider', false);
+  static Future<void> setShowBookSlider(bool value) => _set('showBookSlider', value, notify: true);
 
-  static Future<void> setBackSkip(int seconds) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('backSkip', seconds);
-  }
+  static Future<bool> getSpeedAdjustedTime() => _get('speedAdjustedTime', true);
+  static Future<void> setSpeedAdjustedTime(bool value) => _set('speedAdjustedTime', value, notify: true);
 
-  static Future<bool> getSpeedAdjustedTime() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('speedAdjustedTime') ?? true;
-  }
+  static Future<int> getForwardSkip() => _get('forwardSkip', 30);
+  static Future<void> setForwardSkip(int seconds) => _set('forwardSkip', seconds, notify: true);
 
-  static Future<void> setSpeedAdjustedTime(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('speedAdjustedTime', value);
-  }
+  static Future<int> getBackSkip() => _get('backSkip', 10);
+  static Future<void> setBackSkip(int seconds) => _set('backSkip', seconds, notify: true);
 
-  static Future<bool> getShakeToResetSleep() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('shakeToResetSleep') ?? true;
-  }
+  // ── Sleep timer settings ──
 
-  static Future<void> setShakeToResetSleep(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('shakeToResetSleep', value);
-  }
+  static Future<bool> getShakeToResetSleep() => _get('shakeToResetSleep', true);
+  static Future<void> setShakeToResetSleep(bool value) => _set('shakeToResetSleep', value);
 
-  static Future<int> getShakeAddMinutes() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt('shakeAddMinutes') ?? 5;
-  }
+  static Future<int> getShakeAddMinutes() => _get('shakeAddMinutes', 5);
+  static Future<void> setShakeAddMinutes(int minutes) => _set('shakeAddMinutes', minutes);
 
-  static Future<void> setShakeAddMinutes(int minutes) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('shakeAddMinutes', minutes);
-  }
+  // ── Per-book speed persistence ──
 
-  // Per-book speed persistence
   static Future<double?> getBookSpeed(String itemId) async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getDouble('bookSpeed_$itemId');
   }
 
-  static Future<void> setBookSpeed(String itemId, double speed) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('bookSpeed_$itemId', speed);
-  }
-
-  static Future<bool> getAutoContinueSeries() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('autoContinueSeries') ?? true;
-  }
-
-  static Future<void> setAutoContinueSeries(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('autoContinueSeries', value);
-  }
+  static Future<void> setBookSpeed(String itemId, double speed) =>
+      _set('bookSpeed_$itemId', speed);
 }
 
 // ─── AudioHandler (runs in background, controls notification) ───

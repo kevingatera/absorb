@@ -90,7 +90,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               Center(child: Container(
                 width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: cs.onSurfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(2)),
+                decoration: BoxDecoration(color: cs.onSurfaceVariant.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2)),
               )),
               Row(children: [
                 Icon(Icons.auto_awesome_rounded, color: cs.primary, size: 24),
@@ -180,7 +180,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: cs.primaryContainer.withOpacity(0.5),
+                color: cs.primaryContainer.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon, size: 20, color: cs.primary),
@@ -215,8 +215,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             end: Alignment.bottomRight,
             stops: const [0.0, 0.4, 0.7, 1.0],
             colors: [
-              cs.primary.withOpacity(0.12),
-              cs.primary.withOpacity(0.04),
+              cs.primary.withValues(alpha: 0.12),
+              cs.primary.withValues(alpha: 0.04),
               cs.surface,
               cs.surface,
             ],
@@ -265,10 +265,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 fontWeight: FontWeight.w600, color: cs.onPrimaryContainer)),
                               const SizedBox(height: 2),
                               Text('Get the most out of Absorb', style: tt.bodySmall?.copyWith(
-                                color: cs.onPrimaryContainer.withOpacity(0.7))),
+                                color: cs.onPrimaryContainer.withValues(alpha: 0.7))),
                             ],
                           )),
-                          Icon(Icons.chevron_right_rounded, color: cs.onPrimaryContainer.withOpacity(0.5)),
+                          Icon(Icons.chevron_right_rounded, color: cs.onPrimaryContainer.withValues(alpha: 0.5)),
                         ],
                       ),
                     ),
@@ -711,7 +711,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ListTile(
                       leading: const Icon(Icons.info_outline_rounded),
                       title: const Text('App Version'),
-                      trailing: Text('1.2.1', style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                      trailing: Text('1.2.2', style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
                     ),
                     if (auth.serverSettings != null)
                       ListTile(
@@ -736,7 +736,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       label: const Text('Peace out'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: cs.error,
-                        side: BorderSide(color: cs.error.withOpacity(0.5)),
+                        side: BorderSide(color: cs.error.withValues(alpha: 0.5)),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14)),
@@ -791,11 +791,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: tt.bodySmall?.copyWith(
-            color: isSkipped ? cs.onSurfaceVariant.withOpacity(0.4) : cs.onSurfaceVariant)),
+            color: isSkipped ? cs.onSurfaceVariant.withValues(alpha: 0.4) : cs.onSurfaceVariant)),
           Text(isSkipped ? '→ no rewind' : '→ ${rewind.toStringAsFixed(1)}s rewind',
             style: tt.bodySmall?.copyWith(
                 fontWeight: FontWeight.w600,
-                color: isSkipped ? cs.onSurfaceVariant.withOpacity(0.3) : cs.primary)),
+                color: isSkipped ? cs.onSurfaceVariant.withValues(alpha: 0.3) : cs.primary)),
         ],
       ),
     );
@@ -825,7 +825,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             Container(width: 40, height: 4,
               decoration: BoxDecoration(
-                color: cs.onSurfaceVariant.withOpacity(0.3),
+                color: cs.onSurfaceVariant.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: 16),
             Text('Download Location',
@@ -840,9 +840,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               width: double.infinity,
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: cs.primaryContainer.withOpacity(0.15),
+                color: cs.primaryContainer.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: cs.primary.withOpacity(0.2)),
+                border: Border.all(color: cs.primary.withValues(alpha: 0.2)),
               ),
               child: Row(children: [
                 Icon(Icons.folder_rounded, color: cs.primary, size: 20),
@@ -872,9 +872,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: cs.errorContainer.withOpacity(0.2),
+                    color: cs.errorContainer.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: cs.error.withOpacity(0.2)),
+                    border: Border.all(color: cs.error.withValues(alpha: 0.2)),
                   ),
                   child: Row(children: [
                     Icon(Icons.info_outline_rounded, size: 16, color: cs.error),
@@ -883,7 +883,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Text(
                         'Existing downloads stay in their current location. Only new downloads use the new path.',
                         style: tt.bodySmall?.copyWith(
-                          color: cs.error.withOpacity(0.8), fontSize: 11),
+                          color: cs.error.withValues(alpha: 0.8), fontSize: 11),
                       ),
                     ),
                   ]),
@@ -966,7 +966,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Container(width: 40, height: 4,
                   decoration: BoxDecoration(
-                    color: cs.onSurfaceVariant.withOpacity(0.3),
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(2))),
                 const SizedBox(height: 16),
                 Text('Downloaded Books',

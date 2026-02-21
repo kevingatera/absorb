@@ -270,8 +270,8 @@ class _LoginScreenState extends State<LoginScreen>
             end: Alignment.bottomRight,
             stops: const [0.0, 0.4, 0.7, 1.0],
             colors: [
-              cs.primary.withOpacity(0.15),
-              cs.primary.withOpacity(0.05),
+              cs.primary.withValues(alpha: 0.15),
+              cs.primary.withValues(alpha: 0.05),
               cs.surface,
               cs.surface,
             ],
@@ -297,7 +297,7 @@ class _LoginScreenState extends State<LoginScreen>
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: cs.primary.withOpacity(0.3),
+                                color: cs.primary.withValues(alpha: 0.3),
                                 blurRadius: 40,
                                 spreadRadius: 8,
                               ),
@@ -306,9 +306,9 @@ class _LoginScreenState extends State<LoginScreen>
                           child: Container(
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: cs.primary.withOpacity(0.1),
+                              color: cs.primary.withValues(alpha: 0.1),
                               border: Border.all(
-                                color: cs.primary.withOpacity(0.15),
+                                color: cs.primary.withValues(alpha: 0.15),
                                 width: 1.5,
                               ),
                             ),
@@ -333,7 +333,7 @@ class _LoginScreenState extends State<LoginScreen>
                         Text(
                           'Start Absorbing',
                           style: tt.bodyLarge?.copyWith(
-                            color: cs.onSurfaceVariant.withOpacity(0.6),
+                            color: cs.onSurfaceVariant.withValues(alpha: 0.6),
                             fontWeight: FontWeight.w400,
                             letterSpacing: 0.5,
                           ),
@@ -358,10 +358,10 @@ class _LoginScreenState extends State<LoginScreen>
                           child: Container(
                             padding: const EdgeInsets.all(24),
                             decoration: BoxDecoration(
-                              color: cs.surfaceContainerHighest.withOpacity(0.35),
+                              color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
                               borderRadius: BorderRadius.circular(24),
                               border: Border.all(
-                                color: cs.outlineVariant.withOpacity(0.15),
+                                color: cs.outlineVariant.withValues(alpha: 0.15),
                               ),
                             ),
                             child: Form(
@@ -375,7 +375,7 @@ class _LoginScreenState extends State<LoginScreen>
                                     child: Text(
                                       'Connect to your server',
                                       style: tt.titleSmall?.copyWith(
-                                        color: cs.onSurfaceVariant.withOpacity(0.7),
+                                        color: cs.onSurfaceVariant.withValues(alpha: 0.7),
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
@@ -441,9 +441,9 @@ class _LoginScreenState extends State<LoginScreen>
                                                     color: cs.error, size: 22)
                                                 : null,
                                     borderColor: _serverValid
-                                        ? Colors.green.shade400.withOpacity(0.4)
+                                        ? Colors.green.shade400.withValues(alpha: 0.4)
                                         : _serverError != null
-                                            ? cs.error.withOpacity(0.4)
+                                            ? cs.error.withValues(alpha: 0.4)
                                             : null,
                                     errorText: _serverError,
                                   ),
@@ -473,7 +473,7 @@ class _LoginScreenState extends State<LoginScreen>
                     child: Text(
                       _appVersion,
                       style: tt.labelSmall?.copyWith(
-                        color: cs.onSurfaceVariant.withOpacity(0.3),
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.3),
                         letterSpacing: 1,
                       ),
                     ),
@@ -520,20 +520,20 @@ class _LoginScreenState extends State<LoginScreen>
         errorText: errorText,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: cs.outlineVariant.withOpacity(0.2)),
+          borderSide: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.2)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide(
-            color: borderColor ?? cs.outlineVariant.withOpacity(0.15),
+            color: borderColor ?? cs.outlineVariant.withValues(alpha: 0.15),
           ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: cs.primary.withOpacity(0.6), width: 1.5),
+          borderSide: BorderSide(color: cs.primary.withValues(alpha: 0.6), width: 1.5),
         ),
         filled: true,
-        fillColor: cs.surface.withOpacity(0.4),
+        fillColor: cs.surface.withValues(alpha: 0.4),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
     );
@@ -552,9 +552,9 @@ class _LoginScreenState extends State<LoginScreen>
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: cs.error.withOpacity(0.1),
+                color: cs.error.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: cs.error.withOpacity(0.3)),
+                border: Border.all(color: cs.error.withValues(alpha: 0.3)),
               ),
               child: Row(
                 children: [
@@ -579,7 +579,7 @@ class _LoginScreenState extends State<LoginScreen>
           cs: cs,
           textInputAction: TextInputAction.next,
           prefixIcon: Icon(Icons.person_outline_rounded, size: 20,
-            color: cs.onSurfaceVariant.withOpacity(0.5)),
+            color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
           validator: (v) {
             if (v == null || v.trim().isEmpty) {
               return 'Please enter your username';
@@ -598,14 +598,14 @@ class _LoginScreenState extends State<LoginScreen>
           textInputAction: TextInputAction.done,
           onFieldSubmitted: (_) => _handleLogin(),
           prefixIcon: Icon(Icons.lock_outline_rounded, size: 20,
-            color: cs.onSurfaceVariant.withOpacity(0.5)),
+            color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
           suffixIcon: IconButton(
             icon: Icon(
               _obscurePassword
                   ? Icons.visibility_outlined
                   : Icons.visibility_off_outlined,
               size: 20,
-              color: cs.onSurfaceVariant.withOpacity(0.5),
+              color: cs.onSurfaceVariant.withValues(alpha: 0.5),
             ),
             onPressed: () {
               setState(() => _obscurePassword = !_obscurePassword);
@@ -663,12 +663,12 @@ class _LoginScreenState extends State<LoginScreen>
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: Divider(color: cs.outlineVariant.withOpacity(0.2))),
+              Expanded(child: Divider(color: cs.outlineVariant.withValues(alpha: 0.2))),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14),
-                child: Text('or', style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant.withOpacity(0.5))),
+                child: Text('or', style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.5))),
               ),
-              Expanded(child: Divider(color: cs.outlineVariant.withOpacity(0.2))),
+              Expanded(child: Divider(color: cs.outlineVariant.withValues(alpha: 0.2))),
             ],
           ),
           const SizedBox(height: 12),
@@ -691,7 +691,7 @@ class _LoginScreenState extends State<LoginScreen>
                 ),
               ),
               style: OutlinedButton.styleFrom(
-                side: BorderSide(color: cs.primary.withOpacity(0.3)),
+                side: BorderSide(color: cs.primary.withValues(alpha: 0.3)),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),

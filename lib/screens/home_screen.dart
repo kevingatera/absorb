@@ -8,7 +8,7 @@ import '../widgets/home_section.dart';
 import '../widgets/library_selector.dart';
 import '../widgets/absorb_title.dart';
 import '../widgets/shimmer.dart';
-import 'absorbing_screen.dart';
+import '../widgets/book_detail_sheet.dart';
 import 'app_shell.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -105,7 +105,7 @@ class _HomeScreenState extends State<HomeScreen> {
             end: Alignment.bottomCenter,
             stops: const [0.0, 0.3, 1.0],
             colors: [
-              cs.primary.withOpacity(0.06),
+              cs.primary.withValues(alpha: 0.06),
               cs.surface,
               cs.surface,
             ],
@@ -152,17 +152,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Row(
                           children: [
                             Icon(Icons.play_circle_outline_rounded, size: 16,
-                              color: cs.primary.withOpacity(0.7)),
+                              color: cs.primary.withValues(alpha: 0.7)),
                             const SizedBox(width: 8),
                             Text('Continue Listening',
                               style: tt.titleSmall?.copyWith(
                                 fontWeight: FontWeight.w500,
-                                color: cs.onSurface.withOpacity(0.8),
+                                color: cs.onSurface.withValues(alpha: 0.8),
                                 letterSpacing: 0.3,
                               )),
                             const SizedBox(width: 12),
                             Expanded(child: Container(height: 0.5,
-                              color: cs.outlineVariant.withOpacity(0.2))),
+                              color: cs.outlineVariant.withValues(alpha: 0.2))),
                           ],
                         ),
                       ),
@@ -254,7 +254,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           Text(
                             'Download books while online to listen offline',
                             style: tt.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant.withOpacity(0.6),
+                              color: cs.onSurfaceVariant.withValues(alpha: 0.6),
                             ),
                           ),
                         ],
@@ -346,11 +346,11 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: isCurrentItem
-              ? cs.primary.withOpacity(0.08)
+              ? cs.primary.withValues(alpha: 0.08)
               : cs.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(14),
           border: isCurrentItem
-              ? Border.all(color: cs.primary.withOpacity(0.2))
+              ? Border.all(color: cs.primary.withValues(alpha: 0.2))
               : null,
         ),
         child: Row(
@@ -391,7 +391,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
                     child: LinearProgressIndicator(
                       value: progress.clamp(0.0, 1.0),
                       minHeight: 3,
-                      backgroundColor: cs.outlineVariant.withOpacity(0.2),
+                      backgroundColor: cs.outlineVariant.withValues(alpha: 0.2),
                       valueColor: AlwaysStoppedAnimation(cs.primary),
                     ),
                   ),
@@ -411,7 +411,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
               child: Container(
                 width: 34, height: 34,
                 decoration: BoxDecoration(
-                  color: cs.primary.withOpacity(isCurrentItem ? 1.0 : 0.15),
+                  color: cs.primary.withValues(alpha: isCurrentItem ? 1.0 : 0.15),
                   shape: BoxShape.circle,
                 ),
                 child: _isLoading

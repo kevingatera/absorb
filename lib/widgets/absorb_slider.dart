@@ -33,7 +33,7 @@ class AbsorbSlider extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final accent = activeColor ?? cs.primary;
-    final inactive = inactiveColor ?? accent.withOpacity(0.15);
+    final inactive = inactiveColor ?? accent.withValues(alpha: 0.15);
 
     return SliderTheme(
       data: SliderThemeData(
@@ -41,7 +41,7 @@ class AbsorbSlider extends StatelessWidget {
         activeTrackColor: accent,
         inactiveTrackColor: inactive,
         thumbColor: accent,
-        overlayColor: accent.withOpacity(0.12),
+        overlayColor: accent.withValues(alpha: 0.12),
         thumbShape: _AbsorbThumbShape(thumbColor: accent),
         trackShape: _AbsorbTrackShape(),
         tickMarkShape: SliderTickMarkShape.noTickMark,
@@ -96,7 +96,7 @@ class _AbsorbThumbShape extends SliderComponentShape {
     canvas.drawRRect(
       rect.shift(const Offset(0, 1)),
       Paint()
-        ..color = Colors.black.withOpacity(0.3)
+        ..color = Colors.black.withValues(alpha: 0.3)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     );
 
@@ -167,15 +167,15 @@ class _AbsorbTrackShape extends SliderTrackShape {
 
     // Endpoint dots
     final dotRadius = 3.0;
-    final dotColor = sliderTheme.activeTrackColor?.withOpacity(0.5) ??
-        Colors.white.withOpacity(0.3);
+    final dotColor = sliderTheme.activeTrackColor?.withValues(alpha: 0.5) ??
+        Colors.white.withValues(alpha: 0.3);
     final centerY = trackRect.center.dy;
 
     // Left dot
     canvas.drawCircle(
       Offset(trackRect.left + dotRadius + 2, centerY),
       dotRadius,
-      Paint()..color = Colors.white.withOpacity(0.7),
+      Paint()..color = Colors.white.withValues(alpha: 0.7),
     );
 
     // Right dot
@@ -226,7 +226,7 @@ class AbsorbProgressPainter extends CustomPainter {
         Rect.fromLTWH(trackLeft, trackTop, trackWidth, trackHeight),
         radius,
       ),
-      Paint()..color = accent.withOpacity(0.15),
+      Paint()..color = accent.withValues(alpha: 0.15),
     );
 
     // Active track
@@ -273,12 +273,12 @@ class AbsorbProgressPainter extends CustomPainter {
       canvas.drawCircle(
         Offset(trackLeft + 5, centerY),
         3,
-        Paint()..color = Colors.white.withOpacity(0.7),
+        Paint()..color = Colors.white.withValues(alpha: 0.7),
       );
       canvas.drawCircle(
         Offset(trackRight - 5, centerY),
         3,
-        Paint()..color = accent.withOpacity(0.5),
+        Paint()..color = accent.withValues(alpha: 0.5),
       );
     }
 
@@ -297,7 +297,7 @@ class AbsorbProgressPainter extends CustomPainter {
     canvas.drawRRect(
       thumbRect.shift(const Offset(0, 1)),
       Paint()
-        ..color = Colors.black.withOpacity(0.3)
+        ..color = Colors.black.withValues(alpha: 0.3)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     );
     canvas.drawRRect(thumbRect, Paint()..color = accent);
@@ -359,8 +359,8 @@ class AbsorbRangeSlider extends StatelessWidget {
         rangeThumbShape: _AbsorbRangeThumbShape(accent: accent),
         trackHeight: 8,
         activeTrackColor: accent,
-        inactiveTrackColor: accent.withOpacity(0.15),
-        overlayColor: accent.withOpacity(0.08),
+        inactiveTrackColor: accent.withValues(alpha: 0.15),
+        overlayColor: accent.withValues(alpha: 0.08),
         overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
       ),
       child: RangeSlider(
@@ -433,11 +433,11 @@ class _AbsorbRangeTrackShape extends RangeSliderTrackShape {
     final centerY = trackRect.center.dy;
     canvas.drawCircle(
       Offset(trackRect.left + 5, centerY), 3,
-      Paint()..color = Colors.white.withOpacity(0.7),
+      Paint()..color = Colors.white.withValues(alpha: 0.7),
     );
     canvas.drawCircle(
       Offset(trackRect.right - 5, centerY), 3,
-      Paint()..color = activeColor.withOpacity(0.5),
+      Paint()..color = activeColor.withValues(alpha: 0.5),
     );
   }
 }
@@ -479,7 +479,7 @@ class _AbsorbRangeThumbShape extends RangeSliderThumbShape {
     canvas.drawRRect(
       thumbRect.shift(const Offset(0, 1)),
       Paint()
-        ..color = Colors.black.withOpacity(0.3)
+        ..color = Colors.black.withValues(alpha: 0.3)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     );
     // Thumb

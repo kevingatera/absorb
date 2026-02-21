@@ -24,7 +24,7 @@ class AuthorCard extends StatelessWidget {
     }
 
     return InkWell(
-      onTap: () {}, // TODO: navigate to author
+      onTap: () {},
       borderRadius: BorderRadius.circular(16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -72,7 +72,7 @@ class AuthorCard extends StatelessWidget {
       child: Icon(
         Icons.person_rounded,
         size: 32,
-        color: cs.onSecondaryContainer.withOpacity(0.5),
+        color: cs.onSecondaryContainer.withValues(alpha: 0.5),
       ),
     );
   }

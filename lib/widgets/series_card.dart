@@ -16,11 +16,11 @@ class SeriesCard extends StatelessWidget {
 
     return Card(
       elevation: 0,
-      color: cs.tertiaryContainer.withOpacity(0.4),
+      color: cs.tertiaryContainer.withValues(alpha: 0.4),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () {}, // TODO: navigate to series
+        onTap: () {},
         borderRadius: BorderRadius.circular(12),
         child: Stack(
           fit: StackFit.expand,
@@ -36,7 +36,7 @@ class SeriesCard extends StatelessWidget {
                         end: Alignment.bottomRight,
                         colors: [
                           cs.tertiaryContainer,
-                          cs.tertiaryContainer.withOpacity(0.6),
+                          cs.tertiaryContainer.withValues(alpha: 0.6),
                         ],
                       ),
                     ),
@@ -44,7 +44,7 @@ class SeriesCard extends StatelessWidget {
                       child: Icon(
                         Icons.library_books_rounded,
                         size: 40,
-                        color: cs.onTertiaryContainer.withOpacity(0.5),
+                        color: cs.onTertiaryContainer.withValues(alpha: 0.5),
                       ),
                     ),
                   ),
@@ -64,7 +64,7 @@ class SeriesCard extends StatelessWidget {
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      cs.surface.withOpacity(0.9),
+                      cs.surface.withValues(alpha: 0.9),
                     ],
                   ),
                 ),

@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const appVersion = '1.2.1';
+  static const appVersion = '1.2.2';
 
   final String baseUrl;
   final String token;
@@ -120,13 +120,14 @@ class ApiService {
     int limit = 20,
     String sort = 'addedAt',
     int desc = 1,
+    String? filter,
   }) async {
     try {
+      var url = '$_cleanBaseUrl/api/libraries/$libraryId/items'
+          '?page=$page&limit=$limit&sort=$sort&desc=$desc';
+      if (filter != null) url += '&filter=$filter';
       final response = await http.get(
-        Uri.parse(
-          '$_cleanBaseUrl/api/libraries/$libraryId/items'
-          '?page=$page&limit=$limit&sort=$sort&desc=$desc',
-        ),
+        Uri.parse(url),
         headers: _headers,
       ).timeout(const Duration(seconds: 15));
 
@@ -517,7 +518,7 @@ class ApiService {
   }
 
   /// Fetch Audible rating from Audnexus API using ASIN.
-  /// Returns { rating, numRatings } or null.
+  /// Returns { rating } or null.
   static Future<Map<String, dynamic>?> getAudibleRating(String asin) async {
     try {
       final response = await http.get(
@@ -527,14 +528,9 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final rating = data['rating'] as String?;
-        final rawCount = data['ratingCount'];
-        final ratingCount = rawCount is num ? rawCount.toInt()
-            : rawCount is String ? (int.tryParse(rawCount) ?? 0)
-            : 0;
         if (rating != null) {
           return {
             'rating': double.tryParse(rating) ?? 0.0,
-            'numRatings': ratingCount ?? 0,
           };
         }
       }

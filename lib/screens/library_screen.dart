@@ -10,10 +10,13 @@ import '../providers/library_provider.dart';
 import '../services/api_service.dart';
 import '../services/download_service.dart';
 import '../widgets/absorb_title.dart';
-import 'absorbing_screen.dart';
+import '../widgets/book_detail_sheet.dart';
 
 // ─── Sort modes ──────────────────────────────────────────────
-enum LibrarySort { recentlyAdded, alphabetical, random }
+enum LibrarySort { recentlyAdded, alphabetical, duration, random }
+
+// ─── Filter modes ────────────────────────────────────────────
+enum LibraryFilter { none, inProgress, finished, notStarted, downloaded }
 
 /// Show a bottom sheet with all books in a series, sorted by sequence.
 /// Can be called from any screen.
@@ -77,6 +80,8 @@ class LibraryScreenState extends State<LibraryScreen> {
 
   // ── Browse state ──
   LibrarySort _sort = LibrarySort.recentlyAdded;
+  bool _sortAsc = false; // false = desc (newest/longest first), true = asc
+  LibraryFilter _filter = LibraryFilter.none;
   final List<Map<String, dynamic>> _items = [];
   bool _isLoadingPage = false;
   bool _hasMore = true;
@@ -158,27 +163,43 @@ class LibraryScreenState extends State<LibraryScreen> {
     switch (_sort) {
       case LibrarySort.recentlyAdded:
         sort = 'addedAt';
-        desc = 1;
+        desc = _sortAsc ? 0 : 1;
         break;
       case LibrarySort.alphabetical:
         sort = 'media.metadata.title';
-        desc = 0;
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.duration:
+        sort = 'media.duration';
+        desc = _sortAsc ? 0 : 1;
         break;
       case LibrarySort.random:
-        // Fetch a big batch and shuffle client-side
         sort = 'addedAt';
         desc = 1;
         break;
     }
 
-    final limit = _sort == LibrarySort.random ? 1000 : _pageSize;
+    // Server-side progress filter (ABS format: progress.<base64value>)
+    String? filter;
+    if (_filter == LibraryFilter.inProgress) {
+      filter = 'progress.${base64Encode(utf8.encode('in-progress'))}';
+    } else if (_filter == LibraryFilter.finished) {
+      filter = 'progress.${base64Encode(utf8.encode('finished'))}';
+    } else if (_filter == LibraryFilter.notStarted) {
+      filter = 'progress.${base64Encode(utf8.encode('not-started'))}';
+    }
+    // Downloaded filter is client-side — handled after loading
+
+    final useClientFilter = _filter == LibraryFilter.downloaded;
+    final limit = (_sort == LibrarySort.random || useClientFilter) ? 1000 : _pageSize;
 
     final result = await api.getLibraryItems(
       lib.selectedLibraryId!,
-      page: _sort == LibrarySort.random ? 0 : _page,
+      page: (_sort == LibrarySort.random || useClientFilter) ? 0 : _page,
       limit: limit,
       sort: sort,
       desc: desc,
+      filter: filter,
     );
 
     if (result != null && mounted) {
@@ -186,11 +207,20 @@ class LibraryScreenState extends State<LibraryScreen> {
       final total = (result['total'] as int?) ?? 0;
       setState(() {
         for (final r in results) {
-          if (r is Map<String, dynamic>) _items.add(r);
+          if (r is Map<String, dynamic>) {
+            // Client-side downloaded filter
+            if (useClientFilter) {
+              final id = r['id'] as String? ?? '';
+              if (!DownloadService().isDownloaded(id)) continue;
+            }
+            _items.add(r);
+          }
         }
         if (_sort == LibrarySort.random) {
           _items.shuffle(Random(_randomSeed));
-          _hasMore = false; // All loaded at once
+          _hasMore = false;
+        } else if (useClientFilter) {
+          _hasMore = false; // All loaded and filtered at once
         } else {
           _page++;
           _hasMore = _items.length < total;
@@ -204,15 +234,47 @@ class LibraryScreenState extends State<LibraryScreen> {
 
   // ── Change sort and reload ──
   void _changeSort(LibrarySort newSort) {
-    if (newSort == _sort) return;
+    if (newSort == _sort) {
+      // Tapping the same sort toggles direction (except Random)
+      if (newSort == LibrarySort.random) return;
+      setState(() {
+        _sortAsc = !_sortAsc;
+        _items.clear();
+        _page = 0;
+        _hasMore = true;
+        _isLoadingPage = false;
+      });
+      _scrollController.jumpTo(0);
+      _loadPage();
+      return;
+    }
     setState(() {
       _sort = newSort;
+      // Smart defaults: A-Z and Length start ascending, others start descending
+      _sortAsc = newSort == LibrarySort.alphabetical || newSort == LibrarySort.duration;
       _items.clear();
       _page = 0;
       _hasMore = true;
+      _isLoadingPage = false;
       if (newSort == LibrarySort.random) {
         _randomSeed = Random().nextInt(100000);
       }
+    });
+    _scrollController.jumpTo(0);
+    _loadPage();
+  }
+
+  // ── Change filter and reload ──
+  void _changeFilter(LibraryFilter newFilter) {
+    // Tapping the active filter toggles it off
+    final effective = newFilter == _filter ? LibraryFilter.none : newFilter;
+    if (effective == _filter) return;
+    setState(() {
+      _filter = effective;
+      _items.clear();
+      _page = 0;
+      _hasMore = true;
+      _isLoadingPage = false;
     });
     _scrollController.jumpTo(0);
     _loadPage();
@@ -304,40 +366,99 @@ class LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
 
-            // ── Filter chips (hidden during search) ──
+            // ── Sort chips (hidden during search) ──
             if (!_isInSearchMode)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                 child: Row(
                   children: [
-                    _SortChip(
-                      label: 'Recent',
-                      icon: Icons.schedule_rounded,
-                      selected: _sort == LibrarySort.recentlyAdded,
-                      onTap: () => _changeSort(LibrarySort.recentlyAdded),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _SortChip(
+                              label: 'Recent',
+                              icon: Icons.schedule_rounded,
+                              selected: _sort == LibrarySort.recentlyAdded,
+                              ascending: _sort == LibrarySort.recentlyAdded ? _sortAsc : null,
+                              onTap: () => _changeSort(LibrarySort.recentlyAdded),
+                            ),
+                            const SizedBox(width: 8),
+                            _SortChip(
+                              label: 'A – Z',
+                              icon: Icons.sort_by_alpha_rounded,
+                              selected: _sort == LibrarySort.alphabetical,
+                              ascending: _sort == LibrarySort.alphabetical ? _sortAsc : null,
+                              onTap: () => _changeSort(LibrarySort.alphabetical),
+                            ),
+                            const SizedBox(width: 8),
+                            _SortChip(
+                              label: 'Length',
+                              icon: Icons.timelapse_rounded,
+                              selected: _sort == LibrarySort.duration,
+                              ascending: _sort == LibrarySort.duration ? _sortAsc : null,
+                              onTap: () => _changeSort(LibrarySort.duration),
+                            ),
+                            const SizedBox(width: 8),
+                            _SortChip(
+                              label: 'Random',
+                              icon: Icons.shuffle_rounded,
+                              selected: _sort == LibrarySort.random,
+                              onTap: () => _changeSort(LibrarySort.random),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 8),
-                    _SortChip(
-                      label: 'A – Z',
-                      icon: Icons.sort_by_alpha_rounded,
-                      selected: _sort == LibrarySort.alphabetical,
-                      onTap: () => _changeSort(LibrarySort.alphabetical),
-                    ),
-                    const SizedBox(width: 8),
-                    _SortChip(
-                      label: 'Random',
-                      icon: Icons.shuffle_rounded,
-                      selected: _sort == LibrarySort.random,
-                      onTap: () => _changeSort(LibrarySort.random),
-                    ),
-                    const Spacer(),
                     Text(
                       '${_hasMore ? "${_items.length}+" : _items.length} books',
                       style: tt.labelSmall?.copyWith(
-                        color: cs.onSurfaceVariant.withOpacity(0.6),
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.6),
                       ),
                     ),
                   ],
+                ),
+              ),
+
+            // ── Filter chips (hidden during search) ──
+            if (!_isInSearchMode)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _FilterChip(
+                        label: 'In Progress',
+                        icon: Icons.play_circle_outline_rounded,
+                        selected: _filter == LibraryFilter.inProgress,
+                        onTap: () => _changeFilter(LibraryFilter.inProgress),
+                      ),
+                      const SizedBox(width: 8),
+                      _FilterChip(
+                        label: 'Finished',
+                        icon: Icons.check_circle_outline_rounded,
+                        selected: _filter == LibraryFilter.finished,
+                        onTap: () => _changeFilter(LibraryFilter.finished),
+                      ),
+                      const SizedBox(width: 8),
+                      _FilterChip(
+                        label: 'Not Started',
+                        icon: Icons.circle_outlined,
+                        selected: _filter == LibraryFilter.notStarted,
+                        onTap: () => _changeFilter(LibraryFilter.notStarted),
+                      ),
+                      const SizedBox(width: 8),
+                      _FilterChip(
+                        label: 'Downloaded',
+                        icon: Icons.download_done_rounded,
+                        selected: _filter == LibraryFilter.downloaded,
+                        onTap: () => _changeFilter(LibraryFilter.downloaded),
+                      ),
+                    ],
+                  ),
                 ),
               ),
 
@@ -376,15 +497,30 @@ class LibraryScreenState extends State<LibraryScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_items.isEmpty && !_isLoadingPage) {
+      final filterMsg = switch (_filter) {
+        LibraryFilter.inProgress => 'No books in progress',
+        LibraryFilter.finished => 'No finished books',
+        LibraryFilter.notStarted => 'All books have been started',
+        LibraryFilter.downloaded => 'No downloaded books',
+        LibraryFilter.none => 'No books found',
+      };
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.library_books_outlined,
-                size: 56, color: cs.onSurfaceVariant.withOpacity(0.3)),
+                size: 56, color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
             const SizedBox(height: 12),
-            Text('No books found',
+            Text(filterMsg,
                 style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
+            if (_filter != LibraryFilter.none) ...[
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () => _changeFilter(LibraryFilter.none),
+                child: Text('Clear filter',
+                    style: tt.bodySmall?.copyWith(color: cs.primary)),
+              ),
+            ],
           ],
         ),
       );
@@ -533,12 +669,14 @@ class _SortChip extends StatelessWidget {
   final String label;
   final IconData icon;
   final bool selected;
+  final bool? ascending; // null = no arrow (e.g. Random), true = ↑, false = ↓
   final VoidCallback onTap;
 
   const _SortChip({
     required this.label,
     required this.icon,
     required this.selected,
+    this.ascending,
     required this.onTap,
   });
 
@@ -552,12 +690,12 @@ class _SortChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: selected
-              ? cs.primary.withOpacity(0.15)
+              ? cs.primary.withValues(alpha: 0.15)
               : cs.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: selected
-                ? cs.primary.withOpacity(0.4)
+                ? cs.primary.withValues(alpha: 0.4)
                 : Colors.transparent,
           ),
         ),
@@ -574,6 +712,68 @@ class _SortChip extends StatelessWidget {
                 fontSize: 12,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                 color: selected ? cs.primary : cs.onSurfaceVariant,
+              ),
+            ),
+            if (selected && ascending != null) ...[
+              const SizedBox(width: 2),
+              Icon(
+                ascending! ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                size: 12,
+                color: cs.primary,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected
+              ? cs.tertiary.withValues(alpha: 0.15)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected
+                ? cs.tertiary.withValues(alpha: 0.4)
+                : cs.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon,
+                size: 13,
+                color: selected ? cs.tertiary : cs.onSurfaceVariant.withValues(alpha: 0.6)),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                color: selected ? cs.tertiary : cs.onSurfaceVariant.withValues(alpha: 0.6),
               ),
             ),
           ],
@@ -683,8 +883,8 @@ class _GridBookTileState extends State<_GridBookTile> {
                             begin: Alignment.bottomCenter,
                             end: Alignment.topCenter,
                             colors: [
-                              Colors.black.withOpacity(0.85),
-                              Colors.black.withOpacity(0.0),
+                              Colors.black.withValues(alpha: 0.85),
+                              Colors.black.withValues(alpha: 0.0),
                             ],
                           ),
                         ),
@@ -755,7 +955,7 @@ class _GridBookTileState extends State<_GridBookTile> {
       color: cs.surfaceContainerHighest,
       child: Center(
         child: Icon(Icons.headphones_rounded,
-            size: 24, color: cs.onSurfaceVariant.withOpacity(0.3)),
+            size: 24, color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
       ),
     );
   }
@@ -858,7 +1058,7 @@ class _AuthorResultTile extends StatelessWidget {
   Widget _ph(ColorScheme cs) {
     return Center(
       child: Icon(Icons.person_rounded,
-          size: 22, color: cs.onSecondaryContainer.withOpacity(0.5)),
+          size: 22, color: cs.onSecondaryContainer.withValues(alpha: 0.5)),
     );
   }
 
@@ -1119,7 +1319,7 @@ class _BookResultTile extends StatelessWidget {
     return Container(
       color: cs.surfaceContainerHighest,
       child: Icon(Icons.headphones_rounded,
-          size: 20, color: cs.onSurfaceVariant.withOpacity(0.3)),
+          size: 20, color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
     );
   }
 }
@@ -1166,7 +1366,7 @@ class _SeriesResultCard extends StatelessWidget {
                   ),
                   child: Center(
                     child: Icon(Icons.auto_stories_rounded,
-                        size: 22, color: cs.onSecondaryContainer.withOpacity(0.7)),
+                        size: 22, color: cs.onSecondaryContainer.withValues(alpha: 0.7)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1466,7 +1666,7 @@ class _SeriesBooksSheetState extends State<_SeriesBooksSheet> {
                                         boxShadow: [
                                           BoxShadow(
                                               color: Colors.black
-                                                  .withOpacity(0.3),
+                                                  .withValues(alpha: 0.3),
                                               blurRadius: 4)
                                         ],
                                       ),
@@ -1543,7 +1743,7 @@ class _SeriesBooksSheetState extends State<_SeriesBooksSheet> {
       color: cs.surfaceContainerHighest,
       child: Center(
         child: Icon(Icons.headphones_rounded,
-            size: 24, color: cs.onSurfaceVariant.withOpacity(0.4)),
+            size: 24, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
       ),
     );
   }
