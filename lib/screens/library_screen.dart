@@ -7,7 +7,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
-import '../services/api_service.dart';
 import '../services/download_service.dart';
 import '../widgets/absorb_title.dart';
 import '../widgets/book_detail_sheet.dart';

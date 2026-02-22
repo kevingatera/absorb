@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
@@ -439,8 +438,6 @@ class AudioPlayerService extends ChangeNotifier {
   String? _playbackSessionId;
   bool _isOfflineMode = false;
   StreamSubscription? _syncSub;
-  StreamSubscription? _completionSub;
-
   // ── Multi-file track offset tracking ──
   // For ConcatenatingAudioSource, _player.position is track-relative.
   // We store cumulative start offsets so we can compute absolute book position.
@@ -1036,8 +1033,6 @@ class AudioPlayerService extends ChangeNotifier {
     _indexSub = null;
     _syncSub?.cancel();
     _syncSub = null;
-    _completionSub?.cancel();
-    _completionSub = null;
     _eqSessionSub?.cancel();
     _eqSessionSub = null;
     notifyListeners();
@@ -1420,7 +1415,6 @@ class AudioPlayerService extends ChangeNotifier {
   @override
   void dispose() {
     _syncSub?.cancel();
-    _completionSub?.cancel();
     _indexSub?.cancel();
     _player?.dispose();
     super.dispose();
