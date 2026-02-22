@@ -13,6 +13,7 @@ import '../services/sleep_timer_service.dart';
 import '../services/user_account_service.dart';
 import '../screens/login_screen.dart';
 import '../screens/app_shell.dart';
+import '../screens/admin_screen.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/absorb_slider.dart';
 
@@ -223,14 +224,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            stops: const [0.0, 0.4, 0.7, 1.0],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            stops: const [0.0, 0.35, 1.0],
             colors: [
-              cs.primary.withValues(alpha: 0.12),
-              cs.primary.withValues(alpha: 0.04),
-              cs.surface,
-              cs.surface,
+              cs.primary.withValues(alpha: 0.10),
+              const Color(0xFF121212),
+              const Color(0xFF0E0E0E),
             ],
           ),
         ),
@@ -283,23 +283,90 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 8),
 
-                // ── Account ──
-                Card(
-                  elevation: 0,
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  color: cs.surfaceContainerHigh,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: cs.primaryContainer,
-                      child: Icon(Icons.person_rounded, color: cs.onPrimaryContainer),
-                    ),
-                    title: Text(auth.username ?? 'User'),
-                    subtitle: Text(auth.serverUrl ?? '',
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                // ── User Profile ──
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 28,
+                        backgroundColor: cs.primaryContainer,
+                        child: Text(
+                          (auth.username ?? 'U')[0].toUpperCase(),
+                          style: tt.headlineSmall?.copyWith(
+                            color: cs.onPrimaryContainer,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(auth.username ?? 'User', style: tt.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 2),
+                          Text(
+                            auth.serverUrl?.replaceAll(RegExp(r'^https?://'), '').replaceAll(RegExp(r'/+$'), '') ?? '',
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                          if (auth.isAdmin)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: cs.primary.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text('Admin', style: tt.labelSmall?.copyWith(
+                                  color: cs.primary, fontWeight: FontWeight.w600, fontSize: 10)),
+                              ),
+                            ),
+                        ],
+                      )),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 16),
+
+                // ── Admin Controls ──
+                if (auth.isAdmin)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: Material(
+                      color: cs.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(14),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () {
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const AdminScreen(),
+                          ));
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          child: Row(
+                            children: [
+                              Icon(Icons.admin_panel_settings_rounded, color: cs.primary, size: 22),
+                              const SizedBox(width: 14),
+                              Expanded(child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Server Admin', style: tt.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w600)),
+                                  Text('Manage users, libraries & server settings',
+                                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                                ],
+                              )),
+                              Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                const SizedBox(height: 20),
 
 
                 // ── Playback ──
@@ -529,7 +596,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
 
                 // ── Sleep Timer ──
                 _CollapsibleSection(
@@ -682,7 +749,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
 
                 // ── Downloads & Storage ──
                 _CollapsibleSection(
@@ -733,7 +800,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
 
                 // ── Library ──
                 if (lib.libraries.length > 1) ...[
@@ -756,7 +823,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
                     }).toList(),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
                 ],
 
                 // ── Permissions ──
@@ -816,7 +883,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
 
                 // ── Support & Info ──
                 Padding(

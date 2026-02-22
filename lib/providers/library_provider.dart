@@ -220,6 +220,8 @@ class LibraryProvider extends ChangeNotifier {
   StreamSubscription? _connectivitySub;
 
   /// Called by ProxyProvider when auth changes.
+  String? _lastAuthKey; // Guard against redundant updateAuth from ProxyProvider
+
   void updateAuth(AuthProvider auth) {
     final wasAuthenticated = _auth?.isAuthenticated ?? false;
     final previousUserId = _auth?.userId;
@@ -229,12 +231,24 @@ class LibraryProvider extends ChangeNotifier {
       final isNewUser = previousUserId != null && previousUserId != auth.userId;
       final isFreshLogin = !wasAuthenticated;
 
+      // Build a key to detect duplicate calls from ProxyProvider re-triggering
+      final authKey = '${auth.userId}@${auth.serverUrl}';
+      final isDuplicate = authKey == _lastAuthKey && !isNewUser && !isFreshLogin;
+      _lastAuthKey = authKey;
+
+      if (isDuplicate) return; // Skip redundant update
+
       if (isNewUser || isFreshLogin) {
         _libraries = [];
         _personalizedSections = [];
         _series = [];
         _progressMap = {};
         _localProgressOverrides.clear();
+        _resetItems.clear();
+        _manualAbsorbAdds.clear();
+        _manualAbsorbRemoves.clear();
+        _isLoading = true;
+        notifyListeners(); // Immediately clear old user's data from UI
       }
 
       // Restore manual offline preference and start connectivity monitoring
@@ -257,11 +271,10 @@ class LibraryProvider extends ChangeNotifier {
           ProgressSyncService().flushPendingSync(api: _api!);
           DownloadService().enrichMetadata(_api!);
         }
-        if (_libraries.isEmpty || isNewUser || isFreshLogin) {
-          loadLibraries();
-        }
+        loadLibraries();
       });
     } else {
+      _lastAuthKey = null;
       _libraries = [];
       _personalizedSections = [];
       _series = [];

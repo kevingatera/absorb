@@ -726,4 +726,335 @@ class ApiService {
     }
     return null;
   }
+
+  // ─── Admin Endpoints ──────────────────────────────────────
+
+  /// Get all users (admin only)
+  Future<List<dynamic>> getUsers() async {
+    try {
+      final r = await http.get(Uri.parse('$_cleanBaseUrl/api/users'), headers: _headers)
+          .timeout(const Duration(seconds: 15));
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        if (data is List) return data;
+        if (data is Map) {
+          // ABS wraps in {"users": [...]}
+          if (data['users'] is List) return data['users'] as List<dynamic>;
+          // Fallback: return first list found
+          for (final v in data.values) {
+            if (v is List) return v;
+          }
+        }
+      }
+    } catch (e) { debugPrint('getUsers error: $e'); }
+    return [];
+  }
+
+  /// Get online users (admin only)
+  Future<List<dynamic>> getOnlineUsers() async {
+    try {
+      final r = await http.get(Uri.parse('$_cleanBaseUrl/api/users/online'), headers: _headers)
+          .timeout(const Duration(seconds: 15));
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        if (data is List) return data;
+        if (data is Map && data['usersOnline'] is List) return data['usersOnline'] as List<dynamic>;
+        if (data is Map && data['openSessions'] is List) return data['openSessions'] as List<dynamic>;
+      }
+    } catch (e) { debugPrint('getOnlineUsers error: $e'); }
+    return [];
+  }
+
+  /// Get all listening sessions (admin only)
+  Future<List<dynamic>> getAllSessions({int limit = 25}) async {
+    try {
+      final r = await http.get(
+        Uri.parse('$_cleanBaseUrl/api/sessions?itemsPerPage=$limit'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        return (data['sessions'] as List<dynamic>?) ?? [];
+      }
+    } catch (e) { debugPrint('getAllSessions error: $e'); }
+    return [];
+  }
+
+  /// Get all backups (admin only)
+  Future<List<dynamic>> getBackups() async {
+    try {
+      final r = await http.get(Uri.parse('$_cleanBaseUrl/api/backups'), headers: _headers)
+          .timeout(const Duration(seconds: 15));
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        return (data['backups'] as List<dynamic>?) ?? [];
+      }
+    } catch (e) { debugPrint('getBackups error: $e'); }
+    return [];
+  }
+
+  /// Create a backup (admin only)
+  Future<bool> createBackup() async {
+    try {
+      final r = await http.post(Uri.parse('$_cleanBaseUrl/api/backups'), headers: _headers)
+          .timeout(const Duration(seconds: 60));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('createBackup error: $e'); }
+    return false;
+  }
+
+  /// Scan a library's folders (admin only)
+  Future<bool> scanLibrary(String libraryId) async {
+    try {
+      final r = await http.post(
+        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/scan'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 30));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('scanLibrary error: $e'); }
+    return false;
+  }
+
+  /// Match all items in a library (admin only)
+  Future<bool> matchLibrary(String libraryId) async {
+    try {
+      final r = await http.post(
+        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/match'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 30));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('matchLibrary error: $e'); }
+    return false;
+  }
+
+  /// Get library stats (admin only)
+  Future<Map<String, dynamic>?> getLibraryStats(String libraryId) async {
+    try {
+      final r = await http.get(
+        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/stats'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) { debugPrint('getLibraryStats error: $e'); }
+    return null;
+  }
+
+  /// Purge server cache (admin only)
+  Future<bool> purgeCache() async {
+    try {
+      final r = await http.post(Uri.parse('$_cleanBaseUrl/api/cache/purge'), headers: _headers)
+          .timeout(const Duration(seconds: 30));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('purgeCache error: $e'); }
+    return false;
+  }
+
+  /// Create a new user (admin only)
+  Future<Map<String, dynamic>?> createUser({
+    required String username,
+    required String password,
+    required String type,
+    Map<String, dynamic>? permissions,
+    List<String>? librariesAccessible,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'username': username,
+        'password': password,
+        'type': type,
+      };
+      if (permissions != null) body['permissions'] = permissions;
+      if (librariesAccessible != null) body['librariesAccessible'] = librariesAccessible;
+      final r = await http.post(
+        Uri.parse('$_cleanBaseUrl/api/users'),
+        headers: _headers,
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 15));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) { debugPrint('createUser error: $e'); }
+    return null;
+  }
+
+  /// Update a user (admin only)
+  Future<bool> updateUser(String userId, Map<String, dynamic> updates) async {
+    try {
+      final r = await http.patch(
+        Uri.parse('$_cleanBaseUrl/api/users/$userId'),
+        headers: _headers,
+        body: jsonEncode(updates),
+      ).timeout(const Duration(seconds: 15));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('updateUser error: $e'); }
+    return false;
+  }
+
+  /// Delete a user (admin only)
+  Future<bool> deleteUser(String userId) async {
+    try {
+      final r = await http.delete(
+        Uri.parse('$_cleanBaseUrl/api/users/$userId'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('deleteUser error: $e'); }
+    return false;
+  }
+
+  // ─── Podcast Endpoints ────────────────────────────────────
+
+  /// Search for podcasts (uses iTunes)
+  Future<List<dynamic>> searchPodcasts(String query) async {
+    try {
+      final r = await http.get(
+        Uri.parse('$_cleanBaseUrl/api/search/podcast?term=${Uri.encodeComponent(query)}'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        if (data is List) return data;
+        if (data is Map) {
+          if (data['podcasts'] is List) return data['podcasts'] as List<dynamic>;
+          for (final key in data.keys) {
+            if (data[key] is List) return data[key] as List<dynamic>;
+          }
+        }
+      }
+    } catch (e) { debugPrint('searchPodcasts error: $e'); }
+    return [];
+  }
+
+  /// Create a podcast (add to library from feed URL)
+  Future<Map<String, dynamic>?> createPodcast({
+    required String libraryId,
+    required String folderId,
+    required String feedUrl,
+    required Map<String, dynamic> podcastData,
+    bool autoDownloadEpisodes = false,
+    String? autoDownloadSchedule,
+  }) async {
+    try {
+      // ABS search returns: id, artistId, title, artistName, description,
+      // descriptionPlain, releaseDate, genres, cover, trackCount, feedUrl,
+      // pageUrl, explicit
+      final title = podcastData['title'] as String? ?? 'Podcast';
+
+      // Build the podcast path from the library folder + title
+      String podcastPath = '';
+      try {
+        final libs = await getLibraries();
+        final lib = libs.firstWhere((l) => l['id'] == libraryId, orElse: () => <String, dynamic>{});
+        final folders = lib['folders'] as List?;
+        if (folders != null && folders.isNotEmpty) {
+          final folder = folders.firstWhere((f) => f['id'] == folderId, orElse: () => folders.first);
+          final folderPath = folder['fullPath'] as String? ?? '';
+          if (folderPath.isNotEmpty) {
+            final cleanTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
+            podcastPath = '$folderPath/$cleanTitle';
+          }
+        }
+      } catch (_) {}
+
+      final body = <String, dynamic>{
+        'libraryId': libraryId,
+        'folderId': folderId,
+        'path': podcastPath,
+        'media': {
+          'metadata': {
+            'title': title,
+            'author': podcastData['artistName'] ?? '',
+            'description': podcastData['description'] ?? podcastData['descriptionPlain'] ?? '',
+            'releaseDate': podcastData['releaseDate'] ?? '',
+            'genres': podcastData['genres'] ?? [],
+            'feedUrl': feedUrl,
+            'imageUrl': podcastData['cover'] ?? podcastData['imageUrl'] ?? '',
+            'itunesPageUrl': podcastData['pageUrl'] ?? '',
+            'itunesId': podcastData['id'],
+            'itunesArtistId': podcastData['artistId'],
+            'explicit': podcastData['explicit'] ?? false,
+            'language': podcastData['language'],
+          },
+          'autoDownloadEpisodes': autoDownloadEpisodes,
+          'autoDownloadSchedule': autoDownloadSchedule ?? '0 0 * * 1',
+        },
+      };
+      final bodyJson = jsonEncode(body);
+      final r = await http.post(
+        Uri.parse('$_cleanBaseUrl/api/podcasts'),
+        headers: _headers,
+        body: bodyJson,
+      ).timeout(const Duration(seconds: 30));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) { debugPrint('createPodcast error: $e'); }
+    return null;
+  }
+
+  /// Get a podcast's RSS feed episodes by feed URL
+  /// POST /api/podcasts/feed  body: { "rssFeed": "https://..." }
+  Future<Map<String, dynamic>?> getPodcastFeed(String rssFeedUrl) async {
+    try {
+      final r = await http.post(
+        Uri.parse('$_cleanBaseUrl/api/podcasts/feed'),
+        headers: _headers,
+        body: jsonEncode({'rssFeed': rssFeedUrl}),
+      ).timeout(const Duration(seconds: 20));
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        if (data is Map<String, dynamic>) return data;
+      }
+    } catch (e) { debugPrint('getPodcastFeed error: $e'); }
+    return null;
+  }
+
+  /// Download specific podcast episodes
+  Future<bool> downloadPodcastEpisodes(String libraryItemId, List<Map<String, dynamic>> episodes) async {
+    try {
+      final r = await http.post(
+        Uri.parse('$_cleanBaseUrl/api/podcasts/$libraryItemId/download-episodes'),
+        headers: _headers,
+        body: jsonEncode(episodes),
+      ).timeout(const Duration(seconds: 30));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('downloadPodcastEpisodes error: $e'); }
+    return false;
+  }
+
+  /// Check for new podcast episodes across all podcasts in a library
+  /// Uses per-podcast check since there's no single library-level endpoint
+  Future<bool> checkNewEpisodes(String libraryId) async {
+    try {
+      // First get all podcast items in the library
+      final items = await getLibraryItems(libraryId, limit: 100);
+      final results = items?['results'] as List? ?? [];
+      if (results.isEmpty) return false;
+
+      // Trigger check on each podcast
+      int success = 0;
+      for (final item in results) {
+        final libItem = item is Map ? (item['libraryItem'] ?? item) : item;
+        final id = libItem is Map ? libItem['id'] as String? : null;
+        if (id == null) continue;
+        try {
+          final r = await http.get(
+            Uri.parse('$_cleanBaseUrl/api/podcasts/$id/checknew'),
+            headers: _headers,
+          ).timeout(const Duration(seconds: 10));
+          if (r.statusCode == 200) success++;
+        } catch (_) {}
+      }
+      return success > 0;
+    } catch (e) { debugPrint('checkNewEpisodes error: $e'); }
+    return false;
+  }
+
+  /// Delete a podcast episode
+  Future<bool> deletePodcastEpisode(String podcastId, String episodeId) async {
+    try {
+      final r = await http.delete(
+        Uri.parse('$_cleanBaseUrl/api/podcasts/$podcastId/episode/$episodeId'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('deletePodcastEpisode error: $e'); }
+    return false;
+  }
 }

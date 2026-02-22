@@ -31,6 +31,10 @@ class AuthProvider extends ChangeNotifier {
   Map<String, dynamic>? get userJson => _userJson;
   Map<String, dynamic>? get serverSettings => _serverSettings;
   String? get serverVersion => _serverVersion;
+  bool get isAdmin {
+    final t = _userJson?['type'] as String?;
+    return t == 'admin' || t == 'root';
+  }
 
   ApiService? get apiService {
     if (_serverUrl != null && _token != null) {
@@ -63,6 +67,18 @@ class AuthProvider extends ChangeNotifier {
         // Check if server is actually reachable
         final reachable = await ApiService.pingServer(savedUrl);
         _serverReachable = reachable;
+
+        // Fetch full user info (needed for isAdmin, permissions, etc.)
+        if (reachable) {
+          try {
+            final api = ApiService(baseUrl: savedUrl, token: savedToken);
+            final me = await api.getMe();
+            if (me != null) {
+              _userJson = me;
+              _userId = me['id'] as String?;
+            }
+          } catch (_) {}
+        }
       }
     } catch (_) {
       // Restore failed — but if we already set credentials, keep them
