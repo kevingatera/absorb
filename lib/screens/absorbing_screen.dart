@@ -181,7 +181,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                   // Offline mode toggle
                   GestureDetector(
                     onTap: () {
-                      final newVal = !effectiveOffline;
+                      final newVal = !lib.isManualOffline;
                       lib.setManualOffline(newVal);
                       if (newVal) _stopAndRefresh(lib);
                     },

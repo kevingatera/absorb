@@ -15,6 +15,7 @@ import 'services/progress_sync_service.dart';
 import 'services/equalizer_service.dart';
 import 'services/sleep_timer_service.dart';
 import 'services/user_account_service.dart';
+import 'services/android_auto_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/app_shell.dart';
 import 'widgets/absorb_wave_icon.dart';
@@ -203,6 +204,8 @@ class _AuthGateState extends State<AuthGate> {
       await ProgressSyncService().init();
       await EqualizerService().init();
       await SleepTimerService().loadAutoSleepSettings();
+      // Pre-populate Android Auto browse tree
+      AndroidAutoService().refresh();
     } catch (e) {
       debugPrint('Service init failed: $e');
     }

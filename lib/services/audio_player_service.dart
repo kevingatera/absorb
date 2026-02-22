@@ -13,6 +13,7 @@ import 'playback_history_service.dart' hide PlaybackEvent;
 import 'progress_sync_service.dart';
 import 'sleep_timer_service.dart';
 import 'equalizer_service.dart';
+import 'android_auto_service.dart';
 
 // ─── Auto-rewind settings ───
 
@@ -244,17 +245,11 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     debugPrint('[Handler] rewind done — playing=${_player.playing}');
   }
 
-  @override
-  Future<void> skipToNext() {
-    debugPrint('[Handler] skipToNext() → fastForward');
-    return fastForward();
-  }
-
-  @override
-  Future<void> skipToPrevious() {
-    debugPrint('[Handler] skipToPrevious() → rewind');
-    return rewind();
-  }
+  // Note: skipToNext/skipToPrevious are intentionally NOT overridden here.
+  // Android Auto renders controls based on which actions the handler declares.
+  // Overriding skip methods causes Auto to show track-skip (⏭) icons instead
+  // of the rewind/forward (↻) circular arrows we want for audiobooks.
+  // Headset button presses route through onClick() below instead.
 
   // Custom click handler with proper multi-press detection
   Timer? _clickTimer;
@@ -320,6 +315,108 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> setSpeed(double speed) => _player.setSpeed(speed);
+
+  // ─── Android Auto browse tree ──────────────────────────────────────
+
+  final _autoService = AndroidAutoService();
+
+  @override
+  Future<List<MediaItem>> getChildren(String parentMediaId,
+      [Map<String, dynamic>? options]) async {
+    debugPrint('[Handler] getChildren($parentMediaId)');
+    await _autoService.refresh();
+    return _autoService.getChildrenOf(parentMediaId);
+  }
+
+  @override
+  Future<MediaItem?> getMediaItem(String mediaId) async {
+    debugPrint('[Handler] getMediaItem($mediaId)');
+    return _autoService.getMediaItem(mediaId);
+  }
+
+  @override
+  Future<List<MediaItem>> search(String query,
+      [Map<String, dynamic>? extras]) async {
+    debugPrint('[Handler] search("$query")');
+    return _autoService.search(query);
+  }
+
+  @override
+  Future<void> prepareFromMediaId(String mediaId,
+      [Map<String, dynamic>? extras]) async {
+    debugPrint('[Handler] prepareFromMediaId($mediaId)');
+    await _playFromAutoMediaId(mediaId);
+  }
+
+  @override
+  Future<void> playFromMediaId(String mediaId,
+      [Map<String, dynamic>? extras]) async {
+    debugPrint('[Handler] playFromMediaId($mediaId)');
+    await _playFromAutoMediaId(mediaId);
+  }
+
+  Future<void> _playFromAutoMediaId(String mediaId) async {
+    final absId = AutoMediaIds.absItemId(mediaId);
+    if (absId == null) {
+      debugPrint('[Handler] Invalid media ID for playback: $mediaId');
+      return;
+    }
+
+    if (_service == null) {
+      debugPrint('[Handler] No service bound — cannot play');
+      return;
+    }
+
+    final api = await _autoService.getApi();
+    if (api == null) {
+      debugPrint('[Handler] No API credentials — cannot play');
+      return;
+    }
+
+    // Try to find in cached entries first
+    var entry = _autoService.findEntry(absId);
+
+    // If not in cache (e.g. from series/author drilldown or search),
+    // fetch the item details from server
+    if (entry == null) {
+      debugPrint('[Handler] Book not cached, fetching from server: $absId');
+      try {
+        final response = await api.getLibraryItem(absId);
+        if (response != null) {
+          final media = response['media'] as Map<String, dynamic>?;
+          final metadata = media?['metadata'] as Map<String, dynamic>? ?? {};
+          entry = AutoBookEntry(
+            id: absId,
+            title: metadata['title'] as String? ?? 'Unknown',
+            author: metadata['authorName'] as String? ?? '',
+            duration: (media?['duration'] as num?)?.toDouble() ?? 0,
+            coverUrl: api.getCoverUrl(absId, width: 400),
+            chapters: media?['chapters'] as List<dynamic>? ?? [],
+          );
+        }
+      } catch (e) {
+        debugPrint('[Handler] Error fetching item: $e');
+      }
+    }
+
+    if (entry == null) {
+      debugPrint('[Handler] Book not found: $absId');
+      return;
+    }
+
+    debugPrint('[Handler] Android Auto play: "${entry.title}" by ${entry.author}');
+
+    await _service!.playItem(
+      api: api,
+      itemId: entry.id,
+      title: entry.title,
+      author: entry.author,
+      coverUrl: entry.coverUrl,
+      totalDuration: entry.duration,
+      chapters: entry.chapters,
+      startTime: entry.currentTime ?? 0,
+    );
+  }
 }
 
 // ─── Singleton service ───
@@ -498,12 +595,20 @@ class AudioPlayerService extends ChangeNotifier {
   static Future<void> init() async {
     _handler = await AudioService.init<AudioPlayerHandler>(
       builder: () => AudioPlayerHandler(),
-      config: const AudioServiceConfig(
+      config: AudioServiceConfig(
         androidNotificationChannelId: 'com.audiobookshelf.app.channel.audio',
         androidNotificationChannelName: 'Absorb',
         androidNotificationOngoing: true,
         androidStopForegroundOnPause: true,
         androidNotificationIcon: 'drawable/ic_notification',
+        androidBrowsableRootExtras: {
+          AndroidContentStyle.supportedKey: true,
+          AndroidContentStyle.browsableHintKey:
+              AndroidContentStyle.categoryListItemHintValue,
+          AndroidContentStyle.playableHintKey:
+              AndroidContentStyle.gridItemHintValue,
+          'android.media.browse.SEARCH_SUPPORTED': true,
+        },
       ),
     );
     // Bind service so handler routes play/pause through service (for auto-rewind)

@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const appVersion = '1.2.5';
+  static const appVersion = '1.3.0';
 
   final String baseUrl;
   final String token;
@@ -237,6 +237,78 @@ class ApiService {
   /// Build an author image URL.
   String getAuthorImageUrl(String authorId, {int width = 200}) {
     return '$_cleanBaseUrl/api/authors/$authorId/image?width=$width&token=$token';
+  }
+
+  /// Get a library's filter data (authors, series, genres, etc.)
+  /// Used by Android Auto to build browse tree without fetching full items.
+  Future<Map<String, dynamic>?> getLibraryFilterData(String libraryId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId?include=filterdata'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['filterdata'] as Map<String, dynamic>?;
+      }
+    } catch (e) {
+      // ignore
+    }
+    return null;
+  }
+
+  /// Get books by a specific author using the filter API.
+  /// Filter format: authors.<base64(authorId)>
+  Future<List<dynamic>> getBooksByAuthor(
+    String libraryId,
+    String authorId, {
+    int limit = 50,
+  }) async {
+    try {
+      final filterValue = base64Encode(utf8.encode(authorId));
+      final url = '$_cleanBaseUrl/api/libraries/$libraryId/items'
+          '?filter=authors.$filterValue&sort=media.metadata.title&limit=$limit';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['results'] as List<dynamic>? ?? [];
+      }
+    } catch (e) {
+      debugPrint('[API] getBooksByAuthor error: $e');
+    }
+    return [];
+  }
+
+  /// Get books in a specific series using the filter API.
+  /// Filter format: series.<base64(seriesId)>
+  Future<List<dynamic>> getBooksBySeries(
+    String libraryId,
+    String seriesId, {
+    int limit = 50,
+  }) async {
+    try {
+      final filterValue = base64Encode(utf8.encode(seriesId));
+      final url = '$_cleanBaseUrl/api/libraries/$libraryId/items'
+          '?filter=series.$filterValue'
+          '&sort=media.metadata.series.sequence&limit=$limit&collapseseries=0';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['results'] as List<dynamic>? ?? [];
+      }
+    } catch (e) {
+      debugPrint('[API] getBooksBySeries error: $e');
+    }
+    return [];
   }
 
   /// Expose clean base URL for audio player to build URLs

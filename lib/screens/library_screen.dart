@@ -212,12 +212,6 @@ class LibraryScreenState extends State<LibraryScreen> {
       setState(() {
         for (final r in results) {
           if (r is Map<String, dynamic>) {
-            // Debug: log keys of first item to see what's available
-            if (_items.isEmpty && results.indexOf(r) == 0) {
-              debugPrint('[Library] Item keys: ${r.keys.toList()}');
-              final m = r['media'] as Map<String, dynamic>? ?? {};
-              debugPrint('[Library] Media keys: ${m.keys.toList()}');
-            }
             // Client-side downloaded filter
             if (_filter == LibraryFilter.downloaded) {
               final id = r['id'] as String? ?? '';

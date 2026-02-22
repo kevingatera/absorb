@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/sleep_timer_service.dart';
+import '../services/android_auto_service.dart';
 import 'absorbing_screen.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
@@ -109,6 +110,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     if (_lastRefresh == null || now.difference(_lastRefresh!) > _refreshCooldown) {
       _lastRefresh = now;
       lib.refresh();
+      // Keep Android Auto browse tree in sync
+      AndroidAutoService().refresh();
     }
   }
 
