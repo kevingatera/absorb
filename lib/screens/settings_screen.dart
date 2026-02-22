@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
@@ -37,6 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _downloadLocationLabel = 'App Internal Storage (Default)';
   int _totalDownloadSizeBytes = 0;
   AutoSleepSettings _autoSleepSettings = const AutoSleepSettings();
+  String _appVersion = '';
 
   @override
   void initState() {
@@ -58,6 +60,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final dlLabel = await DownloadService().downloadLocationLabel;
     final dlSize = await DownloadService().totalDownloadSize;
     final autoSleep = await AutoSleepSettings.load();
+    final pkgInfo = await PackageInfo.fromPlatform();
     if (mounted) setState(() {
       _rewindSettings = s;
       _defaultSpeed = speed;
@@ -72,6 +75,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _downloadLocationLabel = dlLabel;
       _totalDownloadSizeBytes = dlSize;
       _autoSleepSettings = autoSleep;
+      _appVersion = pkgInfo.version;
       _loaded = true;
     });
   }
@@ -847,8 +851,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(height: 12),
                       Text(
                         auth.serverVersion != null
-                            ? 'Absorb v1.2.1  ·  Server ${auth.serverVersion}'
-                            : 'Absorb v1.2.1',
+                            ? 'Absorb v$_appVersion  ·  Server ${auth.serverVersion}'
+                            : 'Absorb v$_appVersion',
                         style: tt.bodySmall?.copyWith(
                             color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
                       ),

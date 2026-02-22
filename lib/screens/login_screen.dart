@@ -7,6 +7,7 @@ import 'package:app_links/app_links.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/oidc_service.dart';
+import '../services/user_account_service.dart';
 import '../widgets/absorb_wave_icon.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -142,6 +143,8 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
+  String _lastValidatedServer = '';
+
   void _onServerChanged() {
     final text = _serverController.text.trim();
     if (text.isEmpty) {
@@ -149,16 +152,28 @@ class _LoginScreenState extends State<LoginScreen>
         _serverValid = false;
         _serverChecking = false;
         _serverError = null;
+        _lastValidatedServer = '';
       });
       _debounce?.cancel();
       return;
     }
 
-    setState(() {
-      _serverValid = false;
-      _serverChecking = true;
-      _serverError = null;
-    });
+    // Only invalidate if the server text actually changed from what we validated
+    final cleanUrl = text.replaceAll(RegExp(r'^https?://'), '');
+    final fullUrl = '$_protocol$cleanUrl';
+    if (fullUrl != _lastValidatedServer) {
+      setState(() {
+        _serverValid = false;
+        _serverChecking = true;
+        _serverError = null;
+      });
+    } else {
+      // Same server, just re-checking — keep fields visible
+      setState(() {
+        _serverChecking = true;
+        _serverError = null;
+      });
+    }
 
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 800), () => _checkServer());
@@ -180,7 +195,12 @@ class _LoginScreenState extends State<LoginScreen>
         _serverChecking = false;
         _serverValid = ok;
         _serverError = ok ? null : 'Could not reach server';
-        if (!ok) _oidcConfig = null;
+        if (ok) {
+          _lastValidatedServer = fullUrl;
+        } else {
+          _oidcConfig = null;
+          _lastValidatedServer = '';
+        }
       });
 
       if (ok) {
@@ -493,6 +513,9 @@ class _LoginScreenState extends State<LoginScreen>
                       ),
                     ),
                   ),
+
+                  // ── Saved accounts quick-switch ──
+                  _buildSavedAccounts(cs, tt),
                 ],
               ),
             ),
@@ -500,6 +523,105 @@ class _LoginScreenState extends State<LoginScreen>
         ),
       ),
     );
+  }
+
+  Widget _buildSavedAccounts(ColorScheme cs, TextTheme tt) {
+    final accounts = UserAccountService().accounts;
+    if (accounts.isEmpty) return const SizedBox.shrink();
+
+    return FadeTransition(
+      opacity: _fadeAnim,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 32),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(child: Divider(color: cs.outlineVariant.withValues(alpha: 0.15))),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Text('saved accounts',
+                    style: tt.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.4))),
+                ),
+                Expanded(child: Divider(color: cs.outlineVariant.withValues(alpha: 0.15))),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...accounts.map((account) {
+              final shortUrl = account.serverUrl
+                  .replaceAll(RegExp(r'^https?://'), '')
+                  .replaceAll(RegExp(r'/+$'), '');
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Material(
+                  color: cs.surface.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(14),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () => _quickSwitch(account),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 18,
+                            backgroundColor: cs.primary.withValues(alpha: 0.15),
+                            child: Text(
+                              account.username.isNotEmpty
+                                  ? account.username[0].toUpperCase()
+                                  : '?',
+                              style: TextStyle(
+                                color: cs.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(account.username,
+                                  style: tt.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: cs.onSurface)),
+                                Text(shortUrl,
+                                  style: tt.labelSmall?.copyWith(
+                                    color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.arrow_forward_ios_rounded,
+                            size: 14, color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _quickSwitch(SavedAccount account) async {
+    setState(() => _isConnecting = true);
+
+    final auth = context.read<AuthProvider>();
+    await auth.switchToAccount(account);
+
+    if (mounted) {
+      setState(() => _isConnecting = false);
+      if (auth.isAuthenticated && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      // If this is the root login screen, AuthGate will react to the state change
+    }
   }
 
   Widget _buildInputField({
