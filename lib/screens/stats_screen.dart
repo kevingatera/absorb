@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
-import '../widgets/absorb_title.dart';
+import '../widgets/absorb_page_header.dart';
 import '../widgets/absorb_wave_icon.dart';
 
 class StatsScreen extends StatefulWidget {
@@ -140,10 +140,12 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       children: [
         // Header
-        const AbsorbTitle(color: Colors.white38),
-        const SizedBox(height: 4),
-        Text('Your Stats', style: tt.headlineMedium?.copyWith(
-          fontWeight: FontWeight.w700, color: Colors.white, letterSpacing: -0.5)),
+        const AbsorbPageHeader(
+          title: 'Your Stats',
+          brandingColor: Colors.white38,
+          titleColor: Colors.white,
+          padding: EdgeInsets.only(top: 4),
+        ),
         const SizedBox(height: 24),
 
         // ── Hero stat ──

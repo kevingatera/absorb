@@ -6,7 +6,7 @@ import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../widgets/home_section.dart';
 import '../widgets/library_selector.dart';
-import '../widgets/absorb_title.dart';
+import '../widgets/absorb_page_header.dart';
 import '../widgets/shimmer.dart';
 import '../widgets/book_detail_sheet.dart';
 import 'app_shell.dart';
@@ -118,18 +118,14 @@ class _HomeScreenState extends State<HomeScreen> {
           },
           child: CustomScrollView(
             slivers: [
-              // ── Top bar: ABSORB title + library selector ──
+              // ── Top bar: ABSORB title + page name ──
               SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 8, 0),
-                  child: Row(
-                    children: [
-                      const AbsorbTitle(),
-                      const Spacer(),
-                      if (!lib.isOffline && lib.libraries.length > 1)
-                        const LibrarySelectorButton(),
-                    ],
-                  ),
+                child: AbsorbPageHeader(
+                  title: 'Home',
+                  actions: [
+                    if (!lib.isOffline && lib.libraries.length > 1)
+                      const LibrarySelectorButton(),
+                  ],
                 ),
               ),
 

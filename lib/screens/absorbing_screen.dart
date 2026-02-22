@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
-import '../widgets/absorb_title.dart';
+import '../widgets/absorb_page_header.dart';
 import '../widgets/absorbing_card.dart';
 
 class AbsorbingScreen extends StatefulWidget {
@@ -171,123 +171,122 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // ── Fixed Header ──
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-              child: Row(
-                children: [
-                  const AbsorbTitle(color: Colors.white38),
-                  const Spacer(),
-                  // Offline mode toggle
+            // ── Header ──
+            AbsorbPageHeader(
+              title: 'Absorbing',
+              brandingColor: Colors.white38,
+              titleColor: Colors.white,
+              padding: const EdgeInsets.fromLTRB(20, 12, 12, 0),
+              actions: [
+                // Offline mode toggle
+                GestureDetector(
+                  onTap: () {
+                    final newVal = !lib.isManualOffline;
+                    lib.setManualOffline(newVal);
+                    if (newVal) _stopAndRefresh(lib);
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: effectiveOffline ? Colors.orange.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: effectiveOffline ? Colors.orange.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.08)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          effectiveOffline ? Icons.airplanemode_active_rounded : Icons.airplanemode_inactive_rounded,
+                          size: 14, color: effectiveOffline ? Colors.orange : Colors.white38,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          effectiveOffline ? 'Offline' : 'Online',
+                          style: TextStyle(
+                            color: effectiveOffline ? Colors.orange : Colors.white38,
+                            fontSize: 11, fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Unified button: "Sync" when idle, "Stop & Sync" when playing
+                if (!effectiveOffline)
                   GestureDetector(
-                    onTap: () {
-                      final newVal = !lib.isManualOffline;
-                      lib.setManualOffline(newVal);
-                      if (newVal) _stopAndRefresh(lib);
+                    onTap: _isSyncing ? null : () {
+                      if (_player.hasBook) {
+                        _stopAndRefresh(lib);
+                      } else {
+                        () async {
+                          setState(() => _isSyncing = true);
+                          await _pullRefresh();
+                          if (mounted) setState(() => _isSyncing = false);
+                        }();
+                      }
                     },
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOutCubic,
+                      duration: const Duration(milliseconds: 200),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: effectiveOffline ? Colors.orange.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.06),
+                        color: Colors.white.withValues(alpha: 0.06),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: effectiveOffline ? Colors.orange.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.08)),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            effectiveOffline ? Icons.airplanemode_active_rounded : Icons.airplanemode_inactive_rounded,
-                            size: 14, color: effectiveOffline ? Colors.orange : Colors.white38,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            effectiveOffline ? 'Offline' : 'Online',
-                            style: TextStyle(
-                              color: effectiveOffline ? Colors.orange : Colors.white38,
-                              fontSize: 11, fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                          if (_isSyncing) ...[
+                            const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white38)),
+                            const SizedBox(width: 6),
+                            const Text('Syncing…', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
+                          ] else if (_player.hasBook) ...[
+                            const Icon(Icons.stop_rounded, size: 14, color: Colors.white38),
+                            const SizedBox(width: 4),
+                            const Text('Stop & Sync', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
+                          ] else ...[
+                            const Icon(Icons.sync_rounded, size: 14, color: Colors.white38),
+                            const SizedBox(width: 4),
+                            const Text('Sync', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
+                          ],
                         ],
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Unified button: "Sync" when idle, "Stop & Sync" when playing
-                  if (!effectiveOffline)
-                    GestureDetector(
-                      onTap: _isSyncing ? null : () {
-                        if (_player.hasBook) {
-                          _stopAndRefresh(lib);
-                        } else {
-                          () async {
-                            setState(() => _isSyncing = true);
-                            await _pullRefresh();
-                            if (mounted) setState(() => _isSyncing = false);
-                          }();
-                        }
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (_isSyncing) ...[
-                              const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white38)),
-                              const SizedBox(width: 6),
-                              const Text('Syncing…', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
-                            ] else if (_player.hasBook) ...[
-                              const Icon(Icons.stop_rounded, size: 14, color: Colors.white38),
-                              const SizedBox(width: 4),
-                              const Text('Stop & Sync', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
-                            ] else ...[
-                              const Icon(Icons.sync_rounded, size: 14, color: Colors.white38),
-                              const SizedBox(width: 4),
-                              const Text('Sync', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
+                  )
+                else
+                  // Offline: just stop button (no sync)
+                  AnimatedOpacity(
+                    opacity: _player.hasBook ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: IgnorePointer(
+                      ignoring: !_player.hasBook,
+                      child: GestureDetector(
+                        onTap: () => _stopAndRefresh(lib),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.stop_rounded, size: 14, color: Colors.white38),
+                              SizedBox(width: 4),
+                              Text('Stop', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
                             ],
-                          ],
-                        ),
-                      ),
-                    )
-                  else
-                    // Offline: just stop button (no sync)
-                    AnimatedOpacity(
-                      opacity: _player.hasBook ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 300),
-                      child: IgnorePointer(
-                        ignoring: !_player.hasBook,
-                        child: GestureDetector(
-                          onTap: () => _stopAndRefresh(lib),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.06),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.stop_rounded, size: 14, color: Colors.white38),
-                                SizedBox(width: 4),
-                                Text('Stop', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
-                              ],
-                            ),
                           ),
                         ),
                       ),
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
             // ── Page Dots ──
             if (books.length > 1)

@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/download_service.dart';
-import '../widgets/absorb_title.dart';
+import '../widgets/absorb_page_header.dart';
 import '../widgets/book_detail_sheet.dart';
 
 // ─── Sort modes ──────────────────────────────────────────────
@@ -337,10 +337,7 @@ class LibraryScreenState extends State<LibraryScreen> {
         child: Column(
           children: [
             // ── Header ──
-            const Padding(
-              padding: EdgeInsets.only(top: 12, bottom: 4),
-              child: AbsorbTitle(),
-            ),
+            const AbsorbPageHeader(title: 'Library'),
             // ── Search bar ──
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),

@@ -13,7 +13,7 @@ import '../services/sleep_timer_service.dart';
 import '../services/user_account_service.dart';
 import '../screens/login_screen.dart';
 import '../screens/app_shell.dart';
-import '../widgets/absorb_title.dart';
+import '../widgets/absorb_page_header.dart';
 import '../widgets/absorb_slider.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -234,18 +234,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         ),
+        child: SafeArea(
         child: CustomScrollView(
         slivers: [
-          SliverAppBar.large(
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const AbsorbTitle(),
-                const SizedBox(height: 8),
-                Text('Settings',
-                  style: tt.headlineMedium?.copyWith(fontWeight: FontWeight.w600)),
-              ],
+          SliverToBoxAdapter(
+            child: AbsorbPageHeader(
+              title: 'Settings',
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
             ),
           ),
           SliverToBoxAdapter(
@@ -995,6 +990,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
+      ),
       ),
       ),
     );
