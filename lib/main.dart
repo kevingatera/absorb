@@ -12,6 +12,8 @@ import 'services/api_service.dart';
 import 'services/download_service.dart';
 import 'services/download_notification_service.dart';
 import 'services/progress_sync_service.dart';
+import 'services/equalizer_service.dart';
+import 'services/sleep_timer_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/app_shell.dart';
 import 'widgets/absorb_wave_icon.dart';
@@ -197,6 +199,8 @@ class _AuthGateState extends State<AuthGate> {
     try {
       await DownloadService().init();
       await ProgressSyncService().init();
+      await EqualizerService().init();
+      await SleepTimerService().loadAutoSleepSettings();
     } catch (e) {
       debugPrint('Service init failed: $e');
     }

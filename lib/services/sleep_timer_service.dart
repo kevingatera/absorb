@@ -3,9 +3,76 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'audio_player_service.dart';
 
 enum SleepTimerMode { off, time, chapters }
+
+/// Auto sleep timer settings — automatically start a sleep timer within a time window.
+class AutoSleepSettings {
+  final bool enabled;
+  final int startHour;   // 24h format, e.g. 22 for 10 PM
+  final int startMinute;
+  final int endHour;     // 24h format, e.g. 6 for 6 AM
+  final int endMinute;
+  final int durationMinutes; // how many minutes the auto-started timer runs
+
+  const AutoSleepSettings({
+    this.enabled = false,
+    this.startHour = 22,
+    this.startMinute = 0,
+    this.endHour = 6,
+    this.endMinute = 0,
+    this.durationMinutes = 30,
+  });
+
+  /// Check if the current time is within the auto sleep window.
+  bool isInWindow() {
+    final now = DateTime.now();
+    final nowMinutes = now.hour * 60 + now.minute;
+    final startMinutes = startHour * 60 + startMinute;
+    final endMinutes = endHour * 60 + endMinute;
+
+    if (startMinutes <= endMinutes) {
+      // Same-day window (e.g. 14:00 – 18:00)
+      return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+    } else {
+      // Overnight window (e.g. 22:00 – 06:00)
+      return nowMinutes >= startMinutes || nowMinutes < endMinutes;
+    }
+  }
+
+  String get startLabel => _formatTime(startHour, startMinute);
+  String get endLabel => _formatTime(endHour, endMinute);
+
+  static String _formatTime(int h, int m) {
+    final period = h >= 12 ? 'PM' : 'AM';
+    final h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h);
+    return '$h12:${m.toString().padLeft(2, '0')} $period';
+  }
+
+  static Future<AutoSleepSettings> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    return AutoSleepSettings(
+      enabled: prefs.getBool('autoSleep_enabled') ?? false,
+      startHour: prefs.getInt('autoSleep_startHour') ?? 22,
+      startMinute: prefs.getInt('autoSleep_startMinute') ?? 0,
+      endHour: prefs.getInt('autoSleep_endHour') ?? 6,
+      endMinute: prefs.getInt('autoSleep_endMinute') ?? 0,
+      durationMinutes: prefs.getInt('autoSleep_duration') ?? 30,
+    );
+  }
+
+  Future<void> save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('autoSleep_enabled', enabled);
+    await prefs.setInt('autoSleep_startHour', startHour);
+    await prefs.setInt('autoSleep_startMinute', startMinute);
+    await prefs.setInt('autoSleep_endHour', endHour);
+    await prefs.setInt('autoSleep_endMinute', endMinute);
+    await prefs.setInt('autoSleep_duration', durationMinutes);
+  }
+}
 
 class SleepTimerService extends ChangeNotifier {
   // Singleton
@@ -252,6 +319,104 @@ class SleepTimerService extends ChangeNotifier {
   // Toast callback — UI sets this to show snackbars
   void Function(String message)? onToast;
 
+  // ── Auto Sleep Timer ──
+  AutoSleepSettings? _autoSleepSettings;
+  bool _autoSleepDismissed = false; // user manually cancelled — don't re-trigger this window
+  bool _wasInWindow = false; // tracks window transitions to reset dismiss flag
+  Timer? _windowBoundaryTimer; // fires once at exact window start time
+
+  /// Load auto sleep settings.
+  Future<void> loadAutoSleepSettings() async {
+    _autoSleepSettings = await AutoSleepSettings.load();
+    _onSettingsUpdated();
+  }
+
+  /// Directly update settings (avoids save/load race condition).
+  void updateAutoSleepSettings(AutoSleepSettings settings) {
+    _autoSleepSettings = settings;
+    _onSettingsUpdated();
+  }
+
+  void _onSettingsUpdated() {
+    // Cancel stale boundary timer — it was for the old window
+    _windowBoundaryTimer?.cancel();
+    _windowBoundaryTimer = null;
+    // Re-evaluate with new settings if playing, or schedule boundary
+    if (_autoSleepSettings != null && _autoSleepSettings!.enabled) {
+      checkAutoSleep();
+    }
+  }
+
+  AutoSleepSettings? get autoSleepSettings => _autoSleepSettings;
+
+  /// Cancel the sleep timer because the user chose to.
+  /// Suppresses auto sleep re-triggering until the window resets.
+  void cancelByUser() {
+    debugPrint('[SleepTimer] Cancelled by user — suppressing auto sleep for this window');
+    _autoSleepDismissed = true;
+    _windowBoundaryTimer?.cancel();
+    _windowBoundaryTimer = null;
+    cancel();
+  }
+
+  /// Reset the dismiss flag — call when starting a new book or resetting playback.
+  /// This lets auto sleep re-trigger even if the user cancelled it earlier.
+  void resetDismiss() {
+    _autoSleepDismissed = false;
+  }
+
+  /// Called on playback start, resume, and app foreground.
+  Future<void> checkAutoSleep() async {
+    if (_autoSleepSettings == null) await loadAutoSleepSettings();
+    final settings = _autoSleepSettings;
+    if (settings == null || !settings.enabled) return;
+
+    final inWindow = settings.isInWindow();
+
+    // If we just left the window, reset the dismiss flag for next entry
+    if (!inWindow && _wasInWindow) {
+      _autoSleepDismissed = false;
+    }
+    _wasInWindow = inWindow;
+
+    if (inWindow) {
+      // We're in the window — try to activate
+      _windowBoundaryTimer?.cancel();
+      _windowBoundaryTimer = null;
+      if (!isActive && !_autoSleepDismissed) {
+        debugPrint('[SleepTimer] Auto sleep: in window ${settings.startLabel}–${settings.endLabel}, '
+            'starting ${settings.durationMinutes}m timer');
+        setTimeSleep(Duration(minutes: settings.durationMinutes));
+        onToast?.call('Auto sleep: ${settings.durationMinutes}m timer started');
+      }
+    } else {
+      // Not in window yet — schedule a one-shot timer for when it opens
+      _scheduleWindowBoundary(settings);
+    }
+  }
+
+  /// Schedule a single timer that fires when the window starts.
+  /// If playback is still going at that moment, starts the sleep timer.
+  void _scheduleWindowBoundary(AutoSleepSettings settings) {
+    _windowBoundaryTimer?.cancel();
+
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day, settings.startHour, settings.startMinute);
+    final nextStart = todayStart.isAfter(now) ? todayStart : todayStart.add(const Duration(days: 1));
+    final delay = nextStart.difference(now);
+
+    debugPrint('[SleepTimer] Window boundary timer set for ${delay.inMinutes}m from now');
+    _windowBoundaryTimer = Timer(delay, () {
+      _windowBoundaryTimer = null;
+      if (_player.isPlaying && !isActive && !_autoSleepDismissed) {
+        _wasInWindow = true;
+        debugPrint('[SleepTimer] Window boundary hit — starting ${settings.durationMinutes}m timer');
+        setTimeSleep(Duration(minutes: settings.durationMinutes));
+        onToast?.call('Auto sleep: ${settings.durationMinutes}m timer started');
+      }
+    });
+  }
+
   void _onShake() async {
     if (!isActive) return;
     debugPrint('[SleepTimer] Shake detected!');
@@ -271,6 +436,8 @@ class SleepTimerService extends ChangeNotifier {
   @override
   void dispose() {
     cancel();
+    _windowBoundaryTimer?.cancel();
+    _windowBoundaryTimer = null;
     super.dispose();
   }
 }

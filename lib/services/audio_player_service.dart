@@ -11,6 +11,8 @@ import 'api_service.dart';
 import 'download_service.dart';
 import 'playback_history_service.dart' hide PlaybackEvent;
 import 'progress_sync_service.dart';
+import 'sleep_timer_service.dart';
+import 'equalizer_service.dart';
 
 // ─── Auto-rewind settings ───
 
@@ -360,8 +362,6 @@ class AudioPlayerService extends ChangeNotifier {
     if (_lastSeekTargetSeconds == null || _lastSeekTime == null) return null;
     final elapsed = DateTime.now().difference(_lastSeekTime!).inMilliseconds;
     if (elapsed > 2000) {
-      debugPrint('[MFDBG] activeSeekTarget: EXPIRED after ${elapsed}ms '
-          '(target was ${_lastSeekTargetSeconds!.toStringAsFixed(1)}s)');
       _lastSeekTargetSeconds = null;
       _lastSeekTime = null;
       return null;
@@ -436,12 +436,6 @@ class AudioPlayerService extends ChangeNotifier {
       final trackIdx = _currentTrackIndex;
       final offsetMs = (_trackStartOffsets[trackIdx] * 1000).round();
       final absolute = trackRelative + Duration(milliseconds: offsetMs);
-      // Log every ~2s to avoid flooding
-      if (trackRelative.inMilliseconds % 2000 < 250) {
-        debugPrint('[MFDBG] posStream: trackRel=${trackRelative.inMilliseconds}ms '
-            'trackIdx=$trackIdx offset=${offsetMs}ms → abs=${absolute.inMilliseconds}ms '
-            '(${(absolute.inMilliseconds / 1000.0).toStringAsFixed(1)}s)');
-      }
       return absolute;
     });
   }
@@ -468,10 +462,7 @@ class AudioPlayerService extends ChangeNotifier {
     if (_player == null || _trackStartOffsets.length <= 1) return;
     _indexSub = _player!.currentIndexStream.listen((index) {
       if (index != null) {
-        final old = _currentTrackIndex;
         _currentTrackIndex = index.clamp(0, _trackStartOffsets.length - 2);
-        debugPrint('[MFDBG] trackIndex changed: $old → $_currentTrackIndex '
-            '(raw=$index, offset=${_trackStartOffsets[_currentTrackIndex]}s)');
       }
     });
   }
@@ -480,16 +471,12 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> _seekAbsolute(double absoluteSeconds) async {
     if (_player == null) return;
 
-    debugPrint('[MFDBG] _seekAbsolute called: target=${absoluteSeconds.toStringAsFixed(1)}s '
-        'trackOffsets=$_trackStartOffsets currentTrackIdx=$_currentTrackIndex');
-
     // Record seek target so UI can snap immediately
     _lastSeekTargetSeconds = absoluteSeconds;
     _lastSeekTime = DateTime.now();
 
     if (_trackStartOffsets.length <= 1) {
       // Single file — seek directly
-      debugPrint('[MFDBG] _seekAbsolute: single file, seeking directly');
       await _player!.seek(Duration(milliseconds: (absoluteSeconds * 1000).round()));
       return;
     }
@@ -499,15 +486,9 @@ class AudioPlayerService extends ChangeNotifier {
       final trackEnd = _trackStartOffsets[i + 1];
       if (absoluteSeconds < trackEnd || i == _trackStartOffsets.length - 2) {
         final localOffset = absoluteSeconds - trackStart;
-        debugPrint('[MFDBG] _seekAbsolute: ${absoluteSeconds.toStringAsFixed(1)}s → '
-            'track $i (range ${trackStart.toStringAsFixed(1)}-${trackEnd.toStringAsFixed(1)}s) '
-            'localOffset=${localOffset.toStringAsFixed(1)}s');
         // Update index BEFORE seeking so positionStream events use the right offset
         _currentTrackIndex = i;
-        debugPrint('[MFDBG] _seekAbsolute: set _currentTrackIndex=$i, now calling _player.seek()');
         await _player!.seek(Duration(milliseconds: (localOffset * 1000).round()), index: i);
-        debugPrint('[MFDBG] _seekAbsolute: _player.seek() returned. '
-            'playerPos=${_player!.position.inMilliseconds}ms playerIndex=${_player!.currentIndex}');
         return;
       }
     }
@@ -593,6 +574,8 @@ class AudioPlayerService extends ChangeNotifier {
     _currentCoverUrl = coverUrl;
     _totalDuration = totalDuration;
     _chapters = chapters;
+    // New book = fresh session — clear any auto sleep dismissal
+    SleepTimerService().resetDismiss();
     notifyListeners();
 
     // Check for local saved position (always prefer local — it's the freshest)
@@ -810,6 +793,10 @@ class AudioPlayerService extends ChangeNotifier {
       _player!.play();
       notifyListeners();
       _setupSync();
+      // Fresh session — reset auto sleep dismiss and check
+      final sleepTimer = SleepTimerService();
+      sleepTimer.resetDismiss();
+      sleepTimer.checkAutoSleep();
       return true;
     } catch (e, stack) {
       debugPrint('[Player] Local play error: $e\n$stack');
@@ -900,6 +887,10 @@ class AudioPlayerService extends ChangeNotifier {
       _player!.play();
       notifyListeners();
       _setupSync();
+      // Fresh session — reset auto sleep dismiss and check
+      final sleepTimer = SleepTimerService();
+      sleepTimer.resetDismiss();
+      sleepTimer.checkAutoSleep();
       return true;
     } catch (e, stack) {
       debugPrint('[Player] Stream error: $e\n$stack');
@@ -942,28 +933,61 @@ class AudioPlayerService extends ChangeNotifier {
     _syncSub = null;
     _completionSub?.cancel();
     _completionSub = null;
+    _eqSessionSub?.cancel();
+    _eqSessionSub = null;
     notifyListeners();
   }
 
   int _lastSyncSecond = -1;
 
+  StreamSubscription? _eqSessionSub;
+
+  void _attachEqualizer() {
+    _eqSessionSub?.cancel();
+    _eqSessionSub = null;
+    if (_player == null) return;
+
+    // Try immediately — works if audio source is already set
+    final sessionId = _player!.androidAudioSessionId;
+    if (sessionId != null && sessionId > 0) {
+      EqualizerService().attachToSession(sessionId);
+      return;
+    }
+
+    // Not available yet — poll briefly after playback starts
+    // (safer than androidAudioSessionIdStream which may not exist in all versions)
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (_player == null) return;
+      final id = _player!.androidAudioSessionId;
+      if (id != null && id > 0) {
+        debugPrint('[Player] Got audio session ID (delayed): $id');
+        EqualizerService().attachToSession(id);
+      } else {
+        // Try once more after another second
+        Future.delayed(const Duration(seconds: 1), () {
+          if (_player == null) return;
+          final id2 = _player!.androidAudioSessionId;
+          if (id2 != null && id2 > 0) {
+            debugPrint('[Player] Got audio session ID (retry): $id2');
+            EqualizerService().attachToSession(id2);
+          }
+        });
+      }
+    });
+  }
+
   void _setupSync() {
     _syncSub?.cancel();
     _lastSyncSecond = -1;
+
+    // Attach equalizer to current audio session
+    _attachEqualizer();
 
     _syncSub = _player?.positionStream.listen((trackRelativePos) async {
       // Convert track-relative position to absolute book position
       final absolutePos = position; // uses the getter which adds track offset
       final sec = absolutePos.inSeconds;
       if (sec <= 0) return;
-
-      // Log every ~5s to trace what sync is seeing
-      if (sec % 5 == 0 && sec != _lastSyncSecond) {
-        debugPrint('[MFDBG] sync: trackRel=${trackRelativePos.inMilliseconds}ms '
-            'trackIdx=$_currentTrackIndex abs=${absolutePos.inMilliseconds}ms '
-            '(${(absolutePos.inMilliseconds / 1000.0).toStringAsFixed(1)}s) '
-            'totalDur=$_totalDuration');
-      }
 
       // ─── Completion detection ─────────────────────────────
       // Check if we've reached the end of the book
@@ -1059,8 +1083,6 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> _saveProgressLocal(Duration pos) async {
     if (_currentItemId == null) return;
     final ct = pos.inMilliseconds / 1000.0;
-    debugPrint('[MFDBG] saveLocal: ${ct.toStringAsFixed(1)}s / ${_totalDuration.toStringAsFixed(1)}s '
-        'trackIdx=$_currentTrackIndex rawPlayerPos=${_player?.position.inMilliseconds}ms');
     await _progressSync.saveLocal(
       itemId: _currentItemId!,
       currentTime: ct,
@@ -1073,7 +1095,6 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> _syncToServer(Duration pos) async {
     if (_api == null || _playbackSessionId == null) return;
     final ct = pos.inMilliseconds / 1000.0;
-    debugPrint('[MFDBG] syncServer: ${ct.toStringAsFixed(1)}s / ${_totalDuration.toStringAsFixed(1)}s');
     try {
       await _api!.syncPlaybackSession(
         _playbackSessionId!,
@@ -1129,6 +1150,8 @@ class AudioPlayerService extends ChangeNotifier {
     _lastPauseTime = null;
     _player?.play();
     _logEvent(PlaybackEventType.play);
+    // Check auto sleep on every resume — catches window entry between pauses
+    SleepTimerService().checkAutoSleep();
     notifyListeners();
   }
 
@@ -1162,8 +1185,6 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   Future<void> seekTo(Duration pos) async {
-    debugPrint('[MFDBG] seekTo(${pos.inSeconds}s / ${pos.inMilliseconds}ms) '
-        'trackOffsetCount=${_trackStartOffsets.length} currentTrack=$_currentTrackIndex');
     await _seekAbsolute(pos.inMilliseconds / 1000.0);
     _logEvent(PlaybackEventType.seek,
         detail: 'to ${_formatPos(pos)}');
@@ -1272,6 +1293,10 @@ class AudioPlayerService extends ChangeNotifier {
     await _player?.stop();
     _clearState();
     _chapters = [];
+    // Cancel sleep timer when playback is stopped
+    if (SleepTimerService().isActive) {
+      SleepTimerService().cancel();
+    }
   }
 
   /// Stop playback without saving progress — used by reset progress.

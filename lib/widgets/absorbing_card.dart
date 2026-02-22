@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -15,6 +16,18 @@ import '../widgets/absorb_slider.dart';
 import 'absorbing_shared.dart';
 import 'sleep_timer_sheet.dart';
 import 'book_detail_sheet.dart';
+import 'equalizer_sheet.dart';
+
+/// Show a toast when the user taps a button that requires active playback.
+void _showInactiveToast(BuildContext context) {
+  ScaffoldMessenger.of(context)
+    ..clearSnackBars()
+    ..showSnackBar(const SnackBar(
+      content: Text('Start playing a book first'),
+      duration: Duration(seconds: 2),
+      behavior: SnackBarBehavior.floating,
+    ));
+}
 
 class AbsorbingCard extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -295,48 +308,6 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                       ),
                                     ),
                                   ),
-                                // Subtle bottom gradient for chapter pill legibility
-                                Positioned(
-                                  left: 0, right: 0, bottom: 0,
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.bottomCenter,
-                                        end: Alignment.topCenter,
-                                        colors: [
-                                          Colors.black.withValues(alpha: 0.7),
-                                          Colors.black.withValues(alpha: 0.3),
-                                          Colors.black.withValues(alpha: 0.0),
-                                        ],
-                                        stops: const [0.0, 0.5, 1.0],
-                                      ),
-                                    ),
-                                    child: const SizedBox(height: 70, width: double.infinity),
-                                  ),
-                                ),
-                                // Chapter pill overlaid at bottom center
-                                if (_chapterName(chapterIdx) != null)
-                                  Positioned(
-                                    left: 10, right: 10, bottom: 10,
-                                    child: Center(
-                                      child: Container(
-                                        height: 30,
-                                        clipBehavior: Clip.hardEdge,
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(alpha: 0.55),
-                                          borderRadius: BorderRadius.circular(15),
-                                          border: Border.all(color: accent.withValues(alpha: 0.3), width: 0.5),
-                                        ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                                          child: _MarqueeText(
-                                            text: _chapterName(chapterIdx)!,
-                                            style: tt.labelMedium?.copyWith(color: Colors.white.withValues(alpha: 0.95), fontWeight: FontWeight.w600, fontSize: 13) ?? const TextStyle(fontSize: 13),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
                               ],
                             ),
                           ),
@@ -346,16 +317,18 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                   ),
                   ),
                 ),
-                const SizedBox(height: 6),
-                // ── Chapter bar + controls + buttons ──
+                const SizedBox(height: 20),
+                // ── Chapter pill-scrubber (same width as book bar) ──
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: _CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: progress, staticDuration: _duration, chapters: _chapters, showBookBar: false, showChapterBar: true, chapterName: _chapterName(chapterIdx), chapterIndex: chapterIdx, totalChapters: totalChapters),
+                ),
+                // ── Controls + buttons ──
                 Expanded(
                   child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Column(
                     children: [
-                      _CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: progress, staticDuration: _duration, chapters: _chapters, showBookBar: false, showChapterBar: true),
-                      // Flex 2:3 biases controls slightly upward to visually center
-                      // (compensates for chapter time labels adding weight above)
                       const Spacer(flex: 2),
                       _CardPlaybackControls(
                         player: widget.player,
@@ -455,6 +428,33 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     return null;
   }
 
+  String _chapterElapsedLabel(AudioPlayerService player, List<dynamic> chapters) {
+    if (!_isActive || chapters.isEmpty) return '00:00';
+    final ch = player.currentChapter;
+    if (ch == null) return '00:00';
+    final pos = player.position.inMilliseconds / 1000.0;
+    final start = (ch['start'] as num?)?.toDouble() ?? 0;
+    final elapsed = (pos - start).clamp(0, double.infinity);
+    return _fmtTime(elapsed / player.speed);
+  }
+
+  String _chapterRemainingLabel(AudioPlayerService player, List<dynamic> chapters) {
+    if (!_isActive || chapters.isEmpty) return '-00:00';
+    final ch = player.currentChapter;
+    if (ch == null) return '-00:00';
+    final pos = player.position.inMilliseconds / 1000.0;
+    final end = (ch['end'] as num?)?.toDouble() ?? 0;
+    final remaining = (end - pos).clamp(0, double.infinity);
+    return '-${_fmtTime(remaining / player.speed)}';
+  }
+
+  String _fmtTime(double s) {
+    if (s < 0) s = 0;
+    final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor(); final sec = (s % 60).floor();
+    if (h > 0) return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
+    return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
+  }
+
   Widget _coverPlaceholder() => Container(
     color: Colors.white.withValues(alpha: 0.05),
     child: Center(child: Icon(Icons.headphones_rounded, size: 48, color: Colors.white.withValues(alpha: 0.15))),
@@ -520,7 +520,6 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                     Text(_fmtDur(end - start), style: tt.labelSmall?.copyWith(color: Colors.white38)),
                   ]),
                   onTap: _isActive ? () {
-                    debugPrint('[MFDBG-UI] chapterList tap: chapter $i start=${start.toStringAsFixed(1)}s');
                     widget.player.seekTo(Duration(seconds: start.round()));
                     Navigator.pop(ctx);
                   } : null,
@@ -626,6 +625,14 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                   onTap: () { Navigator.pop(ctx); showBookDetailSheet(context, _itemId); },
                 ),
                 const SizedBox(height: 6),
+                // Equalizer / Audio Enhancements
+                _MoreMenuItem(
+                  icon: Icons.equalizer_rounded,
+                  label: 'Audio Enhancements',
+                  accent: accent,
+                  onTap: () { Navigator.pop(ctx); showEqualizerSheet(context, accent); },
+                ),
+                const SizedBox(height: 6),
                 // History option
                 _MoreMenuItem(
                   icon: Icons.history_rounded,
@@ -657,13 +664,6 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     }
   }
 
-  String _fmtTime(double s) {
-    if (s < 0) s = 0;
-    final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor(); final sec = (s % 60).floor();
-    if (h > 0) return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
-    return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
-  }
-
   String _timeAgo(DateTime dt) {
     final diff = DateTime.now().difference(dt);
     if (diff.inSeconds < 60) return 'just now';
@@ -690,7 +690,10 @@ class _CardDualProgressBar extends StatefulWidget {
   final List<dynamic> chapters;
   final bool showBookBar;
   final bool showChapterBar;
-  const _CardDualProgressBar({required this.player, required this.accent, required this.isActive, required this.staticProgress, required this.staticDuration, required this.chapters, this.showBookBar = true, this.showChapterBar = true});
+  final String? chapterName;
+  final int chapterIndex;
+  final int totalChapters;
+  const _CardDualProgressBar({required this.player, required this.accent, required this.isActive, required this.staticProgress, required this.staticDuration, required this.chapters, this.showBookBar = true, this.showChapterBar = true, this.chapterName, this.chapterIndex = 0, this.totalChapters = 0});
   @override State<_CardDualProgressBar> createState() => _CardDualProgressBarState();
 }
 
@@ -744,8 +747,6 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
       final seedPos = widget.staticProgress * widget.staticDuration;
       _lastKnownPos = seedPos > 0 ? seedPos : _lastKnownPos;
       _lastPosTime = DateTime.now();
-      debugPrint('[MFDBG-UI] subscribePosition: seedPos=${seedPos.toStringAsFixed(1)}s '
-          '_lastKnownPos=${_lastKnownPos.toStringAsFixed(1)}s');
 
       _posSub = widget.player.absolutePositionStream.listen((dur) {
         final posSeconds = dur.inMilliseconds / 1000.0;
@@ -757,8 +758,6 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
         if (seekTarget != null) {
           // Accept if close to the seek target (within 5s tolerance)
           if ((posSeconds - seekTarget).abs() < 5.0) {
-            debugPrint('[MFDBG-UI] ACCEPT (near seekTarget): pos=${posSeconds.toStringAsFixed(1)}s '
-                'seekTarget=${seekTarget.toStringAsFixed(1)}s diff=${((posSeconds - seekTarget).abs()).toStringAsFixed(1)}s');
             _lastKnownPos = posSeconds;
             _lastPosTime = DateTime.now();
             _currentSpeed = widget.player.speed;
@@ -766,25 +765,14 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
             return;
           }
           // Reject transient values far from the seek target
-          debugPrint('[MFDBG-UI] REJECT (far from seekTarget): pos=${posSeconds.toStringAsFixed(1)}s '
-              'seekTarget=${seekTarget.toStringAsFixed(1)}s diff=${((posSeconds - seekTarget).abs()).toStringAsFixed(1)}s '
-              '_lastKnownPos=${_lastKnownPos.toStringAsFixed(1)}s');
           return;
         }
 
         // Normal playback: reject transient near-zero during track changes
         if (_lastKnownPos > 10.0 && posSeconds < 2.0) {
-          debugPrint('[MFDBG-UI] REJECT (near-zero transient): pos=${posSeconds.toStringAsFixed(1)}s '
-              '_lastKnownPos=${_lastKnownPos.toStringAsFixed(1)}s');
           return;
         }
 
-        // Log significant position changes
-        final delta = posSeconds - _lastKnownPos;
-        if (delta.abs() > 5.0 || posSeconds.toInt() % 5 == 0) {
-          debugPrint('[MFDBG-UI] ACCEPT (normal): pos=${posSeconds.toStringAsFixed(1)}s '
-              'prev=${_lastKnownPos.toStringAsFixed(1)}s delta=${delta.toStringAsFixed(1)}s');
-        }
         _lastKnownPos = posSeconds;
         _lastPosTime = DateTime.now();
         _currentSpeed = widget.player.speed;
@@ -886,8 +874,8 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
                   behavior: HitTestBehavior.opaque,
                   onHorizontalDragStart: active ? (d) { setState(() => _bookDragValue = (d.localPosition.dx / w).clamp(0.0, 1.0)); } : null,
                   onHorizontalDragUpdate: active ? (d) { setState(() => _bookDragValue = (d.localPosition.dx / w).clamp(0.0, 1.0)); } : null,
-                  onHorizontalDragEnd: active ? (_) { if (_bookDragValue != null) { final seekMs = (_bookDragValue! * totalDur * 1000).round(); debugPrint('[MFDBG-UI] bookBar dragEnd: dragValue=${_bookDragValue!.toStringAsFixed(3)} totalDur=$totalDur seekMs=$seekMs (${(seekMs/1000.0).toStringAsFixed(1)}s)'); player.seekTo(Duration(milliseconds: seekMs)); } setState(() => _bookDragValue = null); } : null,
-                  onTapUp: active ? (d) { final v = (d.localPosition.dx / w).clamp(0.0, 1.0); final seekMs = (v * totalDur * 1000).round(); debugPrint('[MFDBG-UI] bookBar tap: value=${v.toStringAsFixed(3)} totalDur=$totalDur seekMs=$seekMs (${(seekMs/1000.0).toStringAsFixed(1)}s)'); player.seekTo(Duration(milliseconds: seekMs)); } : null,
+                  onHorizontalDragEnd: active ? (_) { if (_bookDragValue != null) { final seekMs = (_bookDragValue! * totalDur * 1000).round(); player.seekTo(Duration(milliseconds: seekMs)); } setState(() => _bookDragValue = null); } : null,
+                  onTapUp: active ? (d) { final v = (d.localPosition.dx / w).clamp(0.0, 1.0); final seekMs = (v * totalDur * 1000).round(); player.seekTo(Duration(milliseconds: seekMs)); } : null,
                   child: CustomPaint(size: Size(w, 32), painter: AbsorbProgressPainter(progress: p, accent: widget.accent.withValues(alpha: 0.5), isDragging: _bookDragValue != null)),
                 );
               })),
@@ -912,30 +900,63 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
             ], // end showBookBar
             // Chapter bar
             if (widget.showChapterBar) ...[
-            SizedBox(height: 32, child: LayoutBuilder(builder: (_, cons) {
+            // ── Chapter pill-scrubber ──
+            SizedBox(height: 30, child: LayoutBuilder(builder: (_, cons) {
               final w = cons.maxWidth;
               final p = _chapterDragValue ?? chapterProgress;
+              final isDragging = _chapterDragValue != null;
+              final chName = widget.chapterName != null
+                  ? _smartChapterName(widget.chapterName!, widget.chapterIndex, widget.totalChapters)
+                  : null;
+
               return GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onHorizontalDragStart: active ? (d) { setState(() => _chapterDragValue = (d.localPosition.dx / w).clamp(0.0, 1.0)); } : null,
                 onHorizontalDragUpdate: active ? (d) { setState(() => _chapterDragValue = (d.localPosition.dx / w).clamp(0.0, 1.0)); } : null,
-                onHorizontalDragEnd: active ? (_) { if (_chapterDragValue != null) { final seekMs = ((chapterStart + _chapterDragValue! * chapterDur) * 1000).round(); debugPrint('[MFDBG-UI] chapterBar dragEnd: chapterStart=$chapterStart chapterDur=$chapterDur dragValue=${_chapterDragValue!.toStringAsFixed(3)} seekMs=$seekMs (${(seekMs/1000.0).toStringAsFixed(1)}s)'); player.seekTo(Duration(milliseconds: seekMs)); } setState(() => _chapterDragValue = null); } : null,
-                onTapUp: active ? (d) { final v = (d.localPosition.dx / w).clamp(0.0, 1.0); final seekMs = ((chapterStart + v * chapterDur) * 1000).round(); debugPrint('[MFDBG-UI] chapterBar tap: chapterStart=$chapterStart chapterDur=$chapterDur v=${v.toStringAsFixed(3)} seekMs=$seekMs (${(seekMs/1000.0).toStringAsFixed(1)}s)'); player.seekTo(Duration(milliseconds: seekMs)); } : null,
-                child: ListenableBuilder(
-                  listenable: _waveController,
-                  builder: (_, __) => CustomPaint(
-                    size: Size(w, 32),
-                    painter: AbsorbProgressPainter(progress: p, accent: widget.accent, isDragging: _chapterDragValue != null, squiggly: true, isPlaying: isPlaying, wavePhase: _waveController.value),
+                onHorizontalDragEnd: active ? (_) { if (_chapterDragValue != null) { final seekMs = ((chapterStart + _chapterDragValue! * chapterDur) * 1000).round(); player.seekTo(Duration(milliseconds: seekMs)); } setState(() => _chapterDragValue = null); } : null,
+                onTapUp: active ? (d) { final v = (d.localPosition.dx / w).clamp(0.0, 1.0); final seekMs = ((chapterStart + v * chapterDur) * 1000).round(); player.seekTo(Duration(milliseconds: seekMs)); } : null,
+                child: CustomPaint(
+                  size: Size(w, 30),
+                  painter: _ChapterPillPainter(
+                    progress: p,
+                    accent: widget.accent,
+                    wavePhase: 0,
+                    isPlaying: isPlaying,
+                    isDragging: isDragging,
+                  ),
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: chName != null
+                          ? _MarqueeText(
+                              text: chName,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.9),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                                letterSpacing: 0.2,
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
                   ),
                 ),
               );
             })),
+            // Time labels below pill — update during drag
             Padding(padding: const EdgeInsets.only(top: 3), child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(_fmt(_chapterDragValue != null ? (_chapterDragValue! * chapterDur) / speedDiv : chapterElapsed),
-                  style: tt.labelSmall?.copyWith(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600)),
-                Text('-${_fmt(chapterRemaining)}', style: tt.labelSmall?.copyWith(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600)),
+                  style: tt.labelSmall?.copyWith(
+                    color: _chapterDragValue != null ? widget.accent : Colors.white54,
+                    fontSize: 11, fontWeight: FontWeight.w600,
+                    fontFeatures: const [FontFeature.tabularFigures()])),
+                Text('-${_fmt(_chapterDragValue != null ? ((1.0 - _chapterDragValue!) * chapterDur) / speedDiv : chapterRemaining)}',
+                  style: tt.labelSmall?.copyWith(
+                    color: _chapterDragValue != null ? widget.accent : Colors.white38,
+                    fontSize: 11, fontWeight: FontWeight.w500,
+                    fontFeatures: const [FontFeature.tabularFigures()])),
               ],
             )),
             ], // end showChapterBar
@@ -950,6 +971,20 @@ class _CardDualProgressBarState extends State<_CardDualProgressBar> with TickerP
     final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor(); final sec = (s % 60).floor();
     if (h > 0) return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
     return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
+  }
+
+  /// Smart chapter name: prefix bare numbers, show chapter position.
+  String _smartChapterName(String raw, int index, int total) {
+    final trimmed = raw.trim();
+    // Pure number → "Chapter 16"
+    if (RegExp(r'^\d+$').hasMatch(trimmed)) {
+      return 'Chapter $trimmed';
+    }
+    // Very short (1-2 chars) → prefix
+    if (trimmed.length <= 2) {
+      return 'Chapter $trimmed';
+    }
+    return trimmed;
   }
 }
 
@@ -1589,7 +1624,7 @@ class _CardWideButton extends StatelessWidget {
     if (child != null) return child!;
     final enabled = isActive || alwaysEnabled;
     return GestureDetector(
-      onTap: enabled ? onTap : null,
+      onTap: enabled ? onTap : () => _showInactiveToast(context),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
@@ -1628,7 +1663,7 @@ class _MoreMenuItem extends StatelessWidget {
 
   @override Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: enabled ? onTap : null,
+      onTap: enabled ? onTap : () => _showInactiveToast(context),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
         decoration: BoxDecoration(
@@ -1662,7 +1697,8 @@ class _CardSleepButtonInline extends StatelessWidget {
       listenable: SleepTimerService(),
       builder: (_, __) {
         final sleep = SleepTimerService();
-        final active = sleep.isActive;
+        // Only show timer state on the card that's actually playing
+        final active = isActive && sleep.isActive;
         final isTime = sleep.mode == SleepTimerMode.time;
 
         String label;
@@ -1680,7 +1716,7 @@ class _CardSleepButtonInline extends StatelessWidget {
         return GestureDetector(
           onTap: isActive ? () {
             _showSleepPicker(context);
-          } : null,
+          } : () => _showInactiveToast(context),
           child: Container(
             height: 36,
             clipBehavior: Clip.antiAlias,
@@ -1746,7 +1782,7 @@ class _CardBookmarkButtonInlineState extends State<_CardBookmarkButtonInline> {
 
   @override Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: widget.isActive ? () => _showBookmarks(context) : null,
+      onTap: widget.isActive ? () => _showBookmarks(context) : () => _showInactiveToast(context),
       onLongPress: widget.isActive ? () => _quickAdd(context) : null,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1811,7 +1847,7 @@ class _CardSpeedButtonInline extends StatelessWidget {
         showModalBottomSheet(context: context, backgroundColor: Colors.transparent,
           useSafeArea: true,
           builder: (ctx) => _CardSpeedSheet(player: player, accent: accent));
-      } : null,
+      } : () => _showInactiveToast(context),
       child: Container(
         height: 36,
         decoration: BoxDecoration(
@@ -1836,6 +1872,122 @@ class _CardSpeedButtonInline extends StatelessWidget {
 }
 
 
+
+// ─── CHAPTER PILL PAINTER ────────────────────────────────────
+
+class _ChapterPillPainter extends CustomPainter {
+  final double progress;
+  final Color accent;
+  final double wavePhase;
+  final bool isPlaying;
+  final bool isDragging;
+
+  _ChapterPillPainter({
+    required this.progress,
+    required this.accent,
+    required this.wavePhase,
+    required this.isPlaying,
+    required this.isDragging,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final h = size.height;
+    final w = size.width;
+    final radius = h / 2;
+    final p = progress.clamp(0.0, 1.0);
+
+    // Pill shape
+    final pillRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 0, w, h),
+      Radius.circular(radius),
+    );
+
+    // Background
+    canvas.drawRRect(pillRect, Paint()..color = const Color(0xFF1A1A1A));
+
+    // Border
+    canvas.drawRRect(
+      pillRect,
+      Paint()
+        ..color = isDragging ? accent.withValues(alpha: 0.5) : accent.withValues(alpha: 0.2)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.5,
+    );
+
+    if (p <= 0.001) return;
+
+    // Fill — clip to pill, draw a simple rect
+    final fillW = p * w;
+    canvas.save();
+    canvas.clipRRect(pillRect);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, fillW, h),
+      Paint()..color = accent.withValues(alpha: 0.25),
+    );
+    canvas.restore();
+
+    // Thin glowing line at progress edge — height follows pill curvature
+    if (p < 0.995) {
+      final lineX = fillW.clamp(1.0, w - 1.0);
+
+      // Calculate how tall the line should be based on the pill circle at this x
+      // The pill is a stadium shape: two semicircles of radius=h/2 at each end
+      double lineH;
+      if (lineX < radius) {
+        // Left cap region — chord height
+        final dx = radius - lineX;
+        lineH = 2 * sqrt(radius * radius - dx * dx);
+      } else if (lineX > w - radius) {
+        // Right cap region — chord height
+        final dx = lineX - (w - radius);
+        lineH = 2 * sqrt(radius * radius - dx * dx);
+      } else {
+        // Middle — full height
+        lineH = h;
+      }
+
+      final inset = (h - lineH) / 2 + 2; // 2px inner padding
+
+      // Glow layers (more when playing)
+      if (isPlaying) {
+        // Outer glow
+        canvas.drawLine(
+          Offset(lineX, inset),
+          Offset(lineX, h - inset),
+          Paint()
+            ..color = accent.withValues(alpha: 0.2)
+            ..strokeWidth = 8.0
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        );
+        // Mid glow
+        canvas.drawLine(
+          Offset(lineX, inset),
+          Offset(lineX, h - inset),
+          Paint()
+            ..color = accent.withValues(alpha: 0.4)
+            ..strokeWidth = 4.0
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+        );
+      }
+
+      // Solid line
+      canvas.drawLine(
+        Offset(lineX, inset),
+        Offset(lineX, h - inset),
+        Paint()
+          ..color = accent.withValues(alpha: isPlaying ? 0.95 : 0.5)
+          ..strokeWidth = 1.5
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ChapterPillPainter old) =>
+      old.progress != progress ||
+      old.isDragging != isDragging;
+}
 
 class _MarqueeText extends StatefulWidget {
   final String text;

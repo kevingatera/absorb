@@ -168,7 +168,7 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         onPressed: () {
-          sleep.cancel();
+          sleep.cancelByUser();
           Navigator.pop(context);
         },
       )),

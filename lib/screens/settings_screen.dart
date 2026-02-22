@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
+import '../services/sleep_timer_service.dart';
 import '../widgets/absorb_title.dart';
 import '../widgets/absorb_slider.dart';
 
@@ -32,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loaded = false;
   String _downloadLocationLabel = 'App Internal Storage (Default)';
   int _totalDownloadSizeBytes = 0;
+  AutoSleepSettings _autoSleepSettings = const AutoSleepSettings();
 
   @override
   void initState() {
@@ -52,6 +54,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final autoSeries = await PlayerSettings.getAutoContinueSeries();
     final dlLabel = await DownloadService().downloadLocationLabel;
     final dlSize = await DownloadService().totalDownloadSize;
+    final autoSleep = await AutoSleepSettings.load();
     if (mounted) setState(() {
       _rewindSettings = s;
       _defaultSpeed = speed;
@@ -65,6 +68,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _autoContinueSeries = autoSeries;
       _downloadLocationLabel = dlLabel;
       _totalDownloadSizeBytes = dlSize;
+      _autoSleepSettings = autoSleep;
       _loaded = true;
     });
   }
@@ -561,6 +565,115 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onChanged: _loaded ? (v) {
                           setState(() => _shakeAddMinutes = v.round());
                           PlayerSettings.setShakeAddMinutes(v.round());
+                        } : null,
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    // ── Auto Sleep Timer ──
+                    SwitchListTile(
+                      title: const Text('Auto sleep timer'),
+                      subtitle: Text(
+                        _autoSleepSettings.enabled
+                            ? '${_autoSleepSettings.startLabel} – ${_autoSleepSettings.endLabel} · ${_autoSleepSettings.durationMinutes} min'
+                            : 'Automatically start a sleep timer during a time window',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _autoSleepSettings.enabled,
+                      onChanged: _loaded ? (v) {
+                        final updated = AutoSleepSettings(
+                          enabled: v,
+                          startHour: _autoSleepSettings.startHour,
+                          startMinute: _autoSleepSettings.startMinute,
+                          endHour: _autoSleepSettings.endHour,
+                          endMinute: _autoSleepSettings.endMinute,
+                          durationMinutes: _autoSleepSettings.durationMinutes,
+                        );
+                        setState(() => _autoSleepSettings = updated);
+                        updated.save();
+                        SleepTimerService().updateAutoSleepSettings(updated);
+                      } : null,
+                    ),
+                    if (_autoSleepSettings.enabled) ...[
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      // Start time picker
+                      ListTile(
+                        title: const Text('Window start'),
+                        trailing: Text(_autoSleepSettings.startLabel,
+                          style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.primary)),
+                        onTap: () async {
+                          final picked = await showTimePicker(
+                            context: context,
+                            initialTime: TimeOfDay(hour: _autoSleepSettings.startHour, minute: _autoSleepSettings.startMinute),
+                          );
+                          if (picked != null) {
+                            final updated = AutoSleepSettings(
+                              enabled: true,
+                              startHour: picked.hour,
+                              startMinute: picked.minute,
+                              endHour: _autoSleepSettings.endHour,
+                              endMinute: _autoSleepSettings.endMinute,
+                              durationMinutes: _autoSleepSettings.durationMinutes,
+                            );
+                            setState(() => _autoSleepSettings = updated);
+                            updated.save();
+                            SleepTimerService().updateAutoSleepSettings(updated);
+                          }
+                        },
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      // End time picker
+                      ListTile(
+                        title: const Text('Window end'),
+                        trailing: Text(_autoSleepSettings.endLabel,
+                          style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.primary)),
+                        onTap: () async {
+                          final picked = await showTimePicker(
+                            context: context,
+                            initialTime: TimeOfDay(hour: _autoSleepSettings.endHour, minute: _autoSleepSettings.endMinute),
+                          );
+                          if (picked != null) {
+                            final updated = AutoSleepSettings(
+                              enabled: true,
+                              startHour: _autoSleepSettings.startHour,
+                              startMinute: _autoSleepSettings.startMinute,
+                              endHour: picked.hour,
+                              endMinute: picked.minute,
+                              durationMinutes: _autoSleepSettings.durationMinutes,
+                            );
+                            setState(() => _autoSleepSettings = updated);
+                            updated.save();
+                            SleepTimerService().updateAutoSleepSettings(updated);
+                          }
+                        },
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      // Duration slider
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Timer duration', style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                            Text('${_autoSleepSettings.durationMinutes} min',
+                              style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.primary)),
+                          ],
+                        ),
+                      ),
+                      AbsorbSlider(
+                        value: _autoSleepSettings.durationMinutes.toDouble(),
+                        min: 5, max: 120, divisions: 23,
+                        onChanged: _loaded ? (v) {
+                          final updated = AutoSleepSettings(
+                            enabled: true,
+                            startHour: _autoSleepSettings.startHour,
+                            startMinute: _autoSleepSettings.startMinute,
+                            endHour: _autoSleepSettings.endHour,
+                            endMinute: _autoSleepSettings.endMinute,
+                            durationMinutes: v.round(),
+                          );
+                          setState(() => _autoSleepSettings = updated);
+                          updated.save();
+                          SleepTimerService().updateAutoSleepSettings(updated);
                         } : null,
                       ),
                       const SizedBox(height: 4),

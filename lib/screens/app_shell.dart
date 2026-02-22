@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
+import '../services/sleep_timer_service.dart';
 import 'absorbing_screen.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
@@ -31,10 +32,9 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   static _AppShellState? _instance;
 
-  // Tabs: 0=Library, 1=Home, 2=Absorbing (default), 3=Stats, 4=Settings
+  // Tabs: 0=Home, 1=Library, 2=Absorbing (default), 3=Stats, 4=Settings
   int _currentIndex = 2;
   final _libraryKey = GlobalKey<LibraryScreenState>();
-  final List<int> _tabHistory = [2]; // start on Absorbing
 
   void _switchToAbsorbing() {
     if (mounted) {
@@ -49,17 +49,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void _navigateTo(int index) {
     if (index == _currentIndex) return;
     setState(() {
-      // Don't add duplicates back-to-back
-      if (_tabHistory.isEmpty || _tabHistory.last != _currentIndex) {
-        _tabHistory.add(_currentIndex);
-      }
       _currentIndex = index;
     });
   }
 
   late final _pages = [
-    LibraryScreen(key: _libraryKey),
     const HomeScreen(),
+    LibraryScreen(key: _libraryKey),
     AbsorbingScreen(key: AbsorbingScreen.globalKey),
     const StatsScreen(),
     const SettingsScreen(),
@@ -83,6 +79,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _refreshData();
+      // Check auto sleep in case we resumed into the window
+      SleepTimerService().checkAutoSleep();
     } else if (state == AppLifecycleState.detached) {
       _stopAndSync();
     }
@@ -124,14 +122,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         if (didPop) return;
 
         // If on Library tab with active search, clear search first
-        if (_currentIndex == 0 &&
+        if (_currentIndex == 1 &&
             _libraryKey.currentState?.isSearchActive == true) {
           _libraryKey.currentState?.clearSearch();
           return;
         }
 
-        // If on Absorbing tab (2) with no history to go back to, double-press to exit
-        if (_currentIndex == 2 && _tabHistory.isEmpty) {
+        // If already on Absorbing tab, double-press to exit
+        if (_currentIndex == 2) {
           final now = DateTime.now();
           if (_lastBackPress != null &&
               now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
@@ -150,30 +148,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           return;
         }
 
-        // If there's history, go back
-        if (_tabHistory.isNotEmpty) {
-          setState(() {
-            _currentIndex = _tabHistory.removeLast();
-          });
-          return;
-        }
-
-        // Fallback: on any tab with no history, double-press to exit
-        final now = DateTime.now();
-        if (_lastBackPress != null &&
-            now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
-          SystemNavigator.pop();
-        } else {
-          _lastBackPress = now;
-          ScaffoldMessenger.of(context)
-            ..clearSnackBars()
-            ..showSnackBar(
-              const SnackBar(
-                content: Text('Press back again to exit'),
-                duration: Duration(seconds: 2),
-              ),
-            );
-        }
+        // From any other tab, go to Absorbing
+        _switchToAbsorbing();
       },
       child: Scaffold(
       body: IndexedStack(
@@ -192,14 +168,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             },
             destinations: [
               const NavigationDestination(
-                icon: Icon(Icons.library_books_outlined),
-                selectedIcon: Icon(Icons.library_books_rounded),
-                label: 'Library',
-              ),
-              const NavigationDestination(
                 icon: Icon(Icons.home_outlined),
                 selectedIcon: Icon(Icons.home_rounded),
                 label: 'Home',
+              ),
+              const NavigationDestination(
+                icon: Icon(Icons.library_books_outlined),
+                selectedIcon: Icon(Icons.library_books_rounded),
+                label: 'Library',
               ),
               NavigationDestination(
                 icon: const _AnimatedWaveIcon(size: 24, active: false),
