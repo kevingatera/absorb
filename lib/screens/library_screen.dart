@@ -16,7 +16,7 @@ import '../widgets/book_detail_sheet.dart';
 enum LibrarySort { recentlyAdded, alphabetical, duration, random }
 
 // ─── Filter modes ────────────────────────────────────────────
-enum LibraryFilter { none, inProgress, finished, notStarted, downloaded }
+enum LibraryFilter { none, inProgress, finished, notStarted, downloaded, hasEbook }
 
 /// Show a bottom sheet with all books in a series, sorted by sequence.
 /// Can be called from any screen.
@@ -87,6 +87,7 @@ class LibraryScreenState extends State<LibraryScreen> {
   bool _hasMore = true;
   int _page = 0;
   int? _randomSeed;
+  int _loadGeneration = 0; // prevents stale async loads from corrupting state
   static const _pageSize = 20;
 
   final _scrollController = ScrollController();
@@ -149,6 +150,7 @@ class LibraryScreenState extends State<LibraryScreen> {
   Future<void> _loadPage() async {
     if (_isLoadingPage || !_hasMore) return;
     setState(() => _isLoadingPage = true);
+    final gen = ++_loadGeneration;
 
     final auth = context.read<AuthProvider>();
     final lib = context.read<LibraryProvider>();
@@ -187,6 +189,8 @@ class LibraryScreenState extends State<LibraryScreen> {
       filter = 'progress.${base64Encode(utf8.encode('finished'))}';
     } else if (_filter == LibraryFilter.notStarted) {
       filter = 'progress.${base64Encode(utf8.encode('not-started'))}';
+    } else if (_filter == LibraryFilter.hasEbook) {
+      filter = 'ebooks.${base64Encode(utf8.encode('ebook'))}';
     }
     // Downloaded filter is client-side — handled after loading
 
@@ -202,14 +206,20 @@ class LibraryScreenState extends State<LibraryScreen> {
       filter: filter,
     );
 
-    if (result != null && mounted) {
+    if (result != null && mounted && gen == _loadGeneration) {
       final results = (result['results'] as List<dynamic>?) ?? [];
       final total = (result['total'] as int?) ?? 0;
       setState(() {
         for (final r in results) {
           if (r is Map<String, dynamic>) {
+            // Debug: log keys of first item to see what's available
+            if (_items.isEmpty && results.indexOf(r) == 0) {
+              debugPrint('[Library] Item keys: ${r.keys.toList()}');
+              final m = r['media'] as Map<String, dynamic>? ?? {};
+              debugPrint('[Library] Media keys: ${m.keys.toList()}');
+            }
             // Client-side downloaded filter
-            if (useClientFilter) {
+            if (_filter == LibraryFilter.downloaded) {
               final id = r['id'] as String? ?? '';
               if (!DownloadService().isDownloaded(id)) continue;
             }
@@ -227,7 +237,7 @@ class LibraryScreenState extends State<LibraryScreen> {
         }
         _isLoadingPage = false;
       });
-    } else if (mounted) {
+    } else if (mounted && gen == _loadGeneration) {
       setState(() => _isLoadingPage = false);
     }
   }
@@ -244,7 +254,7 @@ class LibraryScreenState extends State<LibraryScreen> {
         _hasMore = true;
         _isLoadingPage = false;
       });
-      _scrollController.jumpTo(0);
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
       _loadPage();
       return;
     }
@@ -260,7 +270,7 @@ class LibraryScreenState extends State<LibraryScreen> {
         _randomSeed = Random().nextInt(100000);
       }
     });
-    _scrollController.jumpTo(0);
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
     _loadPage();
   }
 
@@ -269,6 +279,7 @@ class LibraryScreenState extends State<LibraryScreen> {
     // Tapping the active filter toggles it off
     final effective = newFilter == _filter ? LibraryFilter.none : newFilter;
     if (effective == _filter) return;
+    _loadGeneration++; // cancel any in-flight loads
     setState(() {
       _filter = effective;
       _items.clear();
@@ -276,7 +287,7 @@ class LibraryScreenState extends State<LibraryScreen> {
       _hasMore = true;
       _isLoadingPage = false;
     });
-    _scrollController.jumpTo(0);
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
     _loadPage();
   }
 
@@ -457,6 +468,13 @@ class LibraryScreenState extends State<LibraryScreen> {
                         selected: _filter == LibraryFilter.downloaded,
                         onTap: () => _changeFilter(LibraryFilter.downloaded),
                       ),
+                      const SizedBox(width: 8),
+                      _FilterChip(
+                        label: 'eBooks',
+                        icon: Icons.menu_book_rounded,
+                        selected: _filter == LibraryFilter.hasEbook,
+                        onTap: () => _changeFilter(LibraryFilter.hasEbook),
+                      ),
                     ],
                   ),
                 ),
@@ -502,6 +520,7 @@ class LibraryScreenState extends State<LibraryScreen> {
         LibraryFilter.finished => 'No finished books',
         LibraryFilter.notStarted => 'All books have been started',
         LibraryFilter.downloaded => 'No downloaded books',
+        LibraryFilter.hasEbook => 'No books with eBooks',
         LibraryFilter.none => 'No books found',
       };
       return Center(

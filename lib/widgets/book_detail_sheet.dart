@@ -1,8 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
@@ -186,6 +190,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final progressData = lib.getProgressData(widget.itemId);
     final isFinished = progressData?['isFinished'] == true;
     final currentTime = (progressData?['currentTime'] as num?)?.toDouble() ?? 0;
+    final ebookFile = media['ebookFile'] as Map<String, dynamic>?;
 
     return ListView(controller: widget.scrollController, padding: EdgeInsets.fromLTRB(20, 8, 20, 32 + MediaQuery.of(context).viewPadding.bottom), children: [
       Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
@@ -266,6 +271,30 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           ),
         )),
       ]),
+      if (ebookFile != null) ...[
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: () => _openEbook(context, auth, ebookFile, title),
+          child: Container(
+            height: 36,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              _ebookLoading
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54))
+                  : const Icon(Icons.menu_book_rounded, size: 16, color: Colors.white54),
+              const SizedBox(width: 6),
+              Text(
+                _ebookLoading ? 'Opening…' : 'Open ePub in Another App',
+                style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+            ]),
+          ),
+        ),
+      ],
       const SizedBox(height: 8),
       Builder(builder: (ctx) {
         final lib = ctx.watch<LibraryProvider>();
@@ -458,6 +487,72 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       serverUrl: auth.serverUrl,
       token: auth.token,
     );
+  }
+
+  bool _ebookLoading = false;
+
+  Future<void> _openEbook(BuildContext context, AuthProvider auth, Map<String, dynamic> ebookFile, String bookTitle) async {
+    if (_ebookLoading) return;
+    setState(() => _ebookLoading = true);
+
+    try {
+      final api = auth.apiService;
+      if (api == null) return;
+
+      final ino = ebookFile['ino'] as String?;
+      if (ino == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No ebook file found')));
+        }
+        return;
+      }
+
+      // Get the file extension from the ebook metadata
+      final ebookName = ebookFile['metadata']?['filename'] as String? ?? ebookFile['name'] as String? ?? 'book.epub';
+      final ext = ebookName.contains('.') ? ebookName.substring(ebookName.lastIndexOf('.')) : '.epub';
+
+      // Download to cache directory
+      final cacheDir = await getTemporaryDirectory();
+      final safeTitle = bookTitle.replaceAll(RegExp(r'[^\w\s-]'), '').trim();
+      final filePath = '${cacheDir.path}/$safeTitle$ext';
+      final file = File(filePath);
+
+      // Only download if not already cached
+      if (!file.existsSync()) {
+        final cleanBase = api.baseUrl.endsWith('/') ? api.baseUrl.substring(0, api.baseUrl.length - 1) : api.baseUrl;
+        final url = '$cleanBase/api/items/${widget.itemId}/file/$ino';
+        final response = await http.get(
+          Uri.parse(url),
+          headers: {'Authorization': 'Bearer ${api.token}'},
+        ).timeout(const Duration(seconds: 60));
+
+        if (response.statusCode == 200) {
+          await file.writeAsBytes(response.bodyBytes);
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to download ebook (${response.statusCode})')));
+          }
+          return;
+        }
+      }
+
+      // Open with system handler
+      final result = await OpenFilex.open(filePath);
+      if (result.type != ResultType.done && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.message.isNotEmpty ? result.message : 'No app found to open ebook')));
+      }
+    } catch (e) {
+      debugPrint('[Ebook] Error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error opening ebook: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _ebookLoading = false);
+    }
   }
 
   Future<void> _startAbsorb(BuildContext context, {required AuthProvider auth, required String title, required String author, required String? coverUrl, required double duration, required List<dynamic> chapters}) async {
