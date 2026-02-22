@@ -533,6 +533,65 @@ class ApiService {
     return null;
   }
 
+  /// Search for book metadata via the ABS server's search endpoint.
+  /// Uses the server's configured providers (Audible, Google, etc.).
+  /// Returns a list of result maps with title, author, description, cover, etc.
+  Future<List<Map<String, dynamic>>> searchBooks({
+    required String title,
+    String? author,
+    String provider = 'audible',
+  }) async {
+    try {
+      final params = <String, String>{
+        'title': title,
+        'provider': provider,
+      };
+      if (author != null && author.isNotEmpty) {
+        params['author'] = author;
+      }
+      final uri = Uri.parse('$_cleanBaseUrl/api/search/books')
+          .replace(queryParameters: params);
+      debugPrint('[API] searchBooks: $uri');
+      final response = await http.get(
+        uri,
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+
+      debugPrint('[API] searchBooks status=${response.statusCode} bodyLen=${response.body.length}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        // ABS returns a plain List for most providers
+        if (data is List) {
+          debugPrint('[API] searchBooks: got List with ${data.length} items');
+          return data.whereType<Map<String, dynamic>>().toList();
+        }
+
+        // Some providers may return a Map with results nested under a key
+        if (data is Map<String, dynamic>) {
+          debugPrint('[API] searchBooks: got Map with keys: ${data.keys.join(', ')}');
+          // Try common nesting patterns
+          for (final key in ['results', 'items', 'books', 'matches']) {
+            final nested = data[key];
+            if (nested is List && nested.isNotEmpty) {
+              return nested.whereType<Map<String, dynamic>>().toList();
+            }
+          }
+          // Single result as a map — wrap it
+          if (data.containsKey('title') || data.containsKey('book')) {
+            return [data];
+          }
+        }
+
+        debugPrint('[API] searchBooks: unexpected response type: ${data.runtimeType}');
+      }
+    } catch (e) {
+      debugPrint('[API] searchBooks error: $e');
+    }
+    return [];
+  }
+
   /// Fetch Audible rating from Audnexus API using ASIN.
   /// Returns { rating } or null.
   static Future<Map<String, dynamic>?> getAudibleRating(String asin) async {

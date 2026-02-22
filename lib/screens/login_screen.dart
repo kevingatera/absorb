@@ -110,6 +110,8 @@ class _LoginScreenState extends State<LoginScreen>
         setState(() => _isOidcLoading = false);
         if (!success) {
           setState(() => _loginError = auth.errorMessage ?? 'SSO login failed');
+        } else if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
         }
       }
     } else if (mounted) {
@@ -230,6 +232,9 @@ class _LoginScreenState extends State<LoginScreen>
         setState(() {
           _loginError = auth.errorMessage ?? 'Login failed';
         });
+      } else if (Navigator.of(context).canPop()) {
+        // If pushed as a route (e.g. Add Account), pop back
+        Navigator.of(context).pop();
       }
     }
   }
@@ -448,6 +453,16 @@ class _LoginScreenState extends State<LoginScreen>
                                     errorText: _serverError,
                                   ),
 
+                                  // SSO / OIDC button — shown right below server URL so keyboard doesn't hide it
+                                  AnimatedSize(
+                                    duration: const Duration(milliseconds: 350),
+                                    curve: Curves.easeOutCubic,
+                                    alignment: Alignment.topCenter,
+                                    child: _serverValid && _oidcConfig != null && _oidcConfig!.enabled
+                                        ? _buildOidcButton(cs, tt)
+                                        : const SizedBox.shrink(),
+                                  ),
+
                                   // Credentials — animated in when server is valid
                                   AnimatedSize(
                                     duration: const Duration(milliseconds: 350),
@@ -536,6 +551,51 @@ class _LoginScreenState extends State<LoginScreen>
         fillColor: cs.surface.withValues(alpha: 0.4),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
+    );
+  }
+
+  Widget _buildOidcButton(ColorScheme cs, TextTheme tt) {
+    return Column(
+      children: [
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: OutlinedButton.icon(
+            onPressed: _isConnecting || _isOidcLoading ? null : _handleOidcLogin,
+            icon: _isOidcLoading
+                ? SizedBox(
+                    width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
+                  )
+                : Icon(Icons.login_rounded, size: 20, color: cs.primary),
+            label: Text(
+              _isOidcLoading ? 'Waiting for SSO...' : _oidcConfig!.buttonText,
+              style: tt.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: cs.primary,
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: cs.primary.withValues(alpha: 0.3)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(child: Divider(color: cs.outlineVariant.withValues(alpha: 0.2))),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Text('or sign in manually', style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.5))),
+            ),
+            Expanded(child: Divider(color: cs.outlineVariant.withValues(alpha: 0.2))),
+          ],
+        ),
+      ],
     );
   }
 
@@ -658,47 +718,7 @@ class _LoginScreenState extends State<LoginScreen>
           ),
         ),
 
-        // SSO / OIDC button
-        if (_oidcConfig != null && _oidcConfig!.enabled) ...[
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: Divider(color: cs.outlineVariant.withValues(alpha: 0.2))),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                child: Text('or', style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.5))),
-              ),
-              Expanded(child: Divider(color: cs.outlineVariant.withValues(alpha: 0.2))),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: OutlinedButton.icon(
-              onPressed: _isConnecting || _isOidcLoading ? null : _handleOidcLogin,
-              icon: _isOidcLoading
-                  ? SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
-                    )
-                  : Icon(Icons.login_rounded, size: 20, color: cs.primary),
-              label: Text(
-                _isOidcLoading ? 'Waiting for SSO...' : _oidcConfig!.buttonText,
-                style: tt.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: cs.primary,
-                ),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: cs.primary.withValues(alpha: 0.3)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-            ),
-          ),
-        ],
+
       ],
     );
   }

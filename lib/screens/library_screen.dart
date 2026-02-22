@@ -1594,7 +1594,7 @@ class _SeriesBooksSheetState extends State<_SeriesBooksSheet> {
               itemCount: _books.length,
               itemBuilder: (context, index) {
                 final book = _books[index];
-                final bookId = book['id'] as String?;
+                final bookId = book['id'] as String? ?? '';
                 final media = book['media'] as Map<String, dynamic>? ?? {};
                 final metadata =
                     media['metadata'] as Map<String, dynamic>? ?? {};
@@ -1605,8 +1605,13 @@ class _SeriesBooksSheetState extends State<_SeriesBooksSheet> {
                     ? (media['duration'] as num).toDouble()
                     : 0.0;
 
+                final lib = context.watch<LibraryProvider>();
+                final progress = lib.getProgress(bookId);
+                final isFinished = lib.getProgressData(bookId)?['isFinished'] == true;
+                final isDownloaded = DownloadService().isDownloaded(bookId);
+
                 String? coverUrl;
-                if (bookId != null &&
+                if (bookId.isNotEmpty &&
                     widget.serverUrl != null &&
                     widget.token != null) {
                   final cleanUrl = widget.serverUrl!.endsWith('/')
@@ -1627,14 +1632,14 @@ class _SeriesBooksSheetState extends State<_SeriesBooksSheet> {
                     clipBehavior: Clip.antiAlias,
                     child: InkWell(
                       onTap: () {
-                        if (bookId != null) {
+                        if (bookId.isNotEmpty) {
                           showBookDetailSheet(context, bookId);
                         }
                       },
                       borderRadius: BorderRadius.circular(14),
                       child: Row(
                         children: [
-                          // Square cover with sequence badge
+                          // Square cover with sequence badge + status badges
                           SizedBox(
                             width: 80,
                             height: 80,
@@ -1677,6 +1682,69 @@ class _SeriesBooksSheetState extends State<_SeriesBooksSheet> {
                                               fontWeight: FontWeight.w800)),
                                     ),
                                   ),
+                                // Downloaded badge (top-right)
+                                if (isDownloaded)
+                                  Positioned(
+                                    top: 4,
+                                    right: 4,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(3),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Icon(Icons.download_done_rounded,
+                                          size: 12, color: cs.primary),
+                                    ),
+                                  ),
+                                // Progress bar at bottom
+                                if (progress > 0 && !isFinished)
+                                  Positioned(
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    child: LinearProgressIndicator(
+                                      value: progress.clamp(0.0, 1.0),
+                                      minHeight: 3,
+                                      backgroundColor: Colors.black38,
+                                      valueColor: AlwaysStoppedAnimation(cs.primary),
+                                    ),
+                                  ),
+                                // Finished overlay
+                                if (isFinished)
+                                  Positioned(
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 4, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.bottomCenter,
+                                          end: Alignment.topCenter,
+                                          colors: [
+                                            Colors.black.withValues(alpha: 0.85),
+                                            Colors.black.withValues(alpha: 0.0),
+                                          ],
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.check_circle_rounded,
+                                              size: 10, color: Colors.greenAccent[400]),
+                                          const SizedBox(width: 3),
+                                          Text('Done',
+                                              style: TextStyle(
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.greenAccent[400])),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
@@ -1713,9 +1781,20 @@ class _SeriesBooksSheetState extends State<_SeriesBooksSheet> {
                                   ],
                                   if (duration > 0) ...[
                                     const SizedBox(height: 2),
-                                    Text(_formatDuration(duration),
-                                        style: tt.labelSmall?.copyWith(
-                                            color: cs.onSurfaceVariant)),
+                                    Row(
+                                      children: [
+                                        Text(_formatDuration(duration),
+                                            style: tt.labelSmall?.copyWith(
+                                                color: cs.onSurfaceVariant)),
+                                        if (progress > 0 && !isFinished) ...[
+                                          const SizedBox(width: 8),
+                                          Text('${(progress * 100).round()}%',
+                                              style: tt.labelSmall?.copyWith(
+                                                  color: cs.primary,
+                                                  fontWeight: FontWeight.w600)),
+                                        ],
+                                      ],
+                                    ),
                                   ],
                                 ],
                               ),

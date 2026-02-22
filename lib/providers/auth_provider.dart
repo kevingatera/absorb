@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/audio_player_service.dart';
+import '../services/user_account_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   String? _token;
@@ -145,6 +146,16 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (_) {}
 
+    // Save to multi-account service
+    try {
+      await UserAccountService().saveAccount(SavedAccount(
+        serverUrl: _serverUrl!,
+        username: _username ?? '',
+        token: _token ?? '',
+        userId: _userId,
+      ));
+    } catch (_) {}
+
     _isLoading = false;
     notifyListeners();
     return true;
@@ -189,6 +200,16 @@ class AuthProvider extends ChangeNotifier {
       if (_defaultLibraryId != null) {
         await prefs.setString('default_library_id', _defaultLibraryId!);
       }
+    } catch (_) {}
+
+    // Save to multi-account service
+    try {
+      await UserAccountService().saveAccount(SavedAccount(
+        serverUrl: _serverUrl!,
+        username: _username ?? '',
+        token: _token ?? '',
+        userId: _userId,
+      ));
     } catch (_) {}
 
     _isLoading = false;
@@ -238,4 +259,60 @@ class AuthProvider extends ChangeNotifier {
 
     notifyListeners();
   }
+
+  /// Switch to a saved account without going through the login screen.
+  /// Stops playback, swaps credentials, and notifies listeners so the
+  /// app reloads with the new user's data.
+  Future<bool> switchToAccount(SavedAccount account) async {
+    // Stop current playback
+    try {
+      final player = AudioPlayerService();
+      if (player.hasBook) {
+        await player.pause();
+        await player.stop();
+      }
+    } catch (_) {}
+
+    // Set the new account as active in the account service
+    UserAccountService().switchTo(account.serverUrl, account.username);
+
+    // Set credentials
+    _serverUrl = account.serverUrl;
+    _token = account.token;
+    _username = account.username;
+    _userId = account.userId;
+    _defaultLibraryId = null;
+    _userJson = null;
+    _serverSettings = null;
+    _serverVersion = null;
+    _errorMessage = null;
+    _serverReachable = true;
+
+    // Persist as the active session
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('server_url', _serverUrl!);
+      if (_token != null) await prefs.setString('token', _token!);
+      if (_username != null) await prefs.setString('username', _username!);
+    } catch (_) {}
+
+    // Verify the token still works and get user info
+    try {
+      final api = ApiService(baseUrl: _serverUrl!, token: _token!);
+      final me = await api.getMe();
+      if (me != null) {
+        _userJson = me;
+        _userId = me['id'] as String?;
+      }
+    } catch (_) {
+      _serverReachable = false;
+    }
+
+    _fetchServerVersion(_serverUrl!);
+    notifyListeners();
+    return true;
+  }
+
+  /// Get all saved accounts (for the account switcher UI).
+  List<SavedAccount> get savedAccounts => UserAccountService().accounts;
 }

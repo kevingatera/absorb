@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'api_service.dart';
+import 'scoped_prefs.dart';
 
 /// Manages local progress storage and server sync.
 /// Progress is ALWAYS saved locally first, then synced to server when online.
+/// All progress data is scoped to the active user account via ScopedPrefs.
 class ProgressSyncService {
   static final ProgressSyncService _instance = ProgressSyncService._();
   factory ProgressSyncService() => _instance;
@@ -17,11 +18,9 @@ class ProgressSyncService {
 
   /// Initialize — start listening for connectivity changes.
   Future<void> init() async {
-    // Check initial state
     final result = await Connectivity().checkConnectivity();
     _isOnline = !result.contains(ConnectivityResult.none);
 
-    // Listen for changes
     _connectivitySub = Connectivity().onConnectivityChanged.listen((result) {
       final wasOffline = !_isOnline;
       _isOnline = !result.contains(ConnectivityResult.none);
@@ -41,9 +40,6 @@ class ProgressSyncService {
     required double duration,
     required double speed,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
-
-    // Save current position
     final data = {
       'itemId': itemId,
       'currentTime': currentTime,
@@ -51,20 +47,18 @@ class ProgressSyncService {
       'speed': speed,
       'timestamp': DateTime.now().millisecondsSinceEpoch,
     };
-    await prefs.setString('progress_$itemId', jsonEncode(data));
+    await ScopedPrefs.setString('progress_$itemId', jsonEncode(data));
 
-    // Also mark as pending server sync
-    final pendingList = prefs.getStringList('pending_syncs') ?? [];
+    final pendingList = await ScopedPrefs.getStringList('pending_syncs');
     if (!pendingList.contains(itemId)) {
       pendingList.add(itemId);
-      await prefs.setStringList('pending_syncs', pendingList);
+      await ScopedPrefs.setStringList('pending_syncs', pendingList);
     }
   }
 
   /// Get locally saved progress for an item.
   Future<Map<String, dynamic>?> getLocal(String itemId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final json = prefs.getString('progress_$itemId');
+    final json = await ScopedPrefs.getString('progress_$itemId');
     if (json == null) return null;
     try {
       return jsonDecode(json) as Map<String, dynamic>;
@@ -81,11 +75,10 @@ class ProgressSyncService {
 
   /// Delete locally saved progress for an item.
   Future<void> deleteLocal(String itemId) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('progress_$itemId');
-    final pendingList = prefs.getStringList('pending_syncs') ?? [];
+    await ScopedPrefs.remove('progress_$itemId');
+    final pendingList = await ScopedPrefs.getStringList('pending_syncs');
     pendingList.remove(itemId);
-    await prefs.setStringList('pending_syncs', pendingList);
+    await ScopedPrefs.setStringList('pending_syncs', pendingList);
   }
 
   /// Sync a single item to the server. Returns true if synced.
@@ -111,14 +104,12 @@ class ProgressSyncService {
 
     try {
       if (sessionId != null) {
-        // Sync via active session
         await api.syncPlaybackSession(
           sessionId,
           currentTime: currentTime,
           duration: duration,
         );
       } else {
-        // Sync via media progress update endpoint
         await api.updateProgress(
           itemId,
           currentTime: currentTime,
@@ -126,11 +117,9 @@ class ProgressSyncService {
         );
       }
 
-      // Remove from pending
-      final prefs = await SharedPreferences.getInstance();
-      final pendingList = prefs.getStringList('pending_syncs') ?? [];
+      final pendingList = await ScopedPrefs.getStringList('pending_syncs');
       pendingList.remove(itemId);
-      await prefs.setStringList('pending_syncs', pendingList);
+      await ScopedPrefs.setStringList('pending_syncs', pendingList);
 
       debugPrint('[Sync] Synced $itemId: ${currentTime}s');
       return true;
@@ -145,9 +134,8 @@ class ProgressSyncService {
   Future<void> flushPendingSync({ApiService? api}) async {
     if (!_isOnline || api == null) return;
 
-    final prefs = await SharedPreferences.getInstance();
     final pendingList = List<String>.from(
-        prefs.getStringList('pending_syncs') ?? []);
+        await ScopedPrefs.getStringList('pending_syncs'));
 
     if (pendingList.isEmpty) return;
     debugPrint('[Sync] Flushing ${pendingList.length} pending syncs');
@@ -162,14 +150,12 @@ class ProgressSyncService {
       if (localTime <= 0) continue;
 
       try {
-        // Check server's progress timestamp
         final serverProgress = await api.getItemProgress(itemId);
         if (serverProgress != null) {
           final serverTimestamp = (serverProgress['lastUpdate'] as num?)?.toInt() ?? 0;
           final serverTime = (serverProgress['currentTime'] as num?)?.toDouble() ?? 0;
 
           if (serverTimestamp > localTimestamp) {
-            // Server is newer — pull server position down to local
             debugPrint('[Sync] Server is newer for $itemId: server=${serverTime}s (${serverTimestamp}) vs local=${localTime}s (${localTimestamp}) — pulling');
             await saveLocal(
               itemId: itemId,
@@ -177,16 +163,14 @@ class ProgressSyncService {
               duration: localDuration,
               speed: (data['speed'] as num?)?.toDouble() ?? 1.0,
             );
-            // Remove from pending since we just accepted server's version
-            final updated = prefs.getStringList('pending_syncs') ?? [];
+            final updated = await ScopedPrefs.getStringList('pending_syncs');
             updated.remove(itemId);
-            await prefs.setStringList('pending_syncs', updated);
+            await ScopedPrefs.setStringList('pending_syncs', updated);
             continue;
           }
           debugPrint('[Sync] Local is newer for $itemId: local=${localTime}s (${localTimestamp}) vs server=${serverTime}s (${serverTimestamp}) — pushing');
         }
 
-        // Local is newer (or no server data) — push to server
         final session = await api.startPlaybackSession(itemId);
         if (session != null) {
           final sessionId = session['id'] as String?;
@@ -201,10 +185,9 @@ class ProgressSyncService {
           }
         }
 
-        // Remove from pending
-        final updated = prefs.getStringList('pending_syncs') ?? [];
+        final updated = await ScopedPrefs.getStringList('pending_syncs');
         updated.remove(itemId);
-        await prefs.setStringList('pending_syncs', updated);
+        await ScopedPrefs.setStringList('pending_syncs', updated);
       } catch (e) {
         debugPrint('[Sync] Flush failed for $itemId: $e');
       }

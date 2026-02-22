@@ -9,6 +9,9 @@ import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import '../services/sleep_timer_service.dart';
+import '../services/user_account_service.dart';
+import '../screens/login_screen.dart';
+import '../screens/app_shell.dart';
 import '../widgets/absorb_title.dart';
 import '../widgets/absorb_slider.dart';
 
@@ -855,6 +858,115 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 const SizedBox(height: 24),
 
+                // ── Accounts ──
+                Builder(builder: (ctx) {
+                  final accounts = UserAccountService().accounts;
+                  final auth = ctx.read<AuthProvider>();
+                  final otherAccounts = accounts.where((a) =>
+                    !(a.serverUrl == auth.serverUrl && a.username == auth.username)
+                  ).toList();
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (otherAccounts.isNotEmpty) ...[
+                          Text('Switch Account',
+                            style: tt.titleSmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            )),
+                          const SizedBox(height: 8),
+                          ...otherAccounts.map((account) {
+                            final shortUrl = account.serverUrl
+                                .replaceAll(RegExp(r'^https?://'), '')
+                                .replaceAll(RegExp(r'/+$'), '');
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Material(
+                                color: cs.surfaceContainerHigh,
+                                borderRadius: BorderRadius.circular(14),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(14),
+                                  onTap: () => _switchAccount(ctx, account),
+                                  onLongPress: () => _removeAccount(ctx, account),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                    child: Row(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 18,
+                                          backgroundColor: cs.primary.withValues(alpha: 0.15),
+                                          child: Text(
+                                            account.username.isNotEmpty
+                                                ? account.username[0].toUpperCase()
+                                                : '?',
+                                            style: TextStyle(
+                                              color: cs.primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(account.username,
+                                                style: tt.bodyMedium?.copyWith(
+                                                  fontWeight: FontWeight.w600)),
+                                              Text(shortUrl,
+                                                style: tt.labelSmall?.copyWith(
+                                                  color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis),
+                                            ],
+                                          ),
+                                        ),
+                                        Icon(Icons.swap_horiz_rounded,
+                                          size: 20, color: cs.primary),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                          const SizedBox(height: 6),
+                        ],
+                        // Add Account button — always visible
+                        Material(
+                          color: cs.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(14),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(14),
+                            onTap: () => _addAccount(ctx),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 18,
+                                    backgroundColor: cs.primary.withValues(alpha: 0.08),
+                                    child: Icon(Icons.person_add_rounded,
+                                      size: 18, color: cs.primary),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text('Add Account',
+                                    style: tt.bodyMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: cs.primary)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  );
+                }),
+
                 // ── Sign out ──
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1149,27 +1261,95 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _confirmLogout(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.logout_rounded),
-        title: const Text('Sign out?'),
-        content: const Text('You will need to sign in again to access your library.'),
+        title: const Text('Peace out?'),
+        content: const Text('This will sign you out. Your downloads will stay on this device.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: const Text('Stay'),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               context.read<AuthProvider>().logout();
             },
-            child: const Text('Sign out'),
+            style: FilledButton.styleFrom(backgroundColor: cs.error),
+            child: const Text('Sign Out'),
           ),
         ],
       ),
     );
+  }
+
+  void _addAccount(BuildContext context) {
+    // Navigate to login screen as a pushed route (not replacing current)
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+    );
+  }
+
+  void _removeAccount(BuildContext context, SavedAccount account) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove Account?'),
+        content: Text(
+          'Remove ${account.username} on ${account.serverUrl.replaceAll(RegExp(r'^https?://'), '')} from saved accounts?\n\n'
+          'You can always add it back later by signing in again.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error),
+            child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    await UserAccountService().removeAccount(account.serverUrl, account.username);
+    if (context.mounted) setState(() {});
+  }
+
+  void _switchAccount(BuildContext context, SavedAccount account) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Switch Account?'),
+        content: Text(
+          'Switch to ${account.username} on ${account.serverUrl.replaceAll(RegExp(r'^https?://'), '')}?\n\n'
+          'Your current playback will be stopped and the app will reload with the other account\'s data.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Switch')),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final auth = context.read<AuthProvider>();
+    final lib = context.read<LibraryProvider>();
+
+    await auth.switchToAccount(account);
+
+    // Re-init the library provider with the new user
+    if (context.mounted) {
+      lib.updateAuth(auth);
+      await lib.refresh();
+      // Jump to the absorbing screen
+      AppShell.goToAbsorbingGlobal();
+    }
   }
 }
 

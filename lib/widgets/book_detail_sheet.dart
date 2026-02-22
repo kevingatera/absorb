@@ -9,9 +9,11 @@ import '../services/audio_player_service.dart';
 import '../services/api_service.dart';
 import '../services/download_service.dart';
 import '../services/progress_sync_service.dart';
+import '../services/metadata_override_service.dart';
 import '../screens/app_shell.dart';
 import '../screens/library_screen.dart';
 import 'absorbing_shared.dart';
+import 'metadata_lookup_sheet.dart';
 
 // ─── BOOK DETAIL BOTTOM SHEET ───────────────────────────────
 
@@ -39,6 +41,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   bool _isLoading = true;
   bool _chaptersExpanded = false;
   bool _isAbsorbing = false;
+  bool _hasLocalOverride = false;
 
   @override void initState() { super.initState(); _loadItem(); }
 
@@ -52,10 +55,19 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       try {
         final item = await api.getLibraryItem(widget.itemId);
         if (item != null && mounted) {
-          setState(() { _item = item; _isLoading = false; });
+          // Apply local metadata overrides
+          final overrideService = MetadataOverrideService();
+          final override = await overrideService.get(widget.itemId);
+          Map<String, dynamic> finalItem = item;
+          if (override != null) {
+            finalItem = overrideService.applyOverrides(item, override);
+            _hasLocalOverride = true;
+          }
+
+          setState(() { _item = finalItem; _isLoading = false; });
 
           // Fetch Audible rating
-          final media = item['media'] as Map<String, dynamic>? ?? {};
+          final media = finalItem['media'] as Map<String, dynamic>? ?? {};
           final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
           final asin = metadata['asin'] as String?;
           final title = metadata['title'] as String? ?? '';
@@ -115,6 +127,9 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   }
 
   String? get _coverUrl {
+    // Check for local override cover first
+    final localCover = _item?['_localCoverUrl'] as String?;
+    if (localCover != null && localCover.isNotEmpty) return localCover;
     final auth = context.read<AuthProvider>();
     return auth.apiService?.getCoverUrl(widget.itemId, width: 800);
   }
@@ -172,7 +187,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final isFinished = progressData?['isFinished'] == true;
     final currentTime = (progressData?['currentTime'] as num?)?.toDouble() ?? 0;
 
-    return ListView(controller: widget.scrollController, padding: const EdgeInsets.fromLTRB(20, 8, 20, 32), children: [
+    return ListView(controller: widget.scrollController, padding: EdgeInsets.fromLTRB(20, 8, 20, 32 + MediaQuery.of(context).viewPadding.bottom), children: [
       Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
       Text(title, textAlign: TextAlign.center, style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: Colors.white)),
@@ -369,6 +384,23 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                 Text(_fmtDur(((ch['end'] as num?)?.toDouble() ?? 0) - ((ch['start'] as num?)?.toDouble() ?? 0)), style: tt.labelSmall?.copyWith(color: Colors.white30)),
               ]));
           })]],
+      // ─── Metadata lookup (bottom of sheet) ─────────────────
+      if (auth.apiService != null && !lib.isOffline) ...[
+        const SizedBox(height: 20),
+        _sheetBtn(
+          icon: Icons.manage_search_rounded,
+          label: _hasLocalOverride ? 'Re-Lookup Metadata' : 'Lookup Metadata',
+          onTap: () => _openMetadataLookup(context, auth, title, authorName),
+        ),
+      ],
+      if (_hasLocalOverride) ...[
+        const SizedBox(height: 8),
+        _sheetBtn(
+          icon: Icons.layers_clear_rounded,
+          label: 'Clear Local Metadata',
+          onTap: () => _clearOverride(context),
+        ),
+      ],
     ]);
   }
 
@@ -574,6 +606,65 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         duration: const Duration(seconds: 3),
         content: Text(serverSuccess ? 'Progress reset — fresh start!' : 'Reset may not have synced — check your server'),
         behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+    }
+  }
+
+  void _openMetadataLookup(BuildContext context, AuthProvider auth, String title, String author) {
+    final api = auth.apiService;
+    if (api == null) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.85,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (ctx, sc) => MetadataLookupSheet(
+          itemId: widget.itemId,
+          api: api,
+          initialTitle: title,
+          initialAuthor: author,
+          onApplied: () {
+            // Reload the item to show the new override
+            _loadItem();
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _clearOverride(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear Local Metadata?'),
+        content: const Text(
+            'This will remove the locally stored metadata and revert to whatever the server has.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Clear')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await MetadataOverrideService().delete(widget.itemId);
+    if (mounted) {
+      setState(() => _hasLocalOverride = false);
+      await _loadItem();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Local metadata cleared'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
     }
   }
 }

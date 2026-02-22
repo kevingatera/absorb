@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import '../services/scoped_prefs.dart';
 import 'auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/progress_sync_service.dart';
@@ -428,8 +429,7 @@ class LibraryProvider extends ChangeNotifier {
       }
     }
     // Clear pending syncs since we just pulled fresh server data
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('pending_syncs', []);
+    await ScopedPrefs.setStringList('pending_syncs', []);
     notifyListeners();
   }
 
@@ -478,15 +478,13 @@ class LibraryProvider extends ChangeNotifier {
   Set<String> get manualAbsorbRemoves => _manualAbsorbRemoves;
 
   Future<void> _loadManualAbsorbing() async {
-    final prefs = await SharedPreferences.getInstance();
-    _manualAbsorbAdds = (prefs.getStringList('absorbing_manual_adds') ?? []).toSet();
-    _manualAbsorbRemoves = (prefs.getStringList('absorbing_manual_removes') ?? []).toSet();
+    _manualAbsorbAdds = (await ScopedPrefs.getStringList('absorbing_manual_adds')).toSet();
+    _manualAbsorbRemoves = (await ScopedPrefs.getStringList('absorbing_manual_removes')).toSet();
   }
 
   Future<void> _saveManualAbsorbing() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('absorbing_manual_adds', _manualAbsorbAdds.toList());
-    await prefs.setStringList('absorbing_manual_removes', _manualAbsorbRemoves.toList());
+    await ScopedPrefs.setStringList('absorbing_manual_adds', _manualAbsorbAdds.toList());
+    await ScopedPrefs.setStringList('absorbing_manual_removes', _manualAbsorbRemoves.toList());
   }
 
   /// Add a book to the absorbing list manually.
