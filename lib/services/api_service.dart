@@ -757,9 +757,9 @@ class ApiService {
           .timeout(const Duration(seconds: 15));
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
-        if (data is List) return data;
         if (data is Map && data['usersOnline'] is List) return data['usersOnline'] as List<dynamic>;
         if (data is Map && data['openSessions'] is List) return data['openSessions'] as List<dynamic>;
+        if (data is List) return data;
       }
     } catch (e) { debugPrint('getOnlineUsers error: $e'); }
     return [];
@@ -872,6 +872,18 @@ class ApiService {
       ).timeout(const Duration(seconds: 15));
       if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
     } catch (e) { debugPrint('createUser error: $e'); }
+    return null;
+  }
+
+  /// Get a single user with full details including mediaProgress (admin only)
+  Future<Map<String, dynamic>?> getUser(String userId) async {
+    try {
+      final r = await http.get(
+        Uri.parse('$_cleanBaseUrl/api/users/$userId'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) { debugPrint('getUser error: $e'); }
     return null;
   }
 
@@ -1005,13 +1017,24 @@ class ApiService {
     return null;
   }
 
+  /// Get podcast episode download queue for a library
+  Future<Map<String, dynamic>?> getEpisodeDownloads(String libraryId) async {
+    try {
+      final r = await http.get(
+        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/episode-downloads'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 10));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) { debugPrint('getEpisodeDownloads error: $e'); }
+    return null;
+  }
+
   /// Download specific podcast episodes
   Future<bool> downloadPodcastEpisodes(String libraryItemId, List<Map<String, dynamic>> episodes) async {
     try {
       final r = await http.post(
         Uri.parse('$_cleanBaseUrl/api/podcasts/$libraryItemId/download-episodes'),
-        headers: _headers,
-        body: jsonEncode(episodes),
+        headers: _headers,        body: jsonEncode(episodes),
       ).timeout(const Duration(seconds: 30));
       return r.statusCode == 200;
     } catch (e) { debugPrint('downloadPodcastEpisodes error: $e'); }

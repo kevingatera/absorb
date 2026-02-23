@@ -59,14 +59,7 @@ class _AdminScreenState extends State<AdminScreen> {
   List<dynamic> get _activeSessions => _sessions.where((s) {
     final updatedAt = s['updatedAt'] as num? ?? 0;
     final now = DateTime.now().millisecondsSinceEpoch;
-    // Consider active if updated within last 5 minutes
     return (now - updatedAt) < 300000;
-  }).toList();
-
-  List<dynamic> get _recentSessions => _sessions.where((s) {
-    final updatedAt = s['updatedAt'] as num? ?? 0;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    return (now - updatedAt) >= 300000;
   }).toList();
 
   @override
@@ -157,13 +150,6 @@ class _AdminScreenState extends State<AdminScreen> {
                     if (_activeSessions.isNotEmpty) ...[
                       _section(tt, 'Listening Now'),
                       ..._activeSessions.map((s) => _sessionCard(cs, tt, s)),
-                      const SizedBox(height: 18),
-                    ],
-
-                    // ── Recent Sessions ──
-                    if (_recentSessions.isNotEmpty) ...[
-                      _section(tt, 'Recent Sessions'),
-                      ..._recentSessions.take(5).map((s) => _sessionCard(cs, tt, s)),
                       const SizedBox(height: 18),
                     ],
 

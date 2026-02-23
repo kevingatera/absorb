@@ -98,7 +98,7 @@ class _AdminPodcastsScreenState extends State<AdminPodcastsScreen> {
       return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.podcasts_rounded, size: 48, color: Colors.white.withValues(alpha: 0.1)),
         const SizedBox(height: 12),
-        Text('No podcasts yet', style: tt.bodyMedium?.copyWith(color: Colors.white30)),
+        Text('No podcasts yet', style: tt.bodyMedium?.copyWith(color: Colors.white.withValues(alpha: 0.3))),
         const SizedBox(height: 4),
         Text('Tap + to search and add shows', style: tt.bodySmall?.copyWith(color: Colors.white.withValues(alpha: 0.2))),
       ]));
@@ -664,6 +664,11 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
   final Set<String> _deleting = {};
   late TabController _tabCtrl;
 
+  // Download queue
+  Map<String, dynamic>? _currentDownload;
+  List<dynamic> _downloadQueue = [];
+  bool _pollingQueue = false;
+
   String get _podcastId => _item['id'] as String? ?? '';
   Map<String, dynamic> get _media => _item['media'] as Map<String, dynamic>? ?? {};
   Map<String, dynamic> get _metadata => _media['metadata'] as Map<String, dynamic>? ?? {};
@@ -677,10 +682,12 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
     _item = Map<String, dynamic>.from(widget.item);
     _tabCtrl = TabController(length: 2, vsync: this);
     _reloadItem(); // Load full item with episodes
+    _loadFeed(); // Pre-load feed so it's ready when user switches tabs
+    _pollDownloadQueue(); // Check for any in-progress downloads
   }
 
   @override
-  void dispose() { _tabCtrl.dispose(); super.dispose(); }
+  void dispose() { _pollingQueue = false; _tabCtrl.dispose(); super.dispose(); }
 
   Future<void> _reloadItem() async {
     final api = context.read<AuthProvider>().apiService; if (api == null) return;
@@ -702,6 +709,36 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
     if (mounted) setState(() => _loadingFeed = false);
   }
 
+  Future<void> _pollDownloadQueue() async {
+    if (_pollingQueue) return;
+    _pollingQueue = true;
+    final api = context.read<AuthProvider>().apiService;
+    while (_pollingQueue && mounted && api != null) {
+      final data = await api.getEpisodeDownloads(widget.libraryId);
+      if (!mounted) break;
+      final current = data?['currentDownload'] as Map<String, dynamic>?;
+      final queue = data?['queue'] as List? ?? [];
+      // Filter to this podcast only
+      final myId = _podcastId;
+      final myCurrent = (current != null && current['libraryItemId'] == myId) ? current : null;
+      final myQueue = queue.where((q) => (q as Map?)?['libraryItemId'] == myId).toList();
+
+      setState(() {
+        _currentDownload = myCurrent;
+        _downloadQueue = myQueue;
+      });
+
+      // If nothing left downloading, refresh episodes and stop polling
+      if (myCurrent == null && myQueue.isEmpty) {
+        _pollingQueue = false;
+        _reloadItem();
+        break;
+      }
+      await Future.delayed(const Duration(seconds: 3));
+    }
+    _pollingQueue = false;
+  }
+
   Future<void> _downloadEpisode(Map<String, dynamic> feedEp) async {
     final epTitle = feedEp['title'] as String? ?? '';
     final epKey = feedEp['enclosureUrl'] as String? ?? feedEp['title'] as String? ?? '';
@@ -711,6 +748,7 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
     if (mounted) {
       setState(() => _downloading.remove(epKey));
       _msg(ok ? 'Downloading "$epTitle"' : 'Failed to download');
+      if (ok) _pollDownloadQueue();
     }
     widget.onChanged();
   }
@@ -771,7 +809,7 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
         TabBar(
           controller: _tabCtrl,
           labelColor: cs.primary,
-          unselectedLabelColor: Colors.white30,
+          unselectedLabelColor: Colors.white.withValues(alpha: 0.3),
           indicatorColor: cs.primary,
           indicatorSize: TabBarIndicatorSize.label,
           dividerColor: Colors.white.withValues(alpha: 0.06),
@@ -791,11 +829,18 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
   // ─── Downloaded Tab ─────────────────────────────────────────
 
   Widget _buildDownloadedTab(ColorScheme cs, TextTheme tt) {
-    if (_episodes.isEmpty) {
+    // Build list: active downloads first, then downloaded episodes
+    final queueItems = <Map<String, dynamic>>[];
+    if (_currentDownload != null) queueItems.add(_currentDownload!);
+    for (final q in _downloadQueue) {
+      if (q is Map<String, dynamic>) queueItems.add(q);
+    }
+
+    if (_episodes.isEmpty && queueItems.isEmpty) {
       return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.download_done_rounded, size: 40, color: Colors.white.withValues(alpha: 0.1)),
         const SizedBox(height: 8),
-        Text('No downloaded episodes', style: tt.bodyMedium?.copyWith(color: Colors.white30)),
+        Text('No downloaded episodes', style: tt.bodyMedium?.copyWith(color: Colors.white.withValues(alpha: 0.3))),
         const SizedBox(height: 8),
         GestureDetector(
           onTap: () { _tabCtrl.animateTo(1); if (_feedEpisodes.isEmpty && !_loadingFeed) _loadFeed(); },
@@ -812,34 +857,64 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
       onRefresh: _reloadItem,
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-        itemCount: sorted.length,
+        itemCount: queueItems.length + sorted.length,
         itemBuilder: (_, i) {
-          final ep = sorted[i] as Map<String, dynamic>;
-          final epId = ep['id'] as String? ?? '';
-          final epTitle = ep['title'] as String? ?? 'Episode';
-          final pubAt = ep['publishedAt'] as num?;
-          final duration = ep['duration'] as num?;
-          final isDel = _deleting.contains(epId);
+          // Queue items first
+          if (i < queueItems.length) {
+            final q = queueItems[i];
+            final isActive = i == 0 && _currentDownload != null;
+            final title = q['episodeDisplayTitle'] as String? ?? 'Downloading...';
+            return Padding(padding: const EdgeInsets.only(bottom: 6), child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: cs.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: cs.primary.withValues(alpha: 0.15)),
+              ),
+              child: Row(children: [
+                SizedBox(width: 18, height: 18, child: isActive
+                  ? CircularProgressIndicator(strokeWidth: 1.5, color: cs.primary)
+                  : Icon(Icons.hourglass_top_rounded, size: 16, color: cs.primary.withValues(alpha: 0.5))),
+                const SizedBox(width: 12),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(title, style: tt.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: Colors.white),
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 2),
+                  Text(isActive ? 'Downloading...' : 'Queued',
+                    style: tt.labelSmall?.copyWith(color: cs.primary.withValues(alpha: 0.7), fontSize: 10)),
+                ])),
+              ]),
+            ));
+          }
 
-          return Padding(padding: const EdgeInsets.only(bottom: 6), child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(color: cs.surfaceContainerHigh, borderRadius: BorderRadius.circular(12)),
-            child: Row(children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(epTitle, style: tt.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: Colors.white), maxLines: 2, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 3),
-                Row(children: [
-                  if (pubAt != null) Text(_fmtDate(pubAt.toInt()), style: tt.labelSmall?.copyWith(color: Colors.white24, fontSize: 10)),
-                  if (pubAt != null && duration != null) Text(' · ', style: tt.labelSmall?.copyWith(color: Colors.white.withValues(alpha: 0.15))),
-                  if (duration != null) Text(_fmtDur(duration.toDouble()), style: tt.labelSmall?.copyWith(color: Colors.white24, fontSize: 10)),
-                ]),
-              ])),
-              const SizedBox(width: 8),
-              isDel
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white24))
-                : GestureDetector(onTap: () => _deleteEpisode(epId, epTitle),
-                    child: Icon(Icons.delete_outline_rounded, size: 18, color: Colors.red.withValues(alpha: 0.4))),
-            ]),
+          // Downloaded episodes
+          final idx = i - queueItems.length;
+          final ep = sorted[idx] as Map<String, dynamic>;
+          final epTitle = ep['title']?.toString() ?? 'Episode';
+          final pubAt = ep['publishedAt'] as num?;
+          final duration = ep['duration'];
+          final durStr = duration is num ? _fmtDur(duration.toDouble())
+              : (duration is String ? _fmtDurFromStr(duration) : '');
+
+          return Padding(padding: const EdgeInsets.only(bottom: 6), child: GestureDetector(
+            onTap: () => _showDownloadedEpisodeDetail(ep),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(color: cs.surfaceContainerHigh, borderRadius: BorderRadius.circular(12)),
+              child: Row(children: [
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(epTitle, style: tt.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: Colors.white), maxLines: 2, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 3),
+                  Row(children: [
+                    if (pubAt != null) Text(_fmtDate(pubAt.toInt()), style: tt.labelSmall?.copyWith(color: Colors.white24, fontSize: 10)),
+                    if (pubAt != null && durStr.isNotEmpty) Text(' · ', style: tt.labelSmall?.copyWith(color: Colors.white.withValues(alpha: 0.15))),
+                    if (durStr.isNotEmpty) Text(durStr, style: tt.labelSmall?.copyWith(color: Colors.white24, fontSize: 10)),
+                  ]),
+                ])),
+                const SizedBox(width: 8),
+                Icon(Icons.chevron_right_rounded, size: 18, color: Colors.white.withValues(alpha: 0.15)),
+              ]),
+            ),
           ));
         },
       ),
@@ -850,17 +925,16 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
 
   Widget _buildFeedTab(ColorScheme cs, TextTheme tt) {
     if (_loadingFeed) return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-    if (_feedUrl.isEmpty) return Center(child: Text('No feed URL available', style: tt.bodyMedium?.copyWith(color: Colors.white30)));
+    if (_feedUrl.isEmpty) return Center(child: Text('No feed URL available', style: tt.bodyMedium?.copyWith(color: Colors.white.withValues(alpha: 0.3))));
     if (_feedEpisodes.isEmpty) {
       return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Text('No episodes found', style: tt.bodyMedium?.copyWith(color: Colors.white30)),
+        Text('No episodes found', style: tt.bodyMedium?.copyWith(color: Colors.white.withValues(alpha: 0.3))),
         const SizedBox(height: 8),
         GestureDetector(onTap: _loadFeed,
           child: Text('Retry', style: tt.bodySmall?.copyWith(color: cs.primary))),
       ]));
     }
 
-    // Match by enclosure URL or title to mark already-downloaded
     final dlTitles = _episodes.map((e) => (e['title'] as String? ?? '').toLowerCase()).toSet();
 
     return RefreshIndicator(
@@ -871,28 +945,63 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
         itemBuilder: (_, i) {
           final ep = _feedEpisodes[i] as Map<String, dynamic>;
           final epTitle = ep['title'] as String? ?? 'Episode';
-          final epKey = ep['enclosureUrl'] as String? ?? epTitle;
           final pubDate = ep['publishedAt'] as num? ?? ep['pubDate'] as num?;
           final already = dlTitles.contains(epTitle.toLowerCase());
-          final isDl = _downloading.contains(epKey);
 
-          return Padding(padding: const EdgeInsets.only(bottom: 6), child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(color: cs.surfaceContainerHigh, borderRadius: BorderRadius.circular(12)),
-            child: Row(children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(epTitle, style: tt.bodySmall?.copyWith(fontWeight: FontWeight.w600,
-                  color: already ? Colors.white38 : Colors.white), maxLines: 2, overflow: TextOverflow.ellipsis),
-                if (pubDate != null) ...[const SizedBox(height: 3),
-                  Text(_fmtDate(pubDate.toInt()), style: tt.labelSmall?.copyWith(color: Colors.white24, fontSize: 10))],
-              ])),
-              const SizedBox(width: 8),
-              if (already) Icon(Icons.check_circle_rounded, size: 18, color: Colors.green.withValues(alpha: 0.5))
-              else if (isDl) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white38))
-              else GestureDetector(onTap: () => _downloadEpisode(ep),
-                child: Icon(Icons.download_rounded, size: 20, color: cs.primary)),
-            ]),
+          return Padding(padding: const EdgeInsets.only(bottom: 6), child: GestureDetector(
+            onTap: () => _showEpisodeDetail(ep, already),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(color: cs.surfaceContainerHigh, borderRadius: BorderRadius.circular(12)),
+              child: Row(children: [
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(epTitle, style: tt.bodySmall?.copyWith(fontWeight: FontWeight.w600,
+                    color: already ? Colors.white38 : Colors.white), maxLines: 2, overflow: TextOverflow.ellipsis),
+                  if (pubDate != null) ...[const SizedBox(height: 3),
+                    Text(_fmtDate(pubDate.toInt()), style: tt.labelSmall?.copyWith(color: Colors.white24, fontSize: 10))],
+                ])),
+                const SizedBox(width: 8),
+                if (already) Icon(Icons.check_circle_rounded, size: 18, color: Colors.green.withValues(alpha: 0.5))
+                else Icon(Icons.chevron_right_rounded, size: 18, color: Colors.white.withValues(alpha: 0.15)),
+              ]),
+            ),
           ));
+        },
+      ),
+    );
+  }
+
+  void _showEpisodeDetail(Map<String, dynamic> ep, bool alreadyDownloaded) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _EpisodeDetailSheet(
+        episode: ep,
+        alreadyDownloaded: alreadyDownloaded,
+        onDownload: () {
+          Navigator.pop(context);
+          _downloadEpisode(ep);
+        },
+      ),
+    );
+  }
+
+  void _showDownloadedEpisodeDetail(Map<String, dynamic> ep) {
+    final epId = ep['id']?.toString() ?? '';
+    final epTitle = ep['title']?.toString() ?? 'Episode';
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _DownloadedEpisodeDetailSheet(
+        episode: ep,
+        isDeleting: _deleting.contains(epId),
+        onDelete: () {
+          Navigator.pop(context);
+          _deleteEpisode(epId, epTitle);
         },
       ),
     );
@@ -909,6 +1018,316 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
   String _fmtDur(double s) { final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor();
     return h > 0 ? '${h}h ${m}m' : '${m}m'; }
 
+  String _fmtDurFromStr(String s) {
+    if (s.contains(':')) return s;
+    final secs = double.tryParse(s) ?? 0;
+    if (secs <= 0) return '';
+    return _fmtDur(secs);
+  }
+
   void _msg(String s) => ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
     SnackBar(content: Text(s), behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  Episode Detail Sheet
+// ═══════════════════════════════════════════════════════════════
+
+class _EpisodeDetailSheet extends StatelessWidget {
+  final Map<String, dynamic> episode;
+  final bool alreadyDownloaded;
+  final VoidCallback onDownload;
+  const _EpisodeDetailSheet({required this.episode, required this.alreadyDownloaded, required this.onDownload});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    final title = episode['title']?.toString() ?? 'Episode';
+    final description = _cleanHtml(episode['description']?.toString() ?? episode['subtitle']?.toString() ?? '');
+    final pubDateRaw = episode['publishedAt'] ?? episode['pubDate'];
+    final pubDate = pubDateRaw is num ? pubDateRaw : (num.tryParse(pubDateRaw?.toString() ?? ''));
+    final duration = episode['duration']?.toString() ?? '';
+    final season = episode['season']?.toString() ?? '';
+    final episodeNum = episode['episode']?.toString() ?? '';
+    final episodeType = episode['episodeType']?.toString() ?? '';
+
+    // Size from enclosure
+    final enclosure = episode['enclosure'] is Map ? episode['enclosure'] as Map<String, dynamic> : null;
+    final sizeRaw = enclosure?['length'];
+    final sizeBytes = sizeRaw is num ? sizeRaw.toInt() : (int.tryParse(sizeRaw?.toString() ?? '') ?? 0);
+    final sizeStr = _fmtSize(sizeBytes);
+    final fileType = enclosure?['type']?.toString() ?? '';
+
+    // Build info chips
+    final chips = <String>[];
+    if (pubDate != null) chips.add(_fmtDate(pubDate.toInt()));
+    if (duration.isNotEmpty) chips.add(duration.contains(':') ? duration : _fmtDurStr(duration));
+    if (sizeStr.isNotEmpty) chips.add(sizeStr);
+    if (season.isNotEmpty) chips.add('Season $season');
+    if (episodeNum.isNotEmpty) chips.add('Ep. $episodeNum');
+    if (episodeType.isNotEmpty && episodeType != 'full') chips.add(episodeType);
+
+    return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
+      decoration: const BoxDecoration(color: Color(0xFF1A1A1A), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // Handle
+        Center(child: Container(margin: const EdgeInsets.only(top: 12), width: 36, height: 4,
+          decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(2)))),
+
+        // Title
+        Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+          child: Align(alignment: Alignment.centerLeft,
+            child: Text(title, style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: Colors.white),
+              maxLines: 3, overflow: TextOverflow.ellipsis))),
+
+        // Info chips
+        if (chips.isNotEmpty)
+          Padding(padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+            child: Align(alignment: Alignment.centerLeft,
+              child: Wrap(spacing: 8, runSpacing: 6, children: chips.map((c) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(6)),
+                child: Text(c, style: tt.labelSmall?.copyWith(color: Colors.white54, fontSize: 11)),
+              )).toList()))),
+
+        // File type
+        if (fileType.isNotEmpty)
+          Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+            child: Align(alignment: Alignment.centerLeft,
+              child: Text(fileType, style: tt.labelSmall?.copyWith(color: Colors.white24, fontSize: 10)))),
+
+        // Description
+        if (description.isNotEmpty)
+          Flexible(
+            child: Padding(padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: SingleChildScrollView(
+                child: SizedBox(width: double.infinity,
+                  child: Text(description, style: tt.bodySmall?.copyWith(color: Colors.white54, height: 1.5))),
+              )),
+          ),
+
+        // Buttons
+        Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).padding.bottom + 16),
+          child: Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Back', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w600)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(flex: 2,
+              child: FilledButton.icon(
+                onPressed: alreadyDownloaded ? null : onDownload,
+                icon: Icon(alreadyDownloaded ? Icons.check_circle_rounded : Icons.download_rounded, size: 18),
+                label: Text(alreadyDownloaded ? 'Downloaded' : 'Download',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+                style: FilledButton.styleFrom(
+                  backgroundColor: alreadyDownloaded ? Colors.green.withValues(alpha: 0.15) : cs.primary,
+                  foregroundColor: alreadyDownloaded ? Colors.green : cs.onPrimary,
+                  disabledBackgroundColor: Colors.green.withValues(alpha: 0.15),
+                  disabledForegroundColor: Colors.green,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  String _cleanHtml(String html) {
+    return html
+        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+        .replaceAll(RegExp(r'<p\s*>'), '\n')
+        .replaceAll(RegExp(r'</p>'), '')
+        .replaceAll(RegExp(r'<[^>]+>'), '')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+  }
+
+  String _fmtDate(int ms) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(ms);
+    const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return '${m[dt.month - 1]} ${dt.day}, ${dt.year}';
+  }
+
+  String _fmtSize(int bytes) {
+    if (bytes <= 0) return '';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  String _fmtDurStr(String s) {
+    final secs = double.tryParse(s) ?? 0;
+    if (secs <= 0) return s;
+    final h = (secs / 3600).floor();
+    final m = ((secs % 3600) / 60).floor();
+    return h > 0 ? '${h}h ${m}m' : '${m}m';
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  Downloaded Episode Detail Sheet
+// ═══════════════════════════════════════════════════════════════
+
+class _DownloadedEpisodeDetailSheet extends StatelessWidget {
+  final Map<String, dynamic> episode;
+  final bool isDeleting;
+  final VoidCallback onDelete;
+  const _DownloadedEpisodeDetailSheet({required this.episode, required this.isDeleting, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    final title = episode['title']?.toString() ?? 'Episode';
+    final description = _cleanHtml(episode['description']?.toString() ?? episode['subtitle']?.toString() ?? '');
+    final pubAt = episode['publishedAt'];
+    final pubDate = pubAt is num ? pubAt : (num.tryParse(pubAt?.toString() ?? ''));
+    final durRaw = episode['duration'];
+    final durStr = durRaw is num ? _fmtDur(durRaw.toDouble())
+        : (durRaw is String && durRaw.isNotEmpty ? (durRaw.contains(':') ? durRaw : _fmtDurStr(durRaw)) : '');
+    final season = episode['season']?.toString() ?? '';
+    final episodeNum = episode['episode']?.toString() ?? '';
+
+    // Size from audioFile if available
+    final audioFile = episode['audioFile'] as Map<String, dynamic>?;
+    final sizeRaw = audioFile?['metadata']?['size'] ?? episode['size'];
+    final sizeBytes = sizeRaw is num ? sizeRaw.toInt() : (int.tryParse(sizeRaw?.toString() ?? '') ?? 0);
+    final sizeStr = _fmtSize(sizeBytes);
+
+    final chips = <String>[];
+    if (pubDate != null) chips.add(_fmtDate(pubDate.toInt()));
+    if (durStr.isNotEmpty) chips.add(durStr);
+    if (sizeStr.isNotEmpty) chips.add(sizeStr);
+    if (season.isNotEmpty) chips.add('Season $season');
+    if (episodeNum.isNotEmpty) chips.add('Ep. $episodeNum');
+
+    return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
+      decoration: const BoxDecoration(color: Color(0xFF1A1A1A), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Center(child: Container(margin: const EdgeInsets.only(top: 12), width: 36, height: 4,
+          decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(2)))),
+
+        Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+          child: Align(alignment: Alignment.centerLeft,
+            child: Text(title, style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: Colors.white),
+              maxLines: 3, overflow: TextOverflow.ellipsis))),
+
+        if (chips.isNotEmpty)
+          Padding(padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+            child: Align(alignment: Alignment.centerLeft,
+              child: Wrap(spacing: 8, runSpacing: 6, children: chips.map((c) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(6)),
+                child: Text(c, style: tt.labelSmall?.copyWith(color: Colors.white54, fontSize: 11)),
+              )).toList()))),
+
+        if (description.isNotEmpty)
+          Flexible(
+            child: Padding(padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: SingleChildScrollView(
+                child: SizedBox(width: double.infinity,
+                  child: Text(description, style: tt.bodySmall?.copyWith(color: Colors.white54, height: 1.5))),
+              )),
+          ),
+
+        Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).padding.bottom + 16),
+          child: Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Back', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w600)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(flex: 2,
+              child: FilledButton.icon(
+                onPressed: isDeleting ? null : onDelete,
+                icon: isDeleting
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white54))
+                  : const Icon(Icons.delete_outline_rounded, size: 18),
+                label: Text(isDeleting ? 'Deleting...' : 'Delete Episode',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.red.withValues(alpha: 0.15),
+                  foregroundColor: Colors.red.shade300,
+                  disabledBackgroundColor: Colors.red.withValues(alpha: 0.08),
+                  disabledForegroundColor: Colors.red.withValues(alpha: 0.4),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  String _cleanHtml(String html) {
+    return html
+        .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+        .replaceAll(RegExp(r'<p\s*>'), '\n')
+        .replaceAll(RegExp(r'</p>'), '')
+        .replaceAll(RegExp(r'<[^>]+>'), '')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+  }
+
+  String _fmtDate(int ms) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(ms);
+    const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return '${m[dt.month - 1]} ${dt.day}, ${dt.year}';
+  }
+
+  String _fmtSize(int bytes) {
+    if (bytes <= 0) return '';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  String _fmtDur(double s) { final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor();
+    return h > 0 ? '${h}h ${m}m' : '${m}m'; }
+
+  String _fmtDurStr(String s) {
+    if (s.contains(':')) return s;
+    final secs = double.tryParse(s) ?? 0;
+    if (secs <= 0) return s;
+    return _fmtDur(secs);
+  }
 }
