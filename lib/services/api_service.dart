@@ -8,6 +8,7 @@ class ApiService {
 
   final String baseUrl;
   final String token;
+  final Map<String, String> customHeaders;
 
   // Device info — set once at app start
   static String deviceManufacturer = '';
@@ -26,9 +27,10 @@ class ApiService {
     deviceId = id;
   }
 
-  ApiService({required this.baseUrl, required this.token});
+  ApiService({required this.baseUrl, required this.token, this.customHeaders = const {}});
 
   Map<String, String> get _headers => {
+        ...customHeaders,
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
       };
@@ -41,6 +43,7 @@ class ApiService {
     required String serverUrl,
     required String username,
     required String password,
+    Map<String, String> customHeaders = const {},
   }) async {
     final url = serverUrl.endsWith('/')
         ? '${serverUrl}login'
@@ -49,7 +52,7 @@ class ApiService {
     try {
       final response = await http.post(
         Uri.parse(url),
-        headers: {'Content-Type': 'application/json'},
+        headers: {...customHeaders, 'Content-Type': 'application/json'},
         body: jsonEncode({'username': username, 'password': password}),
       ).timeout(const Duration(seconds: 15));
 
@@ -63,12 +66,12 @@ class ApiService {
   }
 
   /// Ping the server to check connectivity.
-  static Future<bool> pingServer(String serverUrl) async {
+  static Future<bool> pingServer(String serverUrl, {Map<String, String> customHeaders = const {}}) async {
     final url = serverUrl.endsWith('/')
         ? '${serverUrl}ping'
         : '$serverUrl/ping';
     try {
-      final response = await http.get(Uri.parse(url))
+      final response = await http.get(Uri.parse(url), headers: customHeaders.isNotEmpty ? customHeaders : null)
           .timeout(const Duration(seconds: 10));
       return response.statusCode == 200;
     } catch (_) {
@@ -77,12 +80,12 @@ class ApiService {
   }
 
   /// Get the server version via the /status endpoint (no auth needed).
-  static Future<String?> getServerVersion(String serverUrl) async {
+  static Future<String?> getServerVersion(String serverUrl, {Map<String, String> customHeaders = const {}}) async {
     final url = serverUrl.endsWith('/')
         ? '${serverUrl}status'
         : '$serverUrl/status';
     try {
-      final response = await http.get(Uri.parse(url))
+      final response = await http.get(Uri.parse(url), headers: customHeaders.isNotEmpty ? customHeaders : null)
           .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;

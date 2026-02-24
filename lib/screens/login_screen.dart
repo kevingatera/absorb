@@ -43,6 +43,10 @@ class _LoginScreenState extends State<LoginScreen>
   bool _isOidcLoading = false;
   StreamSubscription? _linkSub;
 
+  // Custom headers (advanced)
+  bool _showAdvanced = false;
+  final List<(TextEditingController, TextEditingController)> _headerControllers = [];
+
   // App version
   String _appVersion = '';
 
@@ -139,11 +143,20 @@ class _LoginScreenState extends State<LoginScreen>
     _usernameController.dispose();
     _passwordController.dispose();
     _usernameFocus.dispose();
+    for (final (k, v) in _headerControllers) { k.dispose(); v.dispose(); }
     OidcService().cancel();
     super.dispose();
   }
 
   String _lastValidatedServer = '';
+
+  /// Re-trigger server validation when custom headers change.
+  void _revalidateServer() {
+    if (_serverController.text.trim().isEmpty) return;
+    _lastValidatedServer = ''; // Force re-check
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 800), () => _checkServer());
+  }
 
   void _onServerChanged() {
     final text = _serverController.text.trim();
@@ -187,7 +200,15 @@ class _LoginScreenState extends State<LoginScreen>
     final fullUrl = '$_protocol$cleanUrl';
 
     try {
-      final ok = await ApiService.pingServer(fullUrl);
+      // Build custom headers for ping
+      final headers = <String, String>{};
+      for (final (keyCtrl, valCtrl) in _headerControllers) {
+        final k = keyCtrl.text.trim();
+        final v = valCtrl.text.trim();
+        if (k.isNotEmpty && v.isNotEmpty) headers[k] = v;
+      }
+
+      final ok = await ApiService.pingServer(fullUrl, customHeaders: headers);
       if (!mounted) return;
       if (_serverController.text.trim() != text) return;
 
@@ -239,10 +260,20 @@ class _LoginScreenState extends State<LoginScreen>
     final serverText = _serverController.text.trim();
     final cleanUrl = serverText.replaceAll(RegExp(r'^https?://'), '');
     final fullUrl = '$_protocol$cleanUrl';
+
+    // Build custom headers map
+    final headers = <String, String>{};
+    for (final (keyCtrl, valCtrl) in _headerControllers) {
+      final k = keyCtrl.text.trim();
+      final v = valCtrl.text.trim();
+      if (k.isNotEmpty && v.isNotEmpty) headers[k] = v;
+    }
+
     final success = await auth.login(
       serverUrl: fullUrl,
       username: _usernameController.text.trim(),
       password: _passwordController.text,
+      customHeaders: headers,
     );
 
     if (mounted) {
@@ -472,6 +503,100 @@ class _LoginScreenState extends State<LoginScreen>
                                             : null,
                                     errorText: _serverError,
                                   ),
+
+                                  // Advanced: Custom Headers — must be before server validation
+                                  const SizedBox(height: 8),
+                                  GestureDetector(
+                                    onTap: () => setState(() => _showAdvanced = !_showAdvanced),
+                                    child: Row(
+                                      children: [
+                                        Icon(_showAdvanced ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                                          size: 18, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                                        const SizedBox(width: 4),
+                                        Text('Advanced', style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant.withValues(alpha: 0.5))),
+                                      ],
+                                    ),
+                                  ),
+                                  if (_showAdvanced) ...[
+                                    const SizedBox(height: 8),
+                                    Text('Custom HTTP Headers', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.onSurfaceVariant.withValues(alpha: 0.7))),
+                                    const SizedBox(height: 4),
+                                    Text('For Cloudflare tunnels or reverse proxies that require extra headers. Add headers before entering your server URL.',
+                                      style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.4))),
+                                    const SizedBox(height: 8),
+                                    ..._headerControllers.asMap().entries.map((entry) {
+                                      final i = entry.key;
+                                      final (keyCtrl, valCtrl) = entry.value;
+                                      return Padding(
+                                        padding: const EdgeInsets.only(bottom: 8),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              flex: 2,
+                                              child: TextField(
+                                                controller: keyCtrl,
+                                                style: TextStyle(fontSize: 13, color: cs.onSurface),
+                                                onChanged: (_) => _revalidateServer(),
+                                                decoration: InputDecoration(
+                                                  hintText: 'Header name',
+                                                  hintStyle: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.3), fontSize: 13),
+                                                  filled: true,
+                                                  fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+                                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              flex: 3,
+                                              child: TextField(
+                                                controller: valCtrl,
+                                                style: TextStyle(fontSize: 13, color: cs.onSurface),
+                                                onChanged: (_) => _revalidateServer(),
+                                                decoration: InputDecoration(
+                                                  hintText: 'Value',
+                                                  hintStyle: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.3), fontSize: 13),
+                                                  filled: true,
+                                                  fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+                                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            GestureDetector(
+                                              onTap: () {
+                                                setState(() {
+                                                  _headerControllers[i].$1.dispose();
+                                                  _headerControllers[i].$2.dispose();
+                                                  _headerControllers.removeAt(i);
+                                                });
+                                                _revalidateServer();
+                                              },
+                                              child: Icon(Icons.close_rounded, size: 18, color: cs.error.withValues(alpha: 0.6)),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }),
+                                    GestureDetector(
+                                      onTap: () => setState(() {
+                                        _headerControllers.add((TextEditingController(), TextEditingController()));
+                                      }),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(vertical: 8),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.add_rounded, size: 16, color: cs.primary),
+                                            const SizedBox(width: 4),
+                                            Text('Add Header', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: cs.primary)),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
 
                                   // SSO / OIDC button — shown right below server URL so keyboard doesn't hide it
                                   AnimatedSize(

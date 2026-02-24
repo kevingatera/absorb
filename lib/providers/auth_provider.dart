@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
@@ -14,6 +15,7 @@ class AuthProvider extends ChangeNotifier {
   Map<String, dynamic>? _serverSettings;
   String? _serverVersion;
   bool _serverReachable = true;
+  Map<String, String> _customHeaders = {};
 
   bool _isLoading = true;
   String? _errorMessage;
@@ -31,6 +33,7 @@ class AuthProvider extends ChangeNotifier {
   Map<String, dynamic>? get userJson => _userJson;
   Map<String, dynamic>? get serverSettings => _serverSettings;
   String? get serverVersion => _serverVersion;
+  Map<String, String> get customHeaders => _customHeaders;
   bool get isAdmin {
     final t = _userJson?['type'] as String?;
     return t == 'admin' || t == 'root';
@@ -40,7 +43,7 @@ class AuthProvider extends ChangeNotifier {
 
   ApiService? get apiService {
     if (_serverUrl != null && _token != null) {
-      return ApiService(baseUrl: _serverUrl!, token: _token!);
+      return ApiService(baseUrl: _serverUrl!, token: _token!, customHeaders: _customHeaders);
     }
     return null;
   }
@@ -66,14 +69,22 @@ class AuthProvider extends ChangeNotifier {
         _username = savedUsername;
         _defaultLibraryId = savedLibraryId;
 
+        // Restore custom headers
+        final headersJson = prefs.getString('custom_headers');
+        if (headersJson != null) {
+          try {
+            _customHeaders = Map<String, String>.from(jsonDecode(headersJson) as Map);
+          } catch (_) {}
+        }
+
         // Check if server is actually reachable
-        final reachable = await ApiService.pingServer(savedUrl);
+        final reachable = await ApiService.pingServer(savedUrl, customHeaders: _customHeaders);
         _serverReachable = reachable;
 
         // Fetch full user info (needed for isAdmin, permissions, etc.)
         if (reachable) {
           try {
-            final api = ApiService(baseUrl: savedUrl, token: savedToken);
+            final api = ApiService(baseUrl: savedUrl, token: savedToken, customHeaders: _customHeaders);
             final me = await api.getMe();
             if (me != null) {
               _userJson = me;
@@ -96,6 +107,7 @@ class AuthProvider extends ChangeNotifier {
     required String serverUrl,
     required String username,
     required String password,
+    Map<String, String> customHeaders = const {},
   }) async {
     _errorMessage = null;
     _isLoading = true;
@@ -111,7 +123,7 @@ class AuthProvider extends ChangeNotifier {
     }
 
     // Check server reachability
-    final reachable = await ApiService.pingServer(url);
+    final reachable = await ApiService.pingServer(url, customHeaders: customHeaders);
     if (!reachable) {
       _errorMessage = 'Cannot reach server at $url';
       _isLoading = false;
@@ -124,6 +136,7 @@ class AuthProvider extends ChangeNotifier {
       serverUrl: url,
       username: username,
       password: password,
+      customHeaders: customHeaders,
     );
 
     if (result == null) {
@@ -149,6 +162,7 @@ class AuthProvider extends ChangeNotifier {
     _defaultLibraryId = result['userDefaultLibraryId'] as String?;
     _userJson = user;
     _serverSettings = result['serverSettings'] as Map<String, dynamic>?;
+    _customHeaders = customHeaders;
 
     // Fetch server version from /status endpoint (fire and forget)
     _fetchServerVersion(url);
@@ -161,6 +175,12 @@ class AuthProvider extends ChangeNotifier {
       if (_username != null) await prefs.setString('username', _username!);
       if (_defaultLibraryId != null) {
         await prefs.setString('default_library_id', _defaultLibraryId!);
+      }
+      // Persist custom headers as JSON
+      if (customHeaders.isNotEmpty) {
+        await prefs.setString('custom_headers', jsonEncode(customHeaders));
+      } else {
+        await prefs.remove('custom_headers');
       }
     } catch (_) {}
 
@@ -239,7 +259,7 @@ class AuthProvider extends ChangeNotifier {
   /// Fetch server version asynchronously (non-blocking).
   void _fetchServerVersion(String url) async {
     try {
-      final version = await ApiService.getServerVersion(url);
+      final version = await ApiService.getServerVersion(url, customHeaders: _customHeaders);
       if (version != null) {
         _serverVersion = version;
         notifyListeners();
