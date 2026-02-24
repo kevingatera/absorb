@@ -116,6 +116,26 @@ class PlayerSettings {
   static Future<bool> getResetSleepOnPause() => _get('resetSleepOnPause', false);
   static Future<void> setResetSleepOnPause(bool value) => _set('resetSleepOnPause', value);
 
+  static Future<bool> getHideEbookOnly() => _get('hideEbookOnly', false);
+  static Future<void> setHideEbookOnly(bool value) => _set('hideEbookOnly', value, notify: true);
+
+  /// Check if an item has no audio content.
+  /// For minified responses (library list), duration == 0 means no audio files.
+  /// For full responses (detail sheet), we also check ebookFile + audioFiles.
+  static bool isEbookOnly(Map<String, dynamic> item) {
+    final media = item['media'] as Map<String, dynamic>? ?? {};
+    final duration = (media['duration'] as num?)?.toDouble() ?? 0;
+    if (duration > 0) return false; // Has audio content
+    // No duration — check if there's any audio indicator at all
+    final audioFiles = media['audioFiles'] as List<dynamic>?;
+    final tracks = media['tracks'] as List<dynamic>?;
+    final numAudioFiles = (media['numAudioFiles'] as num?)?.toInt() ?? 0;
+    if ((audioFiles != null && audioFiles.isNotEmpty) ||
+        (tracks != null && tracks.isNotEmpty) ||
+        numAudioFiles > 0) return false;
+    return true; // No audio by any measure
+  }
+
   // ── Per-book speed persistence ──
 
   static Future<double?> getBookSpeed(String itemId) async {

@@ -192,6 +192,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final currentTime = (progressData?['currentTime'] as num?)?.toDouble() ?? 0;
     final ebookFile = media['ebookFile'] as Map<String, dynamic>?;
 
+    final isEbookOnly = PlayerSettings.isEbookOnly(_item!);
+
     return ListView(controller: widget.scrollController, padding: EdgeInsets.fromLTRB(20, 8, 20, 32 + MediaQuery.of(context).viewPadding.bottom), children: [
       Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
@@ -225,6 +227,15 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           style: tt.labelSmall?.copyWith(color: Colors.white38)),
         const SizedBox(height: 12),
       ],
+      if (isEbookOnly)
+        SizedBox(height: 52, child: FilledButton.icon(
+          onPressed: null,
+          icon: const Icon(Icons.menu_book_rounded, size: 24),
+          label: Text('eBook Only — No Audio',
+            style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+          style: FilledButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+        ))
+      else
       SizedBox(height: 52, child: FilledButton.icon(
         onPressed: _isAbsorbing ? null : () {
           setState(() => _isAbsorbing = true);

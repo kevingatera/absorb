@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -8,6 +9,7 @@ import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/download_service.dart';
+import '../services/audio_player_service.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/book_detail_sheet.dart';
 
@@ -83,6 +85,7 @@ class LibraryScreenState extends State<LibraryScreen> {
   LibraryFilter _filter = LibraryFilter.none;
   String? _genreFilter;
   List<String> _availableGenres = [];
+  bool _hideEbookOnly = false;
   final List<Map<String, dynamic>> _items = [];
   bool _isLoadingPage = false;
   bool _hasMore = true;
@@ -110,12 +113,33 @@ class LibraryScreenState extends State<LibraryScreen> {
 
   void _tryInitialLoad() {
     final lib = context.read<LibraryProvider>();
+    PlayerSettings.getHideEbookOnly().then((v) {
+      if (mounted) setState(() => _hideEbookOnly = v);
+    });
+    PlayerSettings.settingsChanged.addListener(_onSettingsChanged);
     if (lib.selectedLibraryId != null) {
       _loadPage();
       _loadGenres();
     } else {
       lib.addListener(_onLibraryChanged);
     }
+  }
+
+  void _onSettingsChanged() {
+    PlayerSettings.getHideEbookOnly().then((v) {
+      if (mounted && v != _hideEbookOnly) {
+        _loadGeneration++;
+        setState(() {
+          _hideEbookOnly = v;
+          _items.clear();
+          _page = 0;
+          _hasMore = true;
+          _isLoadingPage = false;
+        });
+        if (_scrollController.hasClients) _scrollController.jumpTo(0);
+        _loadPage();
+      }
+    });
   }
 
   void _onLibraryChanged() {
@@ -147,6 +171,7 @@ class LibraryScreenState extends State<LibraryScreen> {
     _searchController.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
+    PlayerSettings.settingsChanged.removeListener(_onSettingsChanged);
     try {
       context.read<LibraryProvider>().removeListener(_onLibraryChanged);
     } catch (_) {}
@@ -229,6 +254,19 @@ class LibraryScreenState extends State<LibraryScreen> {
             if (_filter == LibraryFilter.downloaded) {
               final id = r['id'] as String? ?? '';
               if (!DownloadService().isDownloaded(id)) continue;
+            }
+            if (_hideEbookOnly) {
+              final media = r['media'] as Map<String, dynamic>? ?? {};
+              final dur = (media['duration'] as num?)?.toDouble() ?? 0;
+              final title = (r['media'] as Map?)?['metadata']?['title'] ?? 'unknown';
+              if (dur == 0) {
+                debugPrint('[Library] Zero-duration item: "$title" — keys: ${media.keys.toList()}');
+                debugPrint('[Library]   ebookFile: ${media['ebookFile'] != null}, numAudioFiles: ${media['numAudioFiles']}, audioFiles: ${media['audioFiles']?.length}');
+              }
+              if (PlayerSettings.isEbookOnly(r)) {
+                debugPrint('[Library] HIDING ebook-only: "$title"');
+                continue;
+              }
             }
             _items.add(r);
           }
@@ -328,6 +366,12 @@ class LibraryScreenState extends State<LibraryScreen> {
     if (result != null && mounted) {
       setState(() {
         _searchBookResults = (result['book'] as List<dynamic>?) ?? [];
+        if (_hideEbookOnly) {
+          _searchBookResults = _searchBookResults.where((r) {
+            final item = r['libraryItem'] as Map<String, dynamic>? ?? r as Map<String, dynamic>;
+            return !PlayerSettings.isEbookOnly(item);
+          }).toList();
+        }
         _searchSeriesResults = (result['series'] as List<dynamic>?) ?? [];
         _searchAuthorResults = (result['authors'] as List<dynamic>?) ?? [];
         _isSearching = false;
@@ -393,25 +437,31 @@ class LibraryScreenState extends State<LibraryScreen> {
     final tt = Theme.of(context).textTheme;
 
     return Scaffold(
-      floatingActionButton: _isInSearchMode ? null : GestureDetector(
-        onTap: () => _showSortFilterSheet(context, cs, tt),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: cs.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: cs.primary.withValues(alpha: 0.2)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(_filter != LibraryFilter.none ? Icons.filter_list_rounded : Icons.tune_rounded, size: 16, color: cs.primary),
-              const SizedBox(width: 6),
-              Text(
-                _filter != LibraryFilter.none ? 'Sort & Filter ●' : 'Sort & Filter',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: cs.primary),
+      floatingActionButton: _isInSearchMode ? null : ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: GestureDetector(
+            onTap: () => _showSortFilterSheet(context, cs, tt),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: cs.surface.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: cs.primary.withValues(alpha: 0.25)),
               ),
-            ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(_filter != LibraryFilter.none ? Icons.filter_list_rounded : Icons.tune_rounded, size: 16, color: cs.primary),
+                  const SizedBox(width: 6),
+                  Text(
+                    _filter != LibraryFilter.none ? 'Sort & Filter ●' : 'Sort & Filter',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: cs.primary),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

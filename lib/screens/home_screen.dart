@@ -20,16 +20,42 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _player = AudioPlayerService();
+  bool _hideEbookOnly = false;
 
   @override
   void initState() {
     super.initState();
     _player.addListener(_onPlayerChanged);
+    _loadSettings();
     Future.microtask(() {
       final lib = context.read<LibraryProvider>();
       if (lib.libraries.isEmpty) lib.loadLibraries();
       lib.refreshLocalProgress();
     });
+  }
+
+  Future<void> _loadSettings() async {
+    final hide = await PlayerSettings.getHideEbookOnly();
+    if (mounted) setState(() => _hideEbookOnly = hide);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh setting when returning to screen
+    _loadSettings();
+  }
+
+  List<dynamic> _filterEbookOnly(List<dynamic> items) {
+    if (!_hideEbookOnly) return items;
+    return items.where((e) {
+      if (e is! Map<String, dynamic>) return true;
+      // Personalized view entities may nest the item under 'libraryItem'
+      final item = e.containsKey('libraryItem')
+          ? e['libraryItem'] as Map<String, dynamic>? ?? e
+          : e;
+      return !PlayerSettings.isEbookOnly(item);
+    }).toList();
   }
 
   @override
@@ -136,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   List<dynamic> clItems = [];
                   for (final section in lib.personalizedSections) {
                     if (section['id'] == 'continue-listening') {
-                      clItems = (section['entities'] as List<dynamic>?) ?? [];
+                      clItems = _filterEbookOnly((section['entities'] as List<dynamic>?) ?? []);
                       break;
                     }
                   }
@@ -270,7 +296,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   final label = section['label'] ??
                       _sectionLabels[id] ?? _titleCase(id);
                   final entities =
-                      (section['entities'] as List<dynamic>?) ?? [];
+                      _filterEbookOnly((section['entities'] as List<dynamic>?) ?? []);
                   final type = section['type'] ?? 'book';
                   if (entities.isEmpty) return const SliverToBoxAdapter();
 

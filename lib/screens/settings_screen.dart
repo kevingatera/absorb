@@ -36,6 +36,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _resetSleepOnPause = false;
   int _shakeAddMinutes = 5;
   bool _autoContinueSeries = true;
+  bool _hideEbookOnly = false;
   bool _loaded = false;
   String _downloadLocationLabel = 'App Internal Storage (Default)';
   int _totalDownloadSizeBytes = 0;
@@ -60,6 +61,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final resetOnPause = await PlayerSettings.getResetSleepOnPause();
     final shakeMins = await PlayerSettings.getShakeAddMinutes();
     final autoSeries = await PlayerSettings.getAutoContinueSeries();
+    final hideEbook = await PlayerSettings.getHideEbookOnly();
     final dlLabel = await DownloadService().downloadLocationLabel;
     final dlSize = await DownloadService().totalDownloadSize;
     final autoSleep = await AutoSleepSettings.load();
@@ -76,6 +78,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _resetSleepOnPause = resetOnPause;
       _shakeAddMinutes = shakeMins;
       _autoContinueSeries = autoSeries;
+      _hideEbookOnly = hideEbook;
       _downloadLocationLabel = dlLabel;
       _totalDownloadSizeBytes = dlSize;
       _autoSleepSettings = autoSleep;
@@ -820,30 +823,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 16),
 
                 // ── Library ──
-                if (lib.libraries.where((l) => (l['mediaType'] as String? ?? 'book') != 'podcast').length > 1) ...[
-                  _CollapsibleSection(
-                    icon: Icons.auto_stories_outlined,
-                    title: 'Library',
-                    cs: cs,
-                    children: lib.libraries
-                      .where((l) => (l['mediaType'] as String? ?? 'book') != 'podcast')
-                      .map((library) {
-                      final id = library['id'] as String;
-                      final name = library['name'] as String? ?? 'Library';
-                      final mediaType = library['mediaType'] as String? ?? 'book';
-                      final isSelected = id == lib.selectedLibraryId;
-                      return ListTile(
-                        leading: Icon(
-                          mediaType == 'podcast' ? Icons.podcasts_rounded : Icons.auto_stories_rounded,
-                          color: isSelected ? cs.primary : cs.onSurfaceVariant),
-                        title: Text(name),
-                        trailing: isSelected ? Icon(Icons.check_circle_rounded, color: cs.primary) : null,
-                        onTap: () { if (!isSelected) lib.selectLibrary(id); },
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 16),
-                ],
+                _CollapsibleSection(
+                  icon: Icons.auto_stories_outlined,
+                  title: 'Library',
+                  cs: cs,
+                  children: [
+                    SwitchListTile(
+                      title: const Text('Hide eBook-only titles'),
+                      subtitle: Text(
+                        _hideEbookOnly
+                            ? 'Books with no audio files are hidden'
+                            : 'Off — all library items shown',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _hideEbookOnly,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _hideEbookOnly = v);
+                        PlayerSettings.setHideEbookOnly(v);
+                      } : null,
+                    ),
+                    if (lib.libraries.where((l) => (l['mediaType'] as String? ?? 'book') != 'podcast').length > 1) ...[
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      ...lib.libraries
+                        .where((l) => (l['mediaType'] as String? ?? 'book') != 'podcast')
+                        .map((library) {
+                        final id = library['id'] as String;
+                        final name = library['name'] as String? ?? 'Library';
+                        final mediaType = library['mediaType'] as String? ?? 'book';
+                        final isSelected = id == lib.selectedLibraryId;
+                        return ListTile(
+                          leading: Icon(
+                            mediaType == 'podcast' ? Icons.podcasts_rounded : Icons.auto_stories_rounded,
+                            color: isSelected ? cs.primary : cs.onSurfaceVariant),
+                          title: Text(name),
+                          trailing: isSelected ? Icon(Icons.check_circle_rounded, color: cs.primary) : null,
+                          onTap: () { if (!isSelected) lib.selectLibrary(id); },
+                        );
+                      }),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 16),
 
                 // ── Permissions ──
                 _CollapsibleSection(
