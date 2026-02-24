@@ -106,6 +106,9 @@ class SleepTimerService extends ChangeNotifier {
   bool _warningSent = false;
   static const _warningThreshold = Duration(seconds: 30);
 
+  // Reset on pause/play
+  bool _wasPlaying = false; // tracks play state transitions
+
   // ── Getters ──
   SleepTimerMode get mode => _mode;
   Duration get timeRemaining => _timeRemaining;
@@ -144,13 +147,28 @@ class SleepTimerService extends ChangeNotifier {
 
   void _startTimeCountdown() {
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+    _wasPlaying = _player.isPlaying;
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) async {
       if (_timeRemaining.inSeconds <= 0) {
         _triggerSleep();
         return;
       }
+      final isPlaying = _player.isPlaying;
+
+      // Detect pause→play transition and reset if setting is on
+      if (isPlaying && !_wasPlaying) {
+        final resetOnPause = await PlayerSettings.getResetSleepOnPause();
+        if (resetOnPause) {
+          _timeRemaining = _initialDuration;
+          _warningSent = false;
+          debugPrint('[SleepTimer] Reset to ${_initialDuration.inMinutes}m on resume');
+          onToast?.call('Sleep timer reset: ${_initialDuration.inMinutes}m');
+        }
+      }
+      _wasPlaying = isPlaying;
+
       // Only count down when playing
-      if (_player.isPlaying) {
+      if (isPlaying) {
         _timeRemaining -= const Duration(seconds: 1);
 
         // Wind-down warning vibration at 30 seconds

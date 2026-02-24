@@ -33,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _forwardSkip = 30;
   int _backSkip = 10;
   bool _shakeToResetSleep = true;
+  bool _resetSleepOnPause = false;
   int _shakeAddMinutes = 5;
   bool _autoContinueSeries = true;
   bool _loaded = false;
@@ -56,6 +57,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final fwd = await PlayerSettings.getForwardSkip();
     final bk = await PlayerSettings.getBackSkip();
     final shake = await PlayerSettings.getShakeToResetSleep();
+    final resetOnPause = await PlayerSettings.getResetSleepOnPause();
     final shakeMins = await PlayerSettings.getShakeAddMinutes();
     final autoSeries = await PlayerSettings.getAutoContinueSeries();
     final dlLabel = await DownloadService().downloadLocationLabel;
@@ -71,6 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _forwardSkip = fwd;
       _backSkip = bk;
       _shakeToResetSleep = shake;
+      _resetSleepOnPause = resetOnPause;
       _shakeAddMinutes = shakeMins;
       _autoContinueSeries = autoSeries;
       _downloadLocationLabel = dlLabel;
@@ -638,6 +641,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const SizedBox(height: 4),
                     ],
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    SwitchListTile(
+                      title: const Text('Reset timer on pause'),
+                      subtitle: Text(
+                        _resetSleepOnPause
+                            ? 'Timer restarts from full duration when you resume'
+                            : 'Timer continues from where it left off',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _resetSleepOnPause,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _resetSleepOnPause = v);
+                        PlayerSettings.setResetSleepOnPause(v);
+                      } : null,
+                    ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     // ── Auto Sleep Timer ──
                     SwitchListTile(

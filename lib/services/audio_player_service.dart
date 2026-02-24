@@ -113,6 +113,9 @@ class PlayerSettings {
   static Future<int> getShakeAddMinutes() => _get('shakeAddMinutes', 5);
   static Future<void> setShakeAddMinutes(int minutes) => _set('shakeAddMinutes', minutes);
 
+  static Future<bool> getResetSleepOnPause() => _get('resetSleepOnPause', false);
+  static Future<void> setResetSleepOnPause(bool value) => _set('resetSleepOnPause', value);
+
   // ── Per-book speed persistence ──
 
   static Future<double?> getBookSpeed(String itemId) async {
