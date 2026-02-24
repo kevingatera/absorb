@@ -82,17 +82,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       _refreshData();
       // Check auto sleep in case we resumed into the window
       SleepTimerService().checkAutoSleep();
-    } else if (state == AppLifecycleState.detached) {
-      _stopAndSync();
-    }
-  }
-
-  Future<void> _stopAndSync() async {
-    final player = AudioPlayerService();
-    if (player.hasBook) {
-      debugPrint('[AppShell] App detached — stopping playback and syncing');
-      await player.pause();
-      await player.stop();
     }
   }
 
@@ -115,8 +104,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
-  DateTime? _lastBackPress;
-
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -131,23 +118,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           return;
         }
 
-        // If already on Absorbing tab, double-press to exit
+        // If already on Absorbing tab, move app to background (keep playback alive)
         if (_currentIndex == 2) {
-          final now = DateTime.now();
-          if (_lastBackPress != null &&
-              now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
-            SystemNavigator.pop();
-          } else {
-            _lastBackPress = now;
-            ScaffoldMessenger.of(context)
-              ..clearSnackBars()
-              ..showSnackBar(
-                const SnackBar(
-                  content: Text('Press back again to exit'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-          }
+          SystemChannels.platform.invokeMethod('SystemNavigator.pop', true);
           return;
         }
 

@@ -910,6 +910,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               mode: LaunchMode.externalApplication),
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      Card(
+                        color: cs.surfaceContainerHigh,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                        clipBehavior: Clip.antiAlias,
+                        child: ListTile(
+                          leading: Icon(Icons.coffee_rounded,
+                              color: Colors.amber.shade600),
+                          title: const Text('Support the Dev'),
+                          subtitle: Text('Buy me a coffee',
+                              style: tt.bodySmall
+                                  ?.copyWith(color: cs.onSurfaceVariant)),
+                          trailing: Icon(Icons.favorite_rounded,
+                              size: 18, color: Colors.amber.shade600),
+                          onTap: () => launchUrl(
+                              Uri.parse(
+                                  'https://www.buymeacoffee.com/BarnabasApps'),
+                              mode: LaunchMode.externalApplication),
+                        ),
+                      ),
                       const SizedBox(height: 12),
                       Text(
                         auth.serverVersion != null

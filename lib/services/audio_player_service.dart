@@ -140,12 +140,24 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
   }
 
+  // Custom media controls with round-style icons
+  static const _rewind = MediaControl(
+    androidIcon: 'drawable/ic_replay',
+    label: 'Rewind',
+    action: MediaAction.rewind,
+  );
+  static const _fastForward = MediaControl(
+    androidIcon: 'drawable/ic_forward',
+    label: 'Forward',
+    action: MediaAction.fastForward,
+  );
+
   PlaybackState _transformEvent(PlaybackEvent event) {
     return PlaybackState(
       controls: [
-        MediaControl.rewind,
+        _rewind,
         if (_player.playing) MediaControl.pause else MediaControl.play,
-        MediaControl.fastForward,
+        _fastForward,
       ],
       systemActions: const {
         MediaAction.seek,
@@ -226,7 +238,6 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       final skipAmount = await PlayerSettings.getForwardSkip();
       await _player.seek(_player.position + Duration(seconds: skipAmount));
     }
-    debugPrint('[Handler] fastForward done — playing=${_player.playing}');
   }
 
   @override
@@ -241,13 +252,12 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       if (pos < Duration.zero) pos = Duration.zero;
       await _player.seek(pos);
     }
-    debugPrint('[Handler] rewind done — playing=${_player.playing}');
   }
 
   // Note: skipToNext/skipToPrevious are intentionally NOT overridden here.
   // Android Auto renders controls based on which actions the handler declares.
-  // Overriding skip methods causes Auto to show track-skip (⏭) icons instead
-  // of the rewind/forward (↻) circular arrows we want for audiobooks.
+  // Overriding skip methods causes Auto to show track-skip icons instead
+  // of the rewind/forward circular arrows we want for audiobooks.
   // Headset button presses route through onClick() below instead.
 
   // Custom click handler with proper multi-press detection
@@ -443,6 +453,7 @@ class AudioPlayerService extends ChangeNotifier {
   // We store cumulative start offsets so we can compute absolute book position.
   List<double> _trackStartOffsets = []; // [0, dur0, dur0+dur1, ...]
   int _currentTrackIndex = 0;
+  int _lastNotifiedChapterIndex = -1;
   StreamSubscription? _indexSub;
 
   /// The last seek target in seconds (absolute book position).
@@ -1002,16 +1013,19 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   void _pushMediaItem(String itemId, String title, String author,
-      String? coverUrl, double totalDuration) {
-    _updateNotificationMediaItem(itemId, title, author, coverUrl, totalDuration);
+      String? coverUrl, double totalDuration, {String? chapter}) {
+    _updateNotificationMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: chapter);
   }
 
   void _updateNotificationMediaItem(String itemId, String title, String author,
-      String? coverUrl, double totalDuration) {
+      String? coverUrl, double totalDuration, {String? chapter}) {
+    final displayArtist = chapter != null && chapter.isNotEmpty
+        ? '$author · $chapter'
+        : author;
     _handler!.mediaItem.add(MediaItem(
       id: itemId,
       title: title,
-      artist: author,
+      artist: displayArtist,
       album: title,
       duration: Duration(seconds: totalDuration.round()),
       artUri: coverUrl != null ? Uri.tryParse(coverUrl) : null,
@@ -1027,6 +1041,7 @@ class AudioPlayerService extends ChangeNotifier {
     _isOfflineMode = false;
     _trackStartOffsets = [];
     _currentTrackIndex = 0;
+    _lastNotifiedChapterIndex = -1;
     _lastSeekTargetSeconds = null;
     _lastSeekTime = null;
     _indexSub?.cancel();
@@ -1088,6 +1103,32 @@ class AudioPlayerService extends ChangeNotifier {
       final absolutePos = position; // uses the getter which adds track offset
       final sec = absolutePos.inSeconds;
       if (sec <= 0) return;
+
+      // ─── Chapter change detection ──────────────────────────
+      // Update notification subtitle when the chapter changes
+      if (_chapters.isNotEmpty && _currentItemId != null) {
+        final posSeconds = absolutePos.inMilliseconds / 1000.0;
+        int chapterIdx = -1;
+        String? chapterTitle;
+        for (int i = 0; i < _chapters.length; i++) {
+          final ch = _chapters[i] as Map<String, dynamic>;
+          final start = (ch['start'] as num?)?.toDouble() ?? 0;
+          final end = (ch['end'] as num?)?.toDouble() ?? 0;
+          if (posSeconds >= start && posSeconds < end) {
+            chapterIdx = i;
+            chapterTitle = ch['title'] as String?;
+            break;
+          }
+        }
+        if (chapterIdx >= 0 && chapterIdx != _lastNotifiedChapterIndex) {
+          _lastNotifiedChapterIndex = chapterIdx;
+          _pushMediaItem(
+            _currentItemId!, _currentTitle ?? '', _currentAuthor ?? '',
+            _currentCoverUrl, _totalDuration,
+            chapter: chapterTitle,
+          );
+        }
+      }
 
       // ─── Completion detection ─────────────────────────────
       // Check if we've reached the end of the book
