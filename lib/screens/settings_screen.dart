@@ -11,6 +11,7 @@ import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import '../services/sleep_timer_service.dart';
 import '../services/user_account_service.dart';
+import '../services/update_checker_service.dart';
 import '../screens/login_screen.dart';
 import '../screens/app_shell.dart';
 import '../screens/admin_screen.dart';
@@ -970,6 +971,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      GestureDetector(
+                        onTap: () async {
+                          final update = await UpdateCheckerService.check(force: true);
+                          if (!mounted) return;
+                          if (update != null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Absorb ${update.latestVersion} is available!'),
+                                action: SnackBarAction(
+                                  label: 'Download',
+                                  onPressed: () => launchUrl(Uri.parse(update.downloadUrl), mode: LaunchMode.externalApplication),
+                                ),
+                              ),
+                            );
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('You\'re on the latest version')),
+                            );
+                          }
+                        },
+                        child: Text('Check for updates',
+                          style: tt.bodySmall?.copyWith(color: cs.primary, fontWeight: FontWeight.w600)),
+                      ),
+                      const SizedBox(height: 8),
                       Text(
                         auth.serverVersion != null
                             ? 'Absorb v$_appVersion  ·  Server ${auth.serverVersion}'

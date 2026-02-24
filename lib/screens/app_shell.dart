@@ -2,10 +2,12 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/sleep_timer_service.dart';
 import '../services/android_auto_service.dart';
+import '../services/update_checker_service.dart';
 import 'absorbing_screen.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
@@ -67,6 +69,41 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     super.initState();
     _instance = this;
     WidgetsBinding.instance.addObserver(this);
+    _checkForUpdate();
+  }
+
+  Future<void> _checkForUpdate() async {
+    final update = await UpdateCheckerService.check();
+    if (update != null && mounted) {
+      _showUpdateBanner(update);
+    }
+  }
+
+  void _showUpdateBanner(UpdateInfo update) {
+    ScaffoldMessenger.of(context).showMaterialBanner(
+      MaterialBanner(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+        leading: Icon(Icons.system_update_rounded, color: Theme.of(context).colorScheme.primary),
+        content: Text('Absorb ${update.latestVersion} is available',
+          style: TextStyle(fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurface)),
+        actions: [
+          TextButton(
+            onPressed: () {
+              ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+              UpdateCheckerService.dismiss(update.latestVersion);
+            },
+            child: const Text('Later'),
+          ),
+          FilledButton(
+            onPressed: () {
+              ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+              launchUrl(Uri.parse(update.downloadUrl), mode: LaunchMode.externalApplication);
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
