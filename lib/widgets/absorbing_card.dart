@@ -415,13 +415,26 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                           ),
                         )),
                       ]),
+                      const SizedBox(height: 8),
                       // More menu: Details + History (centered below buttons)
                       Center(
                         child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
                           onTap: () => _showMoreMenu(context, accent, tt),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Icon(Icons.more_horiz_rounded, size: 22, color: Colors.white38),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.more_horiz_rounded, size: 18, color: Colors.white54),
+                                const SizedBox(width: 4),
+                                Text('More', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.white54)),
+                              ],
+                            ),
                           ),
                         ),
                       ),
