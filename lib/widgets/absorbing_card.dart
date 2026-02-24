@@ -14,6 +14,8 @@ import 'equalizer_sheet.dart';
 import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
 import 'card_buttons.dart';
+import 'chromecast_button.dart';
+import '../services/chromecast_service.dart';
 
 class AbsorbingCard extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -660,6 +662,43 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                   label: 'Book Details',
                   accent: accent,
                   onTap: () { Navigator.pop(ctx); showBookDetailSheet(context, _itemId); },
+                ),
+                const SizedBox(height: 6),
+                // Cast to device
+                ListenableBuilder(
+                  listenable: ChromecastService(),
+                  builder: (_, __) {
+                    final cast = ChromecastService();
+                    return MoreMenuItem(
+                      icon: cast.isConnected ? Icons.cast_connected_rounded : Icons.cast_rounded,
+                      label: cast.isCasting ? 'Casting to ${cast.connectedDeviceName ?? "device"}' : 'Cast to Device',
+                      accent: accent,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        if (cast.isConnected && !cast.isCasting) {
+                          final auth = context.read<AuthProvider>();
+                          final api = auth.apiService;
+                          if (api != null) {
+                            cast.castItem(
+                              api: api, itemId: _itemId, title: _title, author: _author,
+                              coverUrl: _coverUrl, totalDuration: _duration, chapters: _chapters,
+                            );
+                          }
+                        } else if (cast.isCasting) {
+                          showModalBottomSheet(
+                            context: context,
+                            backgroundColor: const Color(0xFF1A1A1A),
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                            ),
+                            builder: (_) => CastControlSheet(),
+                          );
+                        } else {
+                          showCastDevicePicker(context);
+                        }
+                      },
+                    );
+                  },
                 ),
                 const SizedBox(height: 6),
                 // Equalizer / Audio Enhancements

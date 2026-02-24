@@ -13,6 +13,7 @@ import 'progress_sync_service.dart';
 import 'sleep_timer_service.dart';
 import 'equalizer_service.dart';
 import 'android_auto_service.dart';
+import 'chromecast_service.dart';
 
 // ─── Auto-rewind settings ───
 
@@ -689,6 +690,13 @@ class AudioPlayerService extends ChangeNotifier {
     if (_handler == null) {
       debugPrint('[Player] Handler not initialized!');
       return false;
+    }
+
+    // Stop Chromecast if currently casting
+    final cast = ChromecastService();
+    if (cast.isCasting) {
+      debugPrint('[Player] Stopping Chromecast before local playback');
+      await cast.stopCasting();
     }
 
     _api = api;
