@@ -92,10 +92,14 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               Row(children: [
                 Flexible(child: Text(username, style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: Colors.white), overflow: TextOverflow.ellipsis)),
                 const SizedBox(width: 6),
-                if (type == 'admin' || type == 'root') Container(
+                if (type == 'root') Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
+                  child: Text('root', style: tt.labelSmall?.copyWith(color: Colors.amber, fontSize: 9, fontWeight: FontWeight.w600)))
+                else if (type == 'admin') Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                   decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
-                  child: Text(type, style: tt.labelSmall?.copyWith(color: cs.primary, fontSize: 9, fontWeight: FontWeight.w600))),
+                  child: Text('admin', style: tt.labelSmall?.copyWith(color: cs.primary, fontSize: 9, fontWeight: FontWeight.w600))),
                 if (isLocked) ...[const SizedBox(width: 4), Icon(Icons.lock_rounded, size: 12, color: Colors.red.withValues(alpha: 0.6))],
                 if (!isActive) ...[const SizedBox(width: 4), Container(
                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -268,8 +272,11 @@ class _UserDetailScreenState extends State<_UserDetailScreen> {
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
-                child: Text(_userType, style: tt.labelSmall?.copyWith(color: cs.primary, fontSize: 9, fontWeight: FontWeight.w600)),
+                decoration: BoxDecoration(
+                  color: _isRoot ? Colors.amber.withValues(alpha: 0.12) : cs.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4)),
+                child: Text(_userType, style: tt.labelSmall?.copyWith(
+                  color: _isRoot ? Colors.amber : cs.primary, fontSize: 9, fontWeight: FontWeight.w600)),
               ),
             ]),
           ),

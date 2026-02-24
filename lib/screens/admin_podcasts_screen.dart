@@ -972,6 +972,7 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
   }
 
   void _showEpisodeDetail(Map<String, dynamic> ep, bool alreadyDownloaded) {
+    final isRoot = context.read<AuthProvider>().isRoot;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -980,6 +981,7 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
       builder: (_) => _EpisodeDetailSheet(
         episode: ep,
         alreadyDownloaded: alreadyDownloaded,
+        canDownload: isRoot,
         onDownload: () {
           Navigator.pop(context);
           _downloadEpisode(ep);
@@ -1037,8 +1039,9 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
 class _EpisodeDetailSheet extends StatelessWidget {
   final Map<String, dynamic> episode;
   final bool alreadyDownloaded;
+  final bool canDownload;
   final VoidCallback onDownload;
-  const _EpisodeDetailSheet({required this.episode, required this.alreadyDownloaded, required this.onDownload});
+  const _EpisodeDetailSheet({required this.episode, required this.alreadyDownloaded, this.canDownload = true, required this.onDownload});
 
   @override
   Widget build(BuildContext context) {
@@ -1127,15 +1130,15 @@ class _EpisodeDetailSheet extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(flex: 2,
               child: FilledButton.icon(
-                onPressed: alreadyDownloaded ? null : onDownload,
+                onPressed: (alreadyDownloaded || !canDownload) ? null : onDownload,
                 icon: Icon(alreadyDownloaded ? Icons.check_circle_rounded : Icons.download_rounded, size: 18),
-                label: Text(alreadyDownloaded ? 'Downloaded' : 'Download',
+                label: Text(alreadyDownloaded ? 'Downloaded' : !canDownload ? 'Root Only' : 'Download',
                   style: const TextStyle(fontWeight: FontWeight.w700)),
                 style: FilledButton.styleFrom(
                   backgroundColor: alreadyDownloaded ? Colors.green.withValues(alpha: 0.15) : cs.primary,
                   foregroundColor: alreadyDownloaded ? Colors.green : cs.onPrimary,
-                  disabledBackgroundColor: Colors.green.withValues(alpha: 0.15),
-                  disabledForegroundColor: Colors.green,
+                  disabledBackgroundColor: alreadyDownloaded ? Colors.green.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.06),
+                  disabledForegroundColor: alreadyDownloaded ? Colors.green : Colors.white38,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),

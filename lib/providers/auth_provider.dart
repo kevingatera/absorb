@@ -36,6 +36,8 @@ class AuthProvider extends ChangeNotifier {
     return t == 'admin' || t == 'root';
   }
 
+  bool get isRoot => _userJson?['type'] == 'root';
+
   ApiService? get apiService {
     if (_serverUrl != null && _token != null) {
       return ApiService(baseUrl: _serverUrl!, token: _token!);
