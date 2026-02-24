@@ -5,7 +5,6 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../widgets/home_section.dart';
-import '../widgets/library_selector.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/shimmer.dart';
 import '../widgets/book_detail_sheet.dart';
@@ -71,6 +70,65 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _showLibraryPicker(BuildContext context, ColorScheme cs, TextTheme tt, List<dynamic> bookLibraries, LibraryProvider lib) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final bottomPad = MediaQuery.of(ctx).viewPadding.bottom;
+        return Container(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.6),
+          decoration: BoxDecoration(
+            color: cs.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Center(child: Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: cs.onSurfaceVariant.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text('Select Library', style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.only(bottom: bottomPad + 16),
+                  itemCount: bookLibraries.length,
+                  itemBuilder: (_, i) {
+                    final library = bookLibraries[i] as Map<String, dynamic>;
+                    final id = library['id'] as String;
+                    final name = library['name'] as String? ?? 'Library';
+                    final isSelected = id == lib.selectedLibraryId;
+                    return ListTile(
+                      leading: Icon(Icons.auto_stories_rounded,
+                        color: isSelected ? cs.primary : cs.onSurfaceVariant),
+                      title: Text(name),
+                      trailing: isSelected
+                          ? Icon(Icons.check_circle_rounded, color: cs.primary)
+                          : null,
+                      selected: isSelected,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        if (!isSelected) lib.selectLibrary(id);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   static const _prioritySections = [
     'continue-listening',
     'continue-series',
@@ -122,6 +180,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final lib = context.watch<LibraryProvider>();
+    final bookLibraries = lib.libraries.where((l) => (l['mediaType'] as String? ?? 'book') != 'podcast').toList();
+    final libraryName = lib.selectedLibrary?['name'] as String? ?? 'Library';
 
     return Scaffold(
       body: Container(
@@ -149,8 +209,32 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: AbsorbPageHeader(
                   title: 'Home',
                   actions: [
-                    if (!lib.isOffline && lib.libraries.length > 1)
-                      const LibrarySelectorButton(),
+                    if (!lib.isOffline && bookLibraries.length > 1)
+                      GestureDetector(
+                        onTap: () => _showLibraryPicker(context, cs, tt, bookLibraries, lib),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: cs.onSurface.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.auto_stories_rounded, size: 14, color: cs.onSurfaceVariant),
+                              const SizedBox(width: 6),
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 140),
+                                child: Text(libraryName, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.onSurfaceVariant),
+                                  overflow: TextOverflow.ellipsis, maxLines: 1),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(Icons.unfold_more_rounded, size: 14, color: cs.onSurfaceVariant),
+                            ],
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
