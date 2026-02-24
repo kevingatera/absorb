@@ -73,7 +73,9 @@ class LibrarySelectorButton extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              ...lib.libraries.map((library) {
+              ...lib.libraries
+                .where((library) => (library['mediaType'] as String? ?? 'book') != 'podcast')
+                .map((library) {
                 final id = library['id'] as String;
                 final name = library['name'] as String? ?? 'Library';
                 final icon = library['icon'] as String?;

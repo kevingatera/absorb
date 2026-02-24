@@ -803,12 +803,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 16),
 
                 // ── Library ──
-                if (lib.libraries.length > 1) ...[
+                if (lib.libraries.where((l) => (l['mediaType'] as String? ?? 'book') != 'podcast').length > 1) ...[
                   _CollapsibleSection(
                     icon: Icons.auto_stories_outlined,
                     title: 'Library',
                     cs: cs,
-                    children: lib.libraries.map((library) {
+                    children: lib.libraries
+                      .where((l) => (l['mediaType'] as String? ?? 'book') != 'podcast')
+                      .map((library) {
                       final id = library['id'] as String;
                       final name = library['name'] as String? ?? 'Library';
                       final mediaType = library['mediaType'] as String? ?? 'book';

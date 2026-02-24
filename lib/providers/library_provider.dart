@@ -334,8 +334,17 @@ class LibraryProvider extends ChangeNotifier {
       _libraries = await _api!.getLibraries();
 
       if (_libraries.isNotEmpty) {
-        _selectedLibraryId =
-            _auth?.defaultLibraryId ?? _libraries.first['id'];
+        // Prefer the user's default library, otherwise pick the first book library
+        final bookLibraries = _libraries.where(
+            (l) => (l['mediaType'] as String? ?? 'book') != 'podcast').toList();
+        final defaultId = _auth?.defaultLibraryId;
+        if (defaultId != null && bookLibraries.any((l) => l['id'] == defaultId)) {
+          _selectedLibraryId = defaultId;
+        } else if (bookLibraries.isNotEmpty) {
+          _selectedLibraryId = bookLibraries.first['id'];
+        } else {
+          _selectedLibraryId = _libraries.first['id'];
+        }
         await loadPersonalizedView();
       }
     } catch (e) {

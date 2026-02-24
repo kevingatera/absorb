@@ -12,10 +12,10 @@ import '../widgets/absorb_page_header.dart';
 import '../widgets/book_detail_sheet.dart';
 
 // ─── Sort modes ──────────────────────────────────────────────
-enum LibrarySort { recentlyAdded, alphabetical, duration, random }
+enum LibrarySort { recentlyAdded, alphabetical, authorName, publishedYear, duration, random }
 
 // ─── Filter modes ────────────────────────────────────────────
-enum LibraryFilter { none, inProgress, finished, notStarted, downloaded, hasEbook }
+enum LibraryFilter { none, inProgress, finished, notStarted, downloaded, hasEbook, genre }
 
 /// Show a bottom sheet with all books in a series, sorted by sequence.
 /// Can be called from any screen.
@@ -81,6 +81,8 @@ class LibraryScreenState extends State<LibraryScreen> {
   LibrarySort _sort = LibrarySort.recentlyAdded;
   bool _sortAsc = false; // false = desc (newest/longest first), true = asc
   LibraryFilter _filter = LibraryFilter.none;
+  String? _genreFilter;
+  List<String> _availableGenres = [];
   final List<Map<String, dynamic>> _items = [];
   bool _isLoadingPage = false;
   bool _hasMore = true;
@@ -110,8 +112,8 @@ class LibraryScreenState extends State<LibraryScreen> {
     final lib = context.read<LibraryProvider>();
     if (lib.selectedLibraryId != null) {
       _loadPage();
+      _loadGenres();
     } else {
-      // Library not ready yet — listen for changes
       lib.addListener(_onLibraryChanged);
     }
   }
@@ -121,6 +123,21 @@ class LibraryScreenState extends State<LibraryScreen> {
     if (lib.selectedLibraryId != null && _items.isEmpty && !_isLoadingPage) {
       lib.removeListener(_onLibraryChanged);
       _loadPage();
+      _loadGenres();
+    }
+  }
+
+  Future<void> _loadGenres() async {
+    final auth = context.read<AuthProvider>();
+    final lib = context.read<LibraryProvider>();
+    final api = auth.apiService;
+    if (api == null || lib.selectedLibraryId == null) return;
+    final filterData = await api.getLibraryFilterData(lib.selectedLibraryId!);
+    if (filterData != null && mounted) {
+      final genres = filterData['genres'] as List<dynamic>? ?? [];
+      setState(() {
+        _availableGenres = genres.map((g) => g is Map ? (g['name'] as String? ?? '') : g.toString()).where((g) => g.isNotEmpty).toList()..sort();
+      });
     }
   }
 
@@ -163,24 +180,19 @@ class LibraryScreenState extends State<LibraryScreen> {
     int desc;
     switch (_sort) {
       case LibrarySort.recentlyAdded:
-        sort = 'addedAt';
-        desc = _sortAsc ? 0 : 1;
-        break;
+        sort = 'addedAt'; desc = _sortAsc ? 0 : 1; break;
       case LibrarySort.alphabetical:
-        sort = 'media.metadata.title';
-        desc = _sortAsc ? 0 : 1;
-        break;
+        sort = 'media.metadata.title'; desc = _sortAsc ? 0 : 1; break;
+      case LibrarySort.authorName:
+        sort = 'media.metadata.authorNameLF'; desc = _sortAsc ? 0 : 1; break;
+      case LibrarySort.publishedYear:
+        sort = 'media.metadata.publishedYear'; desc = _sortAsc ? 0 : 1; break;
       case LibrarySort.duration:
-        sort = 'media.duration';
-        desc = _sortAsc ? 0 : 1;
-        break;
+        sort = 'media.duration'; desc = _sortAsc ? 0 : 1; break;
       case LibrarySort.random:
-        sort = 'addedAt';
-        desc = 1;
-        break;
+        sort = 'addedAt'; desc = 1; break;
     }
 
-    // Server-side progress filter (ABS format: progress.<base64value>)
     String? filter;
     if (_filter == LibraryFilter.inProgress) {
       filter = 'progress.${base64Encode(utf8.encode('in-progress'))}';
@@ -190,6 +202,8 @@ class LibraryScreenState extends State<LibraryScreen> {
       filter = 'progress.${base64Encode(utf8.encode('not-started'))}';
     } else if (_filter == LibraryFilter.hasEbook) {
       filter = 'ebooks.${base64Encode(utf8.encode('ebook'))}';
+    } else if (_filter == LibraryFilter.genre && _genreFilter != null) {
+      filter = 'genres.${base64Encode(utf8.encode(_genreFilter!))}';
     }
     // Downloaded filter is client-side — handled after loading
 
@@ -254,7 +268,7 @@ class LibraryScreenState extends State<LibraryScreen> {
     setState(() {
       _sort = newSort;
       // Smart defaults: A-Z and Length start ascending, others start descending
-      _sortAsc = newSort == LibrarySort.alphabetical || newSort == LibrarySort.duration;
+      _sortAsc = newSort == LibrarySort.alphabetical || newSort == LibrarySort.authorName || newSort == LibrarySort.duration;
       _items.clear();
       _page = 0;
       _hasMore = true;
@@ -268,13 +282,13 @@ class LibraryScreenState extends State<LibraryScreen> {
   }
 
   // ── Change filter and reload ──
-  void _changeFilter(LibraryFilter newFilter) {
-    // Tapping the active filter toggles it off
-    final effective = newFilter == _filter ? LibraryFilter.none : newFilter;
-    if (effective == _filter) return;
-    _loadGeneration++; // cancel any in-flight loads
+  void _changeFilter(LibraryFilter newFilter, {String? genre}) {
+    final effective = (newFilter == _filter && genre == _genreFilter) ? LibraryFilter.none : newFilter;
+    if (effective == _filter && genre == _genreFilter) return;
+    _loadGeneration++;
     setState(() {
       _filter = effective;
+      _genreFilter = effective == LibraryFilter.genre ? genre : null;
       _items.clear();
       _page = 0;
       _hasMore = true;
@@ -327,18 +341,85 @@ class LibraryScreenState extends State<LibraryScreen> {
     }
   }
 
+  String get _sortLabel => switch (_sort) {
+    LibrarySort.recentlyAdded => 'Date Added',
+    LibrarySort.alphabetical => 'Title',
+    LibrarySort.authorName => 'Author',
+    LibrarySort.publishedYear => 'Year',
+    LibrarySort.duration => 'Duration',
+    LibrarySort.random => 'Random',
+  };
+
+  String get _filterLabel => switch (_filter) {
+    LibraryFilter.inProgress => 'In Progress',
+    LibraryFilter.finished => 'Finished',
+    LibraryFilter.notStarted => 'Not Started',
+    LibraryFilter.downloaded => 'Downloaded',
+    LibraryFilter.hasEbook => 'eBooks',
+    LibraryFilter.genre => _genreFilter ?? 'Genre',
+    LibraryFilter.none => '',
+  };
+
+  void _showSortFilterSheet(BuildContext context, ColorScheme cs, TextTheme tt, {int initialTab = 0}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _SortFilterSheet(
+        currentSort: _sort,
+        sortAsc: _sortAsc,
+        currentFilter: _filter,
+        genreFilter: _genreFilter,
+        availableGenres: _availableGenres,
+        initialTab: initialTab,
+        cs: cs, tt: tt,
+        onSortChanged: (sort) { Navigator.pop(ctx); _changeSort(sort); },
+        onSortDirectionToggled: () {
+          setState(() { _sortAsc = !_sortAsc; _items.clear(); _page = 0; _hasMore = true; _isLoadingPage = false; });
+          if (_scrollController.hasClients) _scrollController.jumpTo(0);
+          _loadPage();
+          Navigator.pop(ctx);
+        },
+        onFilterChanged: (filter, {String? genre}) { Navigator.pop(ctx); _changeFilter(filter, genre: genre); },
+        onClearFilter: () { Navigator.pop(ctx); _changeFilter(LibraryFilter.none); },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
 
     return Scaffold(
+      floatingActionButton: _isInSearchMode ? null : GestureDetector(
+        onTap: () => _showSortFilterSheet(context, cs, tt),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: cs.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: cs.primary.withValues(alpha: 0.2)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(_filter != LibraryFilter.none ? Icons.filter_list_rounded : Icons.tune_rounded, size: 16, color: cs.primary),
+              const SizedBox(width: 6),
+              Text(
+                _filter != LibraryFilter.none ? 'Sort & Filter ●' : 'Sort & Filter',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: cs.primary),
+              ),
+            ],
+          ),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       body: SafeArea(
         child: Column(
           children: [
-            // ── Header ──
             const AbsorbPageHeader(title: 'Library'),
-            // ── Search bar ──
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: SearchBar(
@@ -361,116 +442,73 @@ class LibraryScreenState extends State<LibraryScreen> {
                     ),
                 ],
                 onChanged: _onSearchChanged,
-                padding: const WidgetStatePropertyAll(
-                  EdgeInsets.symmetric(horizontal: 8),
-                ),
+                padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 8)),
               ),
             ),
 
-            // ── Sort chips (hidden during search) ──
             if (!_isInSearchMode)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
+                    GestureDetector(
+                      onTap: () => _showSortFilterSheet(context, cs, tt, initialTab: 0),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: cs.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            _SortChip(
-                              label: 'Recent',
-                              icon: Icons.schedule_rounded,
-                              selected: _sort == LibrarySort.recentlyAdded,
-                              ascending: _sort == LibrarySort.recentlyAdded ? _sortAsc : null,
-                              onTap: () => _changeSort(LibrarySort.recentlyAdded),
-                            ),
-                            const SizedBox(width: 8),
-                            _SortChip(
-                              label: 'A – Z',
-                              icon: Icons.sort_by_alpha_rounded,
-                              selected: _sort == LibrarySort.alphabetical,
-                              ascending: _sort == LibrarySort.alphabetical ? _sortAsc : null,
-                              onTap: () => _changeSort(LibrarySort.alphabetical),
-                            ),
-                            const SizedBox(width: 8),
-                            _SortChip(
-                              label: 'Length',
-                              icon: Icons.timelapse_rounded,
-                              selected: _sort == LibrarySort.duration,
-                              ascending: _sort == LibrarySort.duration ? _sortAsc : null,
-                              onTap: () => _changeSort(LibrarySort.duration),
-                            ),
-                            const SizedBox(width: 8),
-                            _SortChip(
-                              label: 'Random',
-                              icon: Icons.shuffle_rounded,
-                              selected: _sort == LibrarySort.random,
-                              onTap: () => _changeSort(LibrarySort.random),
-                            ),
+                            Icon(Icons.sort_rounded, size: 14, color: cs.primary),
+                            const SizedBox(width: 4),
+                            Text(_sortLabel, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.primary)),
+                            const SizedBox(width: 2),
+                            if (_sort != LibrarySort.random)
+                              Icon(_sortAsc ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, size: 12, color: cs.primary),
                           ],
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${_hasMore ? "${_items.length}+" : _items.length} books',
-                      style: tt.labelSmall?.copyWith(
-                        color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+                    if (_filter != LibraryFilter.none) ...[
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: GestureDetector(
+                          onTap: () => _showSortFilterSheet(context, cs, tt, initialTab: 1),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: cs.tertiary.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.filter_list_rounded, size: 14, color: cs.tertiary),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(_filterLabel, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.tertiary), overflow: TextOverflow.ellipsis, maxLines: 1),
+                                ),
+                                const SizedBox(width: 4),
+                                GestureDetector(
+                                  onTap: () => _changeFilter(LibraryFilter.none),
+                                  child: Icon(Icons.close_rounded, size: 14, color: cs.tertiary),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
+                    const Spacer(),
+                    Text('${_hasMore ? "${_items.length}+" : _items.length} books',
+                      style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
                   ],
                 ),
               ),
 
-            // ── Filter chips (hidden during search) ──
-            if (!_isInSearchMode)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _FilterChip(
-                        label: 'In Progress',
-                        icon: Icons.play_circle_outline_rounded,
-                        selected: _filter == LibraryFilter.inProgress,
-                        onTap: () => _changeFilter(LibraryFilter.inProgress),
-                      ),
-                      const SizedBox(width: 8),
-                      _FilterChip(
-                        label: 'Finished',
-                        icon: Icons.check_circle_outline_rounded,
-                        selected: _filter == LibraryFilter.finished,
-                        onTap: () => _changeFilter(LibraryFilter.finished),
-                      ),
-                      const SizedBox(width: 8),
-                      _FilterChip(
-                        label: 'Not Started',
-                        icon: Icons.circle_outlined,
-                        selected: _filter == LibraryFilter.notStarted,
-                        onTap: () => _changeFilter(LibraryFilter.notStarted),
-                      ),
-                      const SizedBox(width: 8),
-                      _FilterChip(
-                        label: 'Downloaded',
-                        icon: Icons.download_done_rounded,
-                        selected: _filter == LibraryFilter.downloaded,
-                        onTap: () => _changeFilter(LibraryFilter.downloaded),
-                      ),
-                      const SizedBox(width: 8),
-                      _FilterChip(
-                        label: 'eBooks',
-                        icon: Icons.menu_book_rounded,
-                        selected: _filter == LibraryFilter.hasEbook,
-                        onTap: () => _changeFilter(LibraryFilter.hasEbook),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-            // ── Content ──
             Expanded(
               child: _isInSearchMode
                   ? _buildSearchResults(cs, tt)
@@ -511,6 +549,7 @@ class LibraryScreenState extends State<LibraryScreen> {
         LibraryFilter.notStarted => 'All books have been started',
         LibraryFilter.downloaded => 'No downloaded books',
         LibraryFilter.hasEbook => 'No books with eBooks',
+        LibraryFilter.genre => 'No books in "${_genreFilter ?? 'genre'}"',
         LibraryFilter.none => 'No books found',
       };
       return Center(
@@ -672,122 +711,288 @@ class LibraryScreenState extends State<LibraryScreen> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Sort chip
+// Sort & Filter bottom sheet with tabs
 // ═══════════════════════════════════════════════════════════════
-class _SortChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final bool? ascending; // null = no arrow (e.g. Random), true = ↑, false = ↓
-  final VoidCallback onTap;
+class _SortFilterSheet extends StatefulWidget {
+  final LibrarySort currentSort;
+  final bool sortAsc;
+  final LibraryFilter currentFilter;
+  final String? genreFilter;
+  final List<String> availableGenres;
+  final int initialTab;
+  final ColorScheme cs;
+  final TextTheme tt;
+  final void Function(LibrarySort) onSortChanged;
+  final VoidCallback onSortDirectionToggled;
+  final void Function(LibraryFilter, {String? genre}) onFilterChanged;
+  final VoidCallback onClearFilter;
 
-  const _SortChip({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    this.ascending,
-    required this.onTap,
+  const _SortFilterSheet({
+    required this.currentSort, required this.sortAsc,
+    required this.currentFilter, this.genreFilter,
+    required this.availableGenres, required this.initialTab,
+    required this.cs, required this.tt,
+    required this.onSortChanged, required this.onSortDirectionToggled,
+    required this.onFilterChanged, required this.onClearFilter,
+  });
+
+  @override
+  State<_SortFilterSheet> createState() => _SortFilterSheetState();
+}
+
+class _SortFilterSheetState extends State<_SortFilterSheet> with SingleTickerProviderStateMixin {
+  late TabController _tabCtrl;
+  bool _genreExpanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabCtrl = TabController(length: 2, vsync: this, initialIndex: widget.initialTab);
+    if (widget.currentFilter == LibraryFilter.genre) _genreExpanded = true;
+  }
+
+  @override
+  void dispose() { _tabCtrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = widget.cs;
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          Center(child: Container(width: 40, height: 4,
+            decoration: BoxDecoration(color: cs.onSurfaceVariant.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 16),
+          TabBar(
+            controller: _tabCtrl,
+            labelColor: cs.primary, unselectedLabelColor: cs.onSurfaceVariant,
+            indicatorColor: cs.primary, indicatorSize: TabBarIndicatorSize.label,
+            dividerColor: Colors.transparent,
+            tabs: [
+              Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.sort_rounded, size: 18), const SizedBox(width: 6), const Text('Sort')])),
+              Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.filter_list_rounded, size: 18), const SizedBox(width: 6),
+                Text(widget.currentFilter != LibraryFilter.none ? 'Filter ●' : 'Filter')])),
+            ],
+          ),
+          SizedBox(
+            height: _genreExpanded ? 420 : 320,
+            child: TabBarView(controller: _tabCtrl, children: [
+              _buildSortTab(cs), _buildFilterTab(cs)]),
+          ),
+          SizedBox(height: MediaQuery.of(context).viewPadding.bottom + 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSortTab(ColorScheme cs) {
+    final sorts = <(LibrarySort, String, IconData)>[
+      (LibrarySort.recentlyAdded, 'Date Added', Icons.schedule_rounded),
+      (LibrarySort.alphabetical, 'Title', Icons.sort_by_alpha_rounded),
+      (LibrarySort.authorName, 'Author', Icons.person_rounded),
+      (LibrarySort.publishedYear, 'Published Year', Icons.calendar_today_rounded),
+      (LibrarySort.duration, 'Duration', Icons.timelapse_rounded),
+      (LibrarySort.random, 'Random', Icons.shuffle_rounded),
+    ];
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      children: sorts.map((s) {
+        final (sort, label, icon) = s;
+        final selected = sort == widget.currentSort;
+        return _SheetOption(
+          icon: icon, label: label, selected: selected, selectedColor: cs.primary,
+          trailing: selected && sort != LibrarySort.random
+              ? GestureDetector(
+                  onTap: widget.onSortDirectionToggled,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(widget.sortAsc ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, size: 14, color: cs.primary),
+                      const SizedBox(width: 4),
+                      Text(widget.sortAsc ? 'ASC' : 'DESC', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: cs.primary)),
+                    ]),
+                  ),
+                ) : null,
+          onTap: () => widget.onSortChanged(sort),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildFilterTab(ColorScheme cs) {
+    final filters = <(LibraryFilter, String, IconData)>[
+      (LibraryFilter.inProgress, 'In Progress', Icons.play_circle_outline_rounded),
+      (LibraryFilter.finished, 'Finished', Icons.check_circle_outline_rounded),
+      (LibraryFilter.notStarted, 'Not Started', Icons.circle_outlined),
+      (LibraryFilter.downloaded, 'Downloaded', Icons.download_done_rounded),
+      (LibraryFilter.hasEbook, 'eBooks', Icons.menu_book_rounded),
+    ];
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      children: [
+        if (widget.currentFilter != LibraryFilter.none)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: GestureDetector(
+              onTap: widget.onClearFilter,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(color: cs.errorContainer.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(14)),
+                child: Row(children: [
+                  Icon(Icons.clear_rounded, size: 18, color: cs.error),
+                  const SizedBox(width: 10),
+                  Text('Clear Filter', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: cs.error)),
+                ]),
+              ),
+            ),
+          ),
+        ...filters.map((f) {
+          final (filter, label, icon) = f;
+          return _SheetOption(
+            icon: icon, label: label,
+            selected: filter == widget.currentFilter, selectedColor: cs.tertiary,
+            onTap: () => widget.onFilterChanged(filter),
+          );
+        }),
+        _SheetOption(
+          icon: Icons.category_rounded,
+          label: 'Genre',
+          selected: widget.currentFilter == LibraryFilter.genre,
+          selectedColor: cs.tertiary,
+          trailing: Icon(_genreExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 20, color: cs.onSurfaceVariant),
+          onTap: () => setState(() => _genreExpanded = !_genreExpanded),
+        ),
+        if (_genreExpanded)
+          Padding(
+            padding: const EdgeInsets.only(left: 16),
+            child: widget.availableGenres.isEmpty
+                ? Padding(padding: const EdgeInsets.all(12),
+                    child: Text('No genres found', style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)))
+                : Column(children: widget.availableGenres.map((genre) {
+                    final selected = widget.currentFilter == LibraryFilter.genre && widget.genreFilter == genre;
+                    return _SheetOption(
+                      icon: Icons.label_outline_rounded, label: genre,
+                      selected: selected, selectedColor: cs.tertiary,
+                      compact: true, marquee: true,
+                      onTap: () => widget.onFilterChanged(LibraryFilter.genre, genre: genre),
+                    );
+                  }).toList()),
+          ),
+      ],
+    );
+  }
+}
+
+class _SheetOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final Color selectedColor;
+  final Widget? trailing;
+  final VoidCallback onTap;
+  final bool compact;
+  final bool marquee;
+
+  const _SheetOption({
+    required this.icon, required this.label, required this.selected,
+    required this.selectedColor, this.trailing, required this.onTap,
+    this.compact = false, this.marquee = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final vPad = compact ? 8.0 : 10.0;
+    final fontSize = compact ? 13.0 : 14.0;
+    final iconSize = compact ? 18.0 : 20.0;
+
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 14, vertical: vPad),
+        margin: EdgeInsets.only(bottom: compact ? 2 : 4),
         decoration: BoxDecoration(
-          color: selected
-              ? cs.primary.withValues(alpha: 0.15)
-              : cs.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected
-                ? cs.primary.withValues(alpha: 0.4)
-                : Colors.transparent,
+          color: selected ? selectedColor.withValues(alpha: 0.12) : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(children: [
+          Icon(icon, size: iconSize, color: selected ? selectedColor : cs.onSurfaceVariant),
+          const SizedBox(width: 12),
+          Expanded(
+            child: marquee
+                ? _MarqueeText(text: label, style: TextStyle(
+                    fontSize: fontSize,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    color: selected ? selectedColor : cs.onSurface))
+                : Text(label, style: TextStyle(
+                    fontSize: fontSize,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    color: selected ? selectedColor : cs.onSurface)),
           ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                size: 14,
-                color: selected ? cs.primary : cs.onSurfaceVariant),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                color: selected ? cs.primary : cs.onSurfaceVariant,
-              ),
-            ),
-            if (selected && ascending != null) ...[
-              const SizedBox(width: 2),
-              Icon(
-                ascending! ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
-                size: 12,
-                color: cs.primary,
-              ),
-            ],
-          ],
-        ),
+          if (trailing != null) trailing!,
+          if (selected && trailing == null)
+            Icon(Icons.check_rounded, size: 18, color: selectedColor),
+        ]),
       ),
     );
   }
 }
 
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
+class _MarqueeText extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+  const _MarqueeText({required this.text, required this.style});
+  @override
+  State<_MarqueeText> createState() => _MarqueeTextState();
+}
 
-  const _FilterChip({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
+class _MarqueeTextState extends State<_MarqueeText> {
+  late final ScrollController _sc;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _sc = ScrollController();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndScroll());
+  }
+
+  void _checkAndScroll() {
+    if (!_sc.hasClients || _sc.position.maxScrollExtent <= 0) return;
+    _timer?.cancel();
+    _timer = Timer(const Duration(seconds: 1), () {
+      if (!mounted || !_sc.hasClients) return;
+      final max = _sc.position.maxScrollExtent;
+      _sc.animateTo(max, duration: Duration(milliseconds: (max * 30).round().clamp(1000, 5000)), curve: Curves.linear).then((_) {
+        if (!mounted) return;
+        Future.delayed(const Duration(seconds: 1), () {
+          if (!mounted || !_sc.hasClients) return;
+          _sc.animateTo(0, duration: const Duration(milliseconds: 500), curve: Curves.easeOut).then((_) {
+            if (mounted) _checkAndScroll();
+          });
+        });
+      });
+    });
+  }
+
+  @override
+  void dispose() { _timer?.cancel(); _sc.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: selected
-              ? cs.tertiary.withValues(alpha: 0.15)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected
-                ? cs.tertiary.withValues(alpha: 0.4)
-                : cs.outlineVariant.withValues(alpha: 0.3),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                size: 13,
-                color: selected ? cs.tertiary : cs.onSurfaceVariant.withValues(alpha: 0.6)),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                color: selected ? cs.tertiary : cs.onSurfaceVariant.withValues(alpha: 0.6),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return SingleChildScrollView(
+      controller: _sc, scrollDirection: Axis.horizontal,
+      physics: const NeverScrollableScrollPhysics(),
+      child: Text(widget.text, style: widget.style, maxLines: 1),
     );
   }
 }

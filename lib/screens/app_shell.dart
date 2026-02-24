@@ -138,6 +138,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           NavigationBar(
             selectedIndex: _currentIndex,
             onDestinationSelected: (i) {
+              // If tapping Library while already on Library, clear search
+              if (i == 1 && _currentIndex == 1 &&
+                  _libraryKey.currentState?.isSearchActive == true) {
+                _libraryKey.currentState?.clearSearch();
+                return;
+              }
               _navigateTo(i);
               // Refresh data on switching to Library, Home, Absorbing, or Stats
               if (i == 0 || i == 1 || i == 2 || i == 3) _refreshData();
