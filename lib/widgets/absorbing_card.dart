@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'dart:ui';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
@@ -29,6 +30,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   List<dynamic>? _fetchedChapters;
   StreamSubscription<Duration>? _chapterTrackSub;
   int _lastChapterIdx = -1;
+  ui.Image? _blurredCover; // Precached blurred background
 
   @override
   bool get wantKeepAlive => true;
@@ -109,6 +111,8 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     if (oldId != _itemId) {
       // Item changed — reset all stale state
       _coverScheme = null;
+      _blurredCover?.dispose();
+      _blurredCover = null;
       _fetchedChapters = null;
       _lastChapterIdx = -1;
       _fetchChaptersIfNeeded();
@@ -119,6 +123,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   @override
   void dispose() {
     _chapterTrackSub?.cancel();
+    _blurredCover?.dispose();
     super.dispose();
   }
 
@@ -127,17 +132,62 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     ColorScheme.fromImageProvider(provider: provider, brightness: Brightness.dark)
         .then((s) {
           if (mounted) {
-            // Delay scheme application to avoid mid-swipe rebuilds
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) setState(() => _coverScheme = s);
             });
           }
         })
         .catchError((_) {});
+    // Precache the blurred version of the cover
+    if (_blurredCover == null) {
+      _precacheBlur(provider);
+    }
   }
 
-  // Cache the blur filter to avoid recreating it every build
-  static final _blurFilter = ImageFilter.blur(sigmaX: 40, sigmaY: 40, tileMode: TileMode.decal);
+  /// Resolve the image, render it blurred to an offscreen canvas, cache the result.
+  Future<void> _precacheBlur(ImageProvider provider) async {
+    try {
+      final completer = Completer<ui.Image>();
+      final stream = provider.resolve(ImageConfiguration.empty);
+      late ImageStreamListener listener;
+      listener = ImageStreamListener((info, _) {
+        completer.complete(info.image);
+        stream.removeListener(listener);
+      }, onError: (e, _) {
+        if (!completer.isCompleted) completer.completeError(e);
+        stream.removeListener(listener);
+      });
+      stream.addListener(listener);
+
+      final srcImage = await completer.future;
+      // Render at reduced size for performance (blur hides detail anyway)
+      const targetWidth = 200;
+      final aspect = srcImage.height / srcImage.width;
+      final targetHeight = (targetWidth * aspect).round();
+
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, targetWidth.toDouble(), targetHeight.toDouble()));
+      final paint = Paint()
+        ..imageFilter = ui.ImageFilter.blur(sigmaX: 30, sigmaY: 30, tileMode: TileMode.decal);
+      canvas.drawImageRect(
+        srcImage,
+        Rect.fromLTWH(0, 0, srcImage.width.toDouble(), srcImage.height.toDouble()),
+        Rect.fromLTWH(0, 0, targetWidth.toDouble(), targetHeight.toDouble()),
+        paint,
+      );
+      final picture = recorder.endRecording();
+      final blurred = await picture.toImage(targetWidth, targetHeight);
+      picture.dispose();
+
+      if (mounted) {
+        setState(() => _blurredCover = blurred);
+      } else {
+        blurred.dispose();
+      }
+    } catch (_) {
+      // Fallback: card will show without blurred background, which is fine
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -175,16 +225,26 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
         child: Stack(
           fit: StackFit.expand,
           children: [
-          // Layer 1: Pre-blurred cover image (isolated for performance)
-          if (_coverUrl != null)
+          // Layer 1: Pre-blurred cover background (cached bitmap — no per-frame blur)
+          if (_blurredCover != null)
+            RepaintBoundary(
+              child: RawImage(
+                image: _blurredCover,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+              ),
+            )
+          else if (_coverUrl != null)
+            // Fallback while blur is being computed: show unblurred cover dimmed
             RepaintBoundary(
               child: CachedNetworkImage(
                 imageUrl: _coverUrl!,
                 fit: BoxFit.cover,
                 imageBuilder: (_, provider) {
                   _onCoverLoaded(provider);
-                  return ImageFiltered(
-                    imageFilter: _blurFilter,
+                  return Opacity(
+                    opacity: 0.3,
                     child: Image(image: provider, fit: BoxFit.cover),
                   );
                 },

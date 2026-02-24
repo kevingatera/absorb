@@ -140,24 +140,12 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
   }
 
-  // Custom media controls with round-style icons
-  static const _rewind = MediaControl(
-    androidIcon: 'drawable/ic_replay',
-    label: 'Rewind',
-    action: MediaAction.rewind,
-  );
-  static const _fastForward = MediaControl(
-    androidIcon: 'drawable/ic_forward',
-    label: 'Forward',
-    action: MediaAction.fastForward,
-  );
-
   PlaybackState _transformEvent(PlaybackEvent event) {
     return PlaybackState(
       controls: [
-        _rewind,
+        MediaControl.rewind,
         if (_player.playing) MediaControl.pause else MediaControl.play,
-        _fastForward,
+        MediaControl.fastForward,
       ],
       systemActions: const {
         MediaAction.seek,
@@ -1249,19 +1237,22 @@ class AudioPlayerService extends ChangeNotifier {
   DateTime? _lastPauseTime;
   bool _wasPlayingBeforeInterrupt = false;
 
-  /// Auto-rewind calculation using exponential curve.
+  /// Auto-rewind calculation using linear scaling.
+  /// Scales linearly from minRewind at activationDelay to maxRewind at 1 hour.
   /// activationDelay = minimum pause before rewind kicks in (0 = always).
   static double calculateAutoRewind(
       Duration pauseDuration, double minRewind, double maxRewind,
       {double activationDelay = 0}) {
-    const tau = 500.0;
     final pauseSeconds = pauseDuration.inSeconds.toDouble();
 
     // Don't rewind if pause is shorter than activation delay
-    if (pauseSeconds < activationDelay || pauseSeconds < 2) return 0;
+    if (pauseSeconds < activationDelay) return 0;
 
-    final range = maxRewind - minRewind;
-    final rewind = minRewind + range * (1 - exp(-pauseSeconds / tau));
+    // Linear from min to max over 1 hour of pause time
+    const maxPause = 3600.0; // 1 hour = full rewind
+    final effectivePause = (pauseSeconds - activationDelay).clamp(0.0, maxPause);
+    final t = effectivePause / maxPause;
+    final rewind = minRewind + (maxRewind - minRewind) * t;
     return rewind.clamp(minRewind, maxRewind);
   }
 

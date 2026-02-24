@@ -304,7 +304,6 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                           controller: _pageController,
                           scrollDirection: Axis.horizontal,
                           clipBehavior: Clip.none,
-                          allowImplicitScrolling: true,
                           physics: const PageScrollPhysics(parent: ClampingScrollPhysics()),
                           itemCount: books.length,
                           itemBuilder: (_, i) => LayoutBuilder(

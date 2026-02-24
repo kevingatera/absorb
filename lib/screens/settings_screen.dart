@@ -1089,29 +1089,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<Widget> _buildRewindPreviews(ColorScheme cs, TextTheme tt) {
     final s = _rewindSettings;
     final delay = s.activationDelay.round();
+
+    // Build dynamic preview durations starting from the delay value
+    final durations = <int, String>{};
+
+    // First row: the activation delay itself (or instant if 0)
+    if (delay == 0) {
+      durations[0] = 'Instant';
+    } else {
+      durations[delay] = '${_formatDuration(delay)} pause';
+    }
+
+    // Add useful reference points above the delay, spread across the full range
+    for (final secs in [30, 120, 600, 1800, 3600]) {
+      if (secs > delay && durations.length < 5) {
+        durations[secs] = '${_formatDuration(secs)} pause';
+      }
+    }
+
+    // Always include 1 hour as the max reference
+    if (!durations.containsKey(3600)) {
+      durations[3600] = '1 hr pause';
+    }
+
     final rows = <Widget>[];
-
-    final durations = <int, String>{
-      3: '3s pause',
-      5: '5s pause',
-      30: '30s pause',
-      120: '2 min pause',
-      600: '10 min pause',
-      3600: '1 hr pause',
-    };
-
     for (final entry in durations.entries) {
       final rewind = AudioPlayerService.calculateAutoRewind(
         Duration(seconds: entry.key), s.minRewind, s.maxRewind,
         activationDelay: s.activationDelay);
-      if (entry.key < delay) {
-        rows.add(_rewindPreviewRow(entry.value, -1, cs, tt)); // -1 = "no rewind"
-      } else {
-        rows.add(_rewindPreviewRow(entry.value, rewind, cs, tt));
-      }
+      rows.add(_rewindPreviewRow(entry.value, rewind, cs, tt));
     }
 
     return rows;
+  }
+
+  static String _formatDuration(int seconds) {
+    if (seconds < 60) return '${seconds}s';
+    if (seconds < 3600) {
+      final m = seconds ~/ 60;
+      return '$m min';
+    }
+    final h = seconds ~/ 3600;
+    return '$h hr';
   }
 
   Widget _rewindPreviewRow(
