@@ -2,9 +2,18 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class ApiService {
-  static const appVersion = '1.3.0';
+  static String appVersion = '1.3.0'; // fallback; overwritten by initVersion()
+
+  /// Call once at startup to read the real version from pubspec via package_info_plus.
+  static Future<void> initVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      appVersion = info.version;
+    } catch (_) {}
+  }
 
   final String baseUrl;
   final String token;
