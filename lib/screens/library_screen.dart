@@ -1928,6 +1928,21 @@ class _SeriesBooksSheetState extends State<_SeriesBooksSheet> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final lib = context.watch<LibraryProvider>();
+
+    // Calculate time-weighted series progress across all books
+    double totalDuration = 0;
+    double listenedDuration = 0;
+    for (final book in _books) {
+      final bookId = book['id'] as String? ?? '';
+      final media = book['media'] as Map<String, dynamic>? ?? {};
+      final dur = (media['duration'] is num) ? (media['duration'] as num).toDouble() : 0.0;
+      final prog = lib.getProgress(bookId);
+      totalDuration += dur;
+      listenedDuration += dur * prog;
+    }
+    final seriesProgress = totalDuration > 0 ? (listenedDuration / totalDuration).clamp(0.0, 1.0) : 0.0;
+    final seriesPercent = (seriesProgress * 100).round();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1947,12 +1962,39 @@ class _SeriesBooksSheetState extends State<_SeriesBooksSheet> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+          padding: EdgeInsets.fromLTRB(24, 0, 24, seriesProgress > 0 ? 4 : 12),
           child: Text(
             '${_books.length} book${_books.length != 1 ? 's' : ''} in this series',
             style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           ),
         ),
+        if (seriesProgress > 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      value: seriesProgress,
+                      minHeight: 4,
+                      backgroundColor: cs.surfaceContainerHighest,
+                      valueColor: AlwaysStoppedAnimation(cs.primary),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '$seriesPercent% complete',
+                  style: tt.labelSmall?.copyWith(
+                    color: cs.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
         if (_isLoading && _books.isEmpty)
           const Expanded(
               child: Center(child: CircularProgressIndicator()))
@@ -1983,7 +2025,6 @@ class _SeriesBooksSheetState extends State<_SeriesBooksSheet> {
                     ? (media['duration'] as num).toDouble()
                     : 0.0;
 
-                final lib = context.watch<LibraryProvider>();
                 final progress = lib.getProgress(bookId);
                 final isFinished = lib.getProgressData(bookId)?['isFinished'] == true;
                 final isDownloaded = DownloadService().isDownloaded(bookId);
