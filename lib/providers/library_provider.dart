@@ -8,6 +8,7 @@ import 'auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/progress_sync_service.dart';
 import '../services/download_service.dart';
+import '../services/android_auto_service.dart';
 
 /// Holds library data and personalized home sections.
 class LibraryProvider extends ChangeNotifier {
@@ -60,9 +61,10 @@ class LibraryProvider extends ChangeNotifier {
     final wasOffline = _networkOffline;
     _networkOffline = offline;
     if (offline && !wasOffline) {
-      // Just went offline — show downloads
+      // Just went offline — show downloads, and force AA to clear server tabs
       _buildOfflineSections();
       notifyListeners();
+      AndroidAutoService().refresh(force: true);
     } else if (!offline && wasOffline && !_manualOffline) {
       // Came back online — immediately flush pending syncs, then refresh
       if (_api != null) {
@@ -70,6 +72,7 @@ class LibraryProvider extends ChangeNotifier {
         ProgressSyncService().flushPendingSync(api: _api!);
       }
       refresh();
+      AndroidAutoService().refresh(force: true);
     }
   }
 

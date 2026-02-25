@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:audio_service/audio_service.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
@@ -215,12 +216,16 @@ class AndroidAutoService {
           '${_libraries.length} libraries '
           '(${_libraries.where((l) => l.isBook).length} book-type)');
     } catch (e) {
-      // Server unreachable — that's fine, downloads are already populated.
-      // Set _lastRefresh so we don't hammer a dead server every getChildren call.
+      // Server unreachable — downloads are still available.
       _lastRefresh = DateTime.now();
       debugPrint('[AndroidAuto] Server refresh failed (downloads still available): $e');
     } finally {
       _isRefreshing = false;
+      // Tell the head unit to re-fetch the root browse tree now that data has changed.
+      try {
+        // ignore: deprecated_member_use
+        await AudioServiceBackground.notifyChildrenChanged(AutoMediaIds.root);
+      } catch (_) {}
     }
   }
 
@@ -252,12 +257,12 @@ class AndroidAutoService {
 
       final localPos = await ProgressSyncService().getSavedPosition(dl.itemId);
 
-      // Android Auto browse tree renders HTTP URLs reliably but often fails
-      // with content:// URIs. Use HTTP when server is available (covers show
-      // in browse list), fall back to content:// when offline (covers won't
-      // show in browse list but Now Playing still gets them via _pushMediaItem).
+      // Use HTTP cover URLs when online (more reliable in AA browse list),
+      // fall back to local content:// URIs when offline.
       String? coverUrl;
-      if (api != null) {
+      final connectivity = await Connectivity().checkConnectivity();
+      final isOnline = !connectivity.contains(ConnectivityResult.none);
+      if (isOnline && api != null) {
         coverUrl = api.getCoverUrl(dl.itemId, width: 400);
       } else {
         final localCover = await ds.getLocalCoverPath(dl.itemId);
@@ -337,6 +342,10 @@ class AndroidAutoService {
         }
       }
     } catch (e) {
+      // Server unreachable — clear stale tabs so only Downloads shows offline
+      _continueListening = [];
+      _recentlyAdded = [];
+      _libraries = [];
       debugPrint('[AndroidAuto] Server fetch error: $e');
     }
   }

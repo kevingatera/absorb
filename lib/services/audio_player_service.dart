@@ -431,12 +431,17 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
     debugPrint('[Handler] Android Auto play: "${entry.title}" by ${entry.author}');
 
+    // Always generate a fresh HTTP cover URL for Now Playing — api is
+    // available here, so use it directly rather than relying on the cached
+    // entry.coverUrl (which may be a content:// URI when offline).
+    final nowPlayingCoverUrl = api.getCoverUrl(absId, width: 400);
+
     await _service!.playItem(
       api: api,
       itemId: entry.id,
       title: entry.title,
       author: entry.author,
-      coverUrl: entry.coverUrl,
+      coverUrl: nowPlayingCoverUrl,
       totalDuration: entry.duration,
       chapters: entry.chapters,
       startTime: entry.currentTime ?? 0,
@@ -1042,10 +1047,10 @@ class AudioPlayerService extends ChangeNotifier {
 
   void _pushMediaItem(String itemId, String title, String author,
       String? coverUrl, double totalDuration, {String? chapter}) {
-    // For downloaded books, prefer local cover via content:// provider.
-    // This ensures the Now Playing screen shows the cover even offline.
+    // When offline, use local content:// URI so the Now Playing cover still shows.
+    // When online, pass the HTTP URL through for better palette extraction.
     String? effectiveCoverUrl = coverUrl;
-    if (DownloadService().isDownloaded(itemId)) {
+    if (_isOfflineMode && DownloadService().isDownloaded(itemId)) {
       effectiveCoverUrl = 'content://$_coverAuthority/cover/$itemId';
     }
     _updateNotificationMediaItem(itemId, title, author, effectiveCoverUrl, totalDuration, chapter: chapter);
