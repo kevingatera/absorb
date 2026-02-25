@@ -111,14 +111,16 @@ class AutoBookEntry {
   });
 
   MediaItem toMediaItem() {
+    final uri = coverUrl != null ? Uri.tryParse(coverUrl!) : null;
     return MediaItem(
       id: AutoMediaIds.itemId(id),
       title: title,
       artist: author,
       album: title,
       duration: Duration(seconds: duration.round()),
-      artUri: coverUrl != null ? Uri.tryParse(coverUrl!) : null,
+      artUri: uri,
       playable: true,
+      extras: uri != null ? {'artUri': uri.toString()} : null,
     );
   }
 }
@@ -170,7 +172,28 @@ class AndroidAutoService {
 
   // ── Refresh ──
 
+  /// Whether downloads have been populated at least once (synchronous, no server needed).
+  bool _downloadsReady = false;
+
+  /// Fire-and-forget server refresh. Downloads are already available;
+  /// this populates Continue, Recent, and Library tabs in the background.
+  void _backgroundRefresh() {
+    refresh().then((_) {
+      debugPrint('[AndroidAuto] Background refresh completed');
+    }).catchError((e) {
+      debugPrint('[AndroidAuto] Background refresh failed: $e');
+    });
+  }
+
   Future<void> refresh({bool force = false}) async {
+    // Always populate downloads immediately — no server needed.
+    // This ensures Android Auto can show the Downloads tab even if the
+    // server is unreachable (e.g. no remote access, offline-only users).
+    if (!_downloadsReady || force) {
+      await _refreshDownloaded();
+      _downloadsReady = true;
+    }
+
     if (_isRefreshing) return;
     if (!force && _lastRefresh != null &&
         DateTime.now().difference(_lastRefresh!) < const Duration(seconds: 30)) {
@@ -180,8 +203,9 @@ class AndroidAutoService {
     _isRefreshing = true;
     debugPrint('[AndroidAuto] Refreshing browse tree...');
 
+    // Server fetch is best-effort — don't block the browse tree
     try {
-      await _refreshDownloaded();
+      await _refreshDownloaded(); // re-fetch in case downloads changed
       await _refreshFromServer();
       _lastRefresh = DateTime.now();
       debugPrint('[AndroidAuto] Refresh done: '
@@ -191,11 +215,23 @@ class AndroidAutoService {
           '${_libraries.length} libraries '
           '(${_libraries.where((l) => l.isBook).length} book-type)');
     } catch (e) {
-      debugPrint('[AndroidAuto] Refresh error: $e');
+      // Server unreachable — that's fine, downloads are already populated.
+      // Set _lastRefresh so we don't hammer a dead server every getChildren call.
+      _lastRefresh = DateTime.now();
+      debugPrint('[AndroidAuto] Server refresh failed (downloads still available): $e');
     } finally {
       _isRefreshing = false;
     }
   }
+
+  /// Content provider authority for serving local cover images to Android Auto.
+  /// Must match the authority registered in AndroidManifest.xml.
+  static const _coverAuthority = 'com.barnabas.absorb.covers';
+
+  /// Build a content:// URI for a locally cached cover image.
+  /// Android Auto requires content:// URIs — file:// won't work.
+  static String _localCoverUri(String itemId) =>
+      'content://$_coverAuthority/cover/$itemId';
 
   Future<void> _refreshDownloaded() async {
     final ds = DownloadService();
@@ -216,15 +252,30 @@ class AndroidAutoService {
 
       final localPos = await ProgressSyncService().getSavedPosition(dl.itemId);
 
+      // Android Auto browse tree renders HTTP URLs reliably but often fails
+      // with content:// URIs. Use HTTP when server is available (covers show
+      // in browse list), fall back to content:// when offline (covers won't
+      // show in browse list but Now Playing still gets them via _pushMediaItem).
+      String? coverUrl;
+      if (api != null) {
+        coverUrl = api.getCoverUrl(dl.itemId, width: 400);
+      } else {
+        final localCover = await ds.getLocalCoverPath(dl.itemId);
+        if (localCover != null) {
+          coverUrl = _localCoverUri(dl.itemId);
+        }
+      }
+
       entries.add(AutoBookEntry(
         id: dl.itemId,
         title: dl.title ?? 'Unknown',
         author: dl.author ?? '',
         duration: duration,
-        coverUrl: api?.getCoverUrl(dl.itemId, width: 400),
+        coverUrl: coverUrl,
         chapters: chapters,
         currentTime: localPos > 0 ? localPos : null,
       ));
+      debugPrint('[AndroidAuto] Download entry: ${dl.title} cover=${coverUrl ?? "null"}');
     }
 
     _downloaded = entries;
@@ -433,6 +484,19 @@ class AndroidAutoService {
 
   /// Main entry point for browse tree. May make API calls for drilldowns.
   Future<List<MediaItem>> getChildrenOf(String parentMediaId) async {
+    // Ensure downloads are always populated before returning root.
+    // This is instant (no network) so Android Auto never waits on a server.
+    if (!_downloadsReady) {
+      await _refreshDownloaded();
+      _downloadsReady = true;
+    }
+
+    // Kick off a full server refresh in the background if we haven't done one.
+    // Don't await — return what we have now (downloads at minimum).
+    if (_lastRefresh == null && !_isRefreshing) {
+      _backgroundRefresh();
+    }
+
     // ── Root ──
     if (parentMediaId == AutoMediaIds.root) {
       return _getRootChildren();
@@ -501,12 +565,16 @@ class AndroidAutoService {
     if (api == null) return [];
 
     try {
-      // Fetch all books, paginated, sorted by title
+      // Android Auto has a ~1MB Binder transaction limit for onLoadChildren
+      // results. With cover URLs, each MediaItem is ~1.2KB, so we cap at 200
+      // items to stay safely under the limit. For larger libraries, users can
+      // browse via Series or Authors instead.
+      const maxItems = 200;
       final allBooks = <MediaItem>[];
       int page = 0;
       const pageSize = 100;
 
-      while (true) {
+      while (allBooks.length < maxItems) {
         final result = await api.getLibraryItems(
           libraryId, page: page, limit: pageSize,
           sort: 'media.metadata.title', desc: 0,
@@ -519,6 +587,11 @@ class AndroidAutoService {
         final total = (result['total'] as num?)?.toInt() ?? 0;
         if (allBooks.length >= total || entries.length < pageSize) break;
         page++;
+      }
+
+      if (allBooks.length > maxItems) {
+        debugPrint('[AndroidAuto] Trimmed books from ${allBooks.length} to $maxItems (Binder limit)');
+        return allBooks.sublist(0, maxItems);
       }
 
       debugPrint('[AndroidAuto] Fetched ${allBooks.length} books');

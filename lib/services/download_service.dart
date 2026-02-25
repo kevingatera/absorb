@@ -22,6 +22,7 @@ class DownloadInfo {
   final String? title;
   final String? author;
   final String? coverUrl;
+  final String? localCoverPath;
 
   DownloadInfo({
     required this.itemId,
@@ -32,6 +33,7 @@ class DownloadInfo {
     this.title,
     this.author,
     this.coverUrl,
+    this.localCoverPath,
   });
 
   Map<String, dynamic> toJson() => {
@@ -42,6 +44,7 @@ class DownloadInfo {
         'title': title,
         'author': author,
         'coverUrl': coverUrl,
+        'localCoverPath': localCoverPath,
       };
 
   factory DownloadInfo.fromJson(Map<String, dynamic> json) {
@@ -84,6 +87,7 @@ class DownloadInfo {
       title: title,
       author: author,
       coverUrl: coverUrl,
+      localCoverPath: json['localCoverPath'] as String?,
     );
   }
 }
@@ -222,31 +226,73 @@ class DownloadService extends ChangeNotifier {
     final entries = Map<String, DownloadInfo>.from(_downloads);
     for (final entry in entries.entries) {
       final info = entry.value;
-      if (info.status == DownloadStatus.downloaded &&
-          (info.title == null || info.title!.isEmpty)) {
+      if (info.status != DownloadStatus.downloaded) continue;
+
+      bool needsUpdate = false;
+      String? title = info.title;
+      String? author = info.author;
+      String? coverUrl = info.coverUrl;
+      String? localCoverPath = info.localCoverPath;
+
+      // Enrich missing title/author from server
+      if (title == null || title.isEmpty) {
         try {
           final item = await api.getLibraryItem(info.itemId);
           if (item != null) {
             final media = item['media'] as Map<String, dynamic>? ?? {};
             final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-            final title = metadata['title'] as String?;
-            final author = metadata['authorName'] as String?;
-            final coverUrl = api.getCoverUrl(info.itemId);
-            _downloads[entry.key] = DownloadInfo(
-              itemId: info.itemId,
-              status: info.status,
-              localPaths: info.localPaths,
-              sessionData: info.sessionData,
-              title: title ?? info.title,
-              author: author ?? info.author,
-              coverUrl: coverUrl ?? info.coverUrl,
-            );
-            changed = true;
+            title = metadata['title'] as String? ?? title;
+            author = metadata['authorName'] as String? ?? author;
+            coverUrl = api.getCoverUrl(info.itemId) ?? coverUrl;
+            needsUpdate = true;
             debugPrint('[Download] Enriched metadata for ${info.itemId}: $title');
           }
         } catch (e) {
           debugPrint('[Download] Enrich failed for ${info.itemId}: $e');
         }
+      }
+
+      // Cache cover locally if not already cached
+      if (localCoverPath == null || !File(localCoverPath).existsSync()) {
+        final basePath = await downloadBasePath;
+        final existingCover = File('$basePath/${info.itemId}/cover.jpg');
+        if (existingCover.existsSync()) {
+          // Already on disk from a previous download, just not tracked
+          localCoverPath = existingCover.path;
+          needsUpdate = true;
+        } else {
+          // Try to download from server
+          final url = coverUrl ?? api.getCoverUrl(info.itemId);
+          try {
+            final resp = await http.get(Uri.parse(url))
+                .timeout(const Duration(seconds: 10));
+            if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
+              final dir = Directory('$basePath/${info.itemId}');
+              if (!dir.existsSync()) dir.createSync(recursive: true);
+              final coverFile = File('${dir.path}/cover.jpg');
+              await coverFile.writeAsBytes(resp.bodyBytes);
+              localCoverPath = coverFile.path;
+              needsUpdate = true;
+              debugPrint('[Download] Cached cover for ${info.itemId}');
+            }
+          } catch (e) {
+            debugPrint('[Download] Cover cache failed for ${info.itemId}: $e');
+          }
+        }
+      }
+
+      if (needsUpdate) {
+        _downloads[entry.key] = DownloadInfo(
+          itemId: info.itemId,
+          status: info.status,
+          localPaths: info.localPaths,
+          sessionData: info.sessionData,
+          title: title ?? info.title,
+          author: author ?? info.author,
+          coverUrl: coverUrl ?? info.coverUrl,
+          localCoverPath: localCoverPath,
+        );
+        changed = true;
       }
     }
     if (changed) {
@@ -274,6 +320,25 @@ class DownloadService extends ChangeNotifier {
 
   String? getCachedSessionData(String itemId) {
     return _downloads[itemId]?.sessionData;
+  }
+
+  /// Get the local cover file path for a downloaded item.
+  /// Checks the persisted path first, then probes disk for cover.jpg.
+  Future<String?> getLocalCoverPath(String itemId) async {
+    final info = _downloads[itemId];
+    if (info == null || info.status != DownloadStatus.downloaded) return null;
+
+    // Check persisted path
+    if (info.localCoverPath != null && File(info.localCoverPath!).existsSync()) {
+      return info.localCoverPath;
+    }
+
+    // Probe disk (handles old downloads before cover caching was added)
+    final basePath = await downloadBasePath;
+    final coverFile = File('$basePath/$itemId/cover.jpg');
+    if (coverFile.existsSync()) return coverFile.path;
+
+    return null;
   }
 
   /// Returns null on success, error message string on failure.
@@ -324,6 +389,23 @@ class DownloadService extends ChangeNotifier {
       final bookDir = Directory('$basePath/$itemId');
       if (!bookDir.existsSync()) {
         bookDir.createSync(recursive: true);
+      }
+
+      // Cache the cover image locally for offline use (Android Auto, etc.)
+      String? localCoverPath;
+      if (coverUrl != null && coverUrl.isNotEmpty) {
+        try {
+          final coverResp = await http.get(Uri.parse(coverUrl))
+              .timeout(const Duration(seconds: 10));
+          if (coverResp.statusCode == 200 && coverResp.bodyBytes.isNotEmpty) {
+            final coverFile = File('${bookDir.path}/cover.jpg');
+            await coverFile.writeAsBytes(coverResp.bodyBytes);
+            localCoverPath = coverFile.path;
+            debugPrint('[Download] Cached cover image: $localCoverPath');
+          }
+        } catch (e) {
+          debugPrint('[Download] Cover cache failed (non-fatal): $e');
+        }
       }
 
       final localPaths = List<String?>.filled(audioTracks.length, null);
@@ -437,6 +519,7 @@ class DownloadService extends ChangeNotifier {
         title: title,
         author: author,
         coverUrl: coverUrl,
+        localCoverPath: localCoverPath,
       );
       await _save();
 

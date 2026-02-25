@@ -345,7 +345,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   Future<List<MediaItem>> getChildren(String parentMediaId,
       [Map<String, dynamic>? options]) async {
     debugPrint('[Handler] getChildren($parentMediaId)');
-    await _autoService.refresh();
+    // Don't await refresh() here — getChildrenOf() handles it:
+    // downloads are populated instantly, server data loads in background.
     return _autoService.getChildrenOf(parentMediaId);
   }
 
@@ -1031,9 +1032,18 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
+  /// Content provider authority — must match CoverContentProvider and AndroidManifest.
+  static const _coverAuthority = 'com.barnabas.absorb.covers';
+
   void _pushMediaItem(String itemId, String title, String author,
       String? coverUrl, double totalDuration, {String? chapter}) {
-    _updateNotificationMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: chapter);
+    // For downloaded books, prefer local cover via content:// provider.
+    // This ensures the Now Playing screen shows the cover even offline.
+    String? effectiveCoverUrl = coverUrl;
+    if (DownloadService().isDownloaded(itemId)) {
+      effectiveCoverUrl = 'content://$_coverAuthority/cover/$itemId';
+    }
+    _updateNotificationMediaItem(itemId, title, author, effectiveCoverUrl, totalDuration, chapter: chapter);
   }
 
   void _updateNotificationMediaItem(String itemId, String title, String author,
