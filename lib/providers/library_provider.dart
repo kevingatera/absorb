@@ -28,6 +28,8 @@ class LibraryProvider extends ChangeNotifier {
   // Offline mode
   bool _manualOffline = false;
   bool _networkOffline = false;
+  bool _deviceHasConnectivity = true; // false only when device has no network at all
+  Timer? _serverPingTimer;
   bool get isOffline => _manualOffline || _networkOffline;
   bool get isManualOffline => _manualOffline;
 
@@ -43,7 +45,11 @@ class LibraryProvider extends ChangeNotifier {
         debugPrint('[Library] Manual offline off — flushing pending syncs');
         ProgressSyncService().flushPendingSync(api: _api!);
       }
-      refresh();
+      if (_selectedLibraryId == null) {
+        loadLibraries();
+      } else {
+        refresh();
+      }
     } else {
       // Going offline — show downloaded books
       _buildOfflineSections();
@@ -66,13 +72,23 @@ class LibraryProvider extends ChangeNotifier {
       _buildOfflineSections();
       notifyListeners();
       AndroidAutoService().refresh(force: true);
+      // If the device still has connectivity, the server is just unreachable —
+      // start pinging so we auto-recover when it comes back.
+      if (_deviceHasConnectivity && !_manualOffline) {
+        _startServerPingTimer();
+      }
     } else if (!offline && wasOffline && !_manualOffline) {
-      // Came back online — immediately flush pending syncs, then refresh
+      // Came back online — stop pinging, flush pending syncs, then refresh
+      _stopServerPingTimer();
       if (_api != null) {
         debugPrint('[Library] Back online — flushing pending syncs');
         ProgressSyncService().flushPendingSync(api: _api!);
       }
-      refresh();
+      if (_selectedLibraryId == null) {
+        loadLibraries();
+      } else {
+        refresh();
+      }
       AndroidAutoService().refresh(force: true);
     }
   }
@@ -265,12 +281,13 @@ class LibraryProvider extends ChangeNotifier {
         _startConnectivityMonitoring();
         _loadManualAbsorbing();
 
-        // If server was unreachable on startup, force offline mode
+        // If server was unreachable on startup, force offline mode and ping
         if (!auth.serverReachable) {
           _networkOffline = true;
           _buildOfflineSections();
           _isLoading = false;
           notifyListeners();
+          if (_deviceHasConnectivity) _startServerPingTimer();
           return;
         }
 
@@ -292,6 +309,7 @@ class LibraryProvider extends ChangeNotifier {
       _selectedLibraryId = null;
       _errorMessage = null;
       _connectivitySub?.cancel();
+      _stopServerPingTimer();
       notifyListeners();
     }
   }
@@ -300,14 +318,57 @@ class LibraryProvider extends ChangeNotifier {
     _connectivitySub?.cancel();
     // Check current state immediately
     Connectivity().checkConnectivity().then((result) {
-      final offline = result.contains(ConnectivityResult.none);
-      if (offline) setNetworkOffline(true);
+      _deviceHasConnectivity = !result.contains(ConnectivityResult.none);
+      if (!_deviceHasConnectivity) {
+        _stopServerPingTimer();
+        setNetworkOffline(true);
+      } else if (_networkOffline && !_manualOffline) {
+        // Device has connectivity but we're still offline — server was unreachable
+        _startServerPingTimer();
+      }
     });
     // Then listen for changes
     _connectivitySub = Connectivity().onConnectivityChanged.listen((result) {
-      final offline = result.contains(ConnectivityResult.none);
-      setNetworkOffline(offline);
+      final hasConnectivity = !result.contains(ConnectivityResult.none);
+      _deviceHasConnectivity = hasConnectivity;
+      if (!hasConnectivity) {
+        _stopServerPingTimer();
+        setNetworkOffline(true);
+      } else if (!_manualOffline) {
+        // Connectivity restored — optimistically go online; if server is still
+        // down the API call will fail and _goOfflineWithPing() will be called.
+        setNetworkOffline(false);
+      }
     });
+  }
+
+  /// Start a periodic timer that pings the server until it responds.
+  /// Used when the device has network but the server was unreachable.
+  void _startServerPingTimer() {
+    _serverPingTimer?.cancel();
+    final serverUrl = _auth?.serverUrl;
+    if (serverUrl == null) return;
+    debugPrint('[Library] Starting server ping timer');
+    _serverPingTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
+      if (!_networkOffline || _manualOffline) {
+        _stopServerPingTimer();
+        return;
+      }
+      final reachable = await ApiService.pingServer(
+        serverUrl,
+        customHeaders: _auth?.customHeaders ?? {},
+      );
+      if (reachable) {
+        debugPrint('[Library] Server ping succeeded — going online');
+        _stopServerPingTimer();
+        setNetworkOffline(false);
+      }
+    });
+  }
+
+  void _stopServerPingTimer() {
+    _serverPingTimer?.cancel();
+    _serverPingTimer = null;
   }
 
   void _buildProgressMap(AuthProvider auth) {
@@ -358,8 +419,11 @@ class LibraryProvider extends ChangeNotifier {
       }
     } catch (e) {
       // Network error — auto-switch to offline view
-      _networkOffline = true;
-      _buildOfflineSections();
+      if (!_networkOffline) {
+        _networkOffline = true;
+        _buildOfflineSections();
+        if (_deviceHasConnectivity && !_manualOffline) _startServerPingTimer();
+      }
     }
 
     _isLoading = false;
@@ -398,8 +462,11 @@ class LibraryProvider extends ChangeNotifier {
       await _updateAbsorbingCache();
     } catch (e) {
       // Network error — auto-switch to offline view
-      _networkOffline = true;
-      _buildOfflineSections();
+      if (!_networkOffline) {
+        _networkOffline = true;
+        _buildOfflineSections();
+        if (_deviceHasConnectivity && !_manualOffline) _startServerPingTimer();
+      }
     }
 
     _isLoading = false;

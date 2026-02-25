@@ -713,23 +713,33 @@ class LibraryScreenState extends State<LibraryScreen> {
         LibraryFilter.genre => 'No books in "${_genreFilter ?? 'genre'}"',
         LibraryFilter.none => 'No books found',
       };
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.library_books_outlined,
-                size: 56, color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
-            const SizedBox(height: 12),
-            Text(filterMsg,
-                style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
-            if (_filter != LibraryFilter.none) ...[
-              const SizedBox(height: 8),
-              GestureDetector(
-                onTap: () => _changeFilter(LibraryFilter.none),
-                child: Text('Clear filter',
-                    style: tt.bodySmall?.copyWith(color: cs.primary)),
+      return RefreshIndicator(
+        onRefresh: _refreshAll,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverFillRemaining(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.library_books_outlined,
+                        size: 56, color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
+                    const SizedBox(height: 12),
+                    Text(filterMsg,
+                        style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
+                    if (_filter != LibraryFilter.none) ...[
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () => _changeFilter(LibraryFilter.none),
+                        child: Text('Clear filter',
+                            style: tt.bodySmall?.copyWith(color: cs.primary)),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-            ],
+            ),
           ],
         ),
       );
