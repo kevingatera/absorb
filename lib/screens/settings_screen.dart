@@ -1473,11 +1473,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _addAccount(BuildContext context) {
+  void _addAccount(BuildContext context) async {
     // Navigate to login screen as a pushed route (not replacing current)
-    Navigator.of(context, rootNavigator: true).push(
+    await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
     );
+    // After login, refresh the library for the newly active account
+    if (!context.mounted) return;
+    final auth = context.read<AuthProvider>();
+    final lib = context.read<LibraryProvider>();
+    if (auth.isAuthenticated) {
+      lib.updateAuth(auth);
+      await lib.refresh();
+      if (context.mounted) AppShell.goToAbsorbingGlobal();
+    }
   }
 
   void _removeAccount(BuildContext context, SavedAccount account) async {
