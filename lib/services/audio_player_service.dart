@@ -456,6 +456,14 @@ class AudioPlayerService extends ChangeNotifier {
   factory AudioPlayerService() => _instance;
   AudioPlayerService._();
 
+  /// Called when a book completes naturally (before player state is cleared).
+  /// Register via [setOnBookFinishedCallback]. Used by LibraryProvider to
+  /// update local finished state immediately without waiting for a server refresh.
+  static void Function(String itemId)? _onBookFinishedCallback;
+  static void setOnBookFinishedCallback(void Function(String itemId)? cb) {
+    _onBookFinishedCallback = cb;
+  }
+
   static AudioPlayerHandler? _handler;
   AudioPlayer? get _player => _handler?.player;
 
@@ -1250,6 +1258,11 @@ class AudioPlayerService extends ChangeNotifier {
       try {
         await _api!.closePlaybackSession(_playbackSessionId!);
       } catch (_) {}
+    }
+
+    // Notify LibraryProvider before clearing state so it can update isFinished locally
+    if (itemId != null) {
+      _onBookFinishedCallback?.call(itemId);
     }
 
     // Stop and clear state

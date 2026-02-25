@@ -606,7 +606,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     }
     final api = auth.apiService;
     if (api == null) return;
-    
+
     // Start playback
     await player.playItem(api: api, itemId: widget.itemId, title: title, author: author, coverUrl: coverUrl, totalDuration: duration, chapters: chapters);
     

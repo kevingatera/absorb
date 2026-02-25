@@ -372,9 +372,9 @@ class DownloadService extends ChangeNotifier {
     );
     notifyListeners();
 
-    // Show persistent download notification
+    // Show persistent download notification via foreground service
     final notif = DownloadNotificationService();
-    await notif.showProgress(title: title, author: author, progress: 0);
+    await notif.startForeground(title: title, author: author);
 
     try {
       final sessionData = await api.startPlaybackSession(itemId);
@@ -549,6 +549,7 @@ class DownloadService extends ChangeNotifier {
 
     _activeDownloadId = null;
     _httpClient = null;
+
     notifyListeners();
     return null;
   }

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dart analyze lib/services/android_auto_service.dart)",
+      "Bash(flutter analyze lib/providers/library_provider.dart lib/services/audio_player_service.dart)"
+    ]
+  }
+}

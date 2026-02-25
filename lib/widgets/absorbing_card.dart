@@ -16,6 +16,7 @@ import 'card_playback_controls.dart';
 import 'card_buttons.dart';
 import 'chromecast_button.dart';
 import '../services/chromecast_service.dart';
+import '../services/progress_sync_service.dart';
 
 class AbsorbingCard extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -202,6 +203,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     final lib = context.watch<LibraryProvider>();
     final mediaHeaders = lib.mediaHeaders;
     final progress = lib.getProgress(_itemId);
+    final isFinished = lib.getProgressData(_itemId)?['isFinished'] == true;
     final chapterIdx = _currentChapterIndex();
     final totalChapters = _isActive ? widget.player.chapters.length : _chapters.length;
     final double bookProgress;
@@ -394,6 +396,63 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                     ),
                                   ),
                                 ],
+                                // Finished overlay
+                                if (isFinished && !isCastingThis) ...[
+                                  Positioned.fill(
+                                    child: Container(
+                                      color: Colors.black.withValues(alpha: 0.78),
+                                    ),
+                                  ),
+                                  Positioned.fill(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.check_circle_rounded, size: 32, color: Colors.green.shade400),
+                                          const SizedBox(height: 6),
+                                          const Text('Finished',
+                                            style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
+                                          const SizedBox(height: 18),
+                                          SizedBox(
+                                            width: double.infinity,
+                                            child: GestureDetector(
+                                              onTap: _listenAgain,
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(vertical: 9),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white.withValues(alpha: 0.18),
+                                                  borderRadius: BorderRadius.circular(11),
+                                                  border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                                                ),
+                                                child: const Text('Listen Again',
+                                                  textAlign: TextAlign.center,
+                                                  style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          SizedBox(
+                                            width: double.infinity,
+                                            child: GestureDetector(
+                                              onTap: _removeFromAbsorbing,
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(vertical: 9),
+                                                decoration: BoxDecoration(
+                                                  borderRadius: BorderRadius.circular(11),
+                                                  border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                                                ),
+                                                child: const Text('Remove',
+                                                  textAlign: TextAlign.center,
+                                                  style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500)),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -554,6 +613,38 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       coverUrl: _coverUrl, totalDuration: _duration, chapters: _chapters,
     );
     if (mounted) setState(() => _isStarting = false);
+  }
+
+  Future<void> _listenAgain() async {
+    if (_isStarting) return;
+    final cast = ChromecastService();
+    if (cast.isCasting && cast.castingItemId == _itemId) return;
+    setState(() => _isStarting = true);
+    final auth = context.read<AuthProvider>();
+    final api = auth.apiService;
+    if (api == null) { setState(() => _isStarting = false); return; }
+    final lib = context.read<LibraryProvider>();
+    await api.resetProgress(_itemId, _duration);
+    lib.resetProgressFor(_itemId);
+    // Clear the locally saved position so playItem() doesn't override startTime
+    // back to the end of the book (where it was saved on completion)
+    await ProgressSyncService().deleteLocal(_itemId);
+    await widget.player.playItem(
+      api: api, itemId: _itemId, title: _title, author: _author,
+      coverUrl: _coverUrl, totalDuration: _duration, chapters: _chapters,
+    );
+    if (mounted) setState(() => _isStarting = false);
+  }
+
+  Future<void> _removeFromAbsorbing() async {
+    if (widget.player.currentItemId == _itemId) {
+      await widget.player.pause();
+      await widget.player.stop();
+    }
+    if (mounted) {
+      final lib = context.read<LibraryProvider>();
+      await lib.removeFromAbsorbing(_itemId);
+    }
   }
 
   void _showChapters(BuildContext context, Color accent, TextTheme tt) {

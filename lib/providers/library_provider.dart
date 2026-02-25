@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../services/scoped_prefs.dart';
+import '../services/audio_player_service.dart';
 import 'auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/progress_sync_service.dart';
@@ -250,12 +251,16 @@ class LibraryProvider extends ChangeNotifier {
         _resetItems.clear();
         _manualAbsorbAdds.clear();
         _manualAbsorbRemoves.clear();
+        _absorbingBookIds.clear();
+        _absorbingItemCache.clear();
         _isLoading = true;
         notifyListeners(); // Immediately clear old user's data from UI
       }
 
       // Restore manual offline preference and start connectivity monitoring
       // Must complete before loading libraries so offline state is correct
+      AudioPlayerService.setOnBookFinishedCallback(markFinishedLocally);
+
       restoreOfflineMode().then((_) {
         _startConnectivityMonitoring();
         _loadManualAbsorbing();
@@ -278,6 +283,7 @@ class LibraryProvider extends ChangeNotifier {
       });
     } else {
       _lastAuthKey = null;
+      AudioPlayerService.setOnBookFinishedCallback(null);
       _libraries = [];
       _personalizedSections = [];
       _series = [];
@@ -389,6 +395,7 @@ class LibraryProvider extends ChangeNotifier {
       await _refreshProgress();
       _personalizedSections =
           await _api!.getPersonalizedView(_selectedLibraryId!);
+      await _updateAbsorbingCache();
     } catch (e) {
       // Network error — auto-switch to offline view
       _networkOffline = true;
@@ -502,24 +509,65 @@ class LibraryProvider extends ChangeNotifier {
 
   Set<String> _manualAbsorbAdds = {};
   Set<String> _manualAbsorbRemoves = {};
+  // Persisted set of all book IDs ever shown on the absorbing page
+  Set<String> _absorbingBookIds = {};
+  // Cached item data for books that may no longer be in server sections
+  Map<String, Map<String, dynamic>> _absorbingItemCache = {};
 
   Set<String> get manualAbsorbAdds => _manualAbsorbAdds;
   Set<String> get manualAbsorbRemoves => _manualAbsorbRemoves;
+  Set<String> get absorbingBookIds => _absorbingBookIds;
+  Map<String, Map<String, dynamic>> get absorbingItemCache => _absorbingItemCache;
 
   Future<void> _loadManualAbsorbing() async {
     _manualAbsorbAdds = (await ScopedPrefs.getStringList('absorbing_manual_adds')).toSet();
     _manualAbsorbRemoves = (await ScopedPrefs.getStringList('absorbing_manual_removes')).toSet();
+    _absorbingBookIds = (await ScopedPrefs.getStringList('absorbing_seen_ids')).toSet();
+    final cacheList = await ScopedPrefs.getStringList('absorbing_item_cache_v2');
+    _absorbingItemCache = {};
+    for (final s in cacheList) {
+      try {
+        final m = jsonDecode(s) as Map<String, dynamic>;
+        final id = m['id'] as String?;
+        if (id != null) _absorbingItemCache[id] = m;
+      } catch (_) {}
+    }
   }
 
   Future<void> _saveManualAbsorbing() async {
     await ScopedPrefs.setStringList('absorbing_manual_adds', _manualAbsorbAdds.toList());
     await ScopedPrefs.setStringList('absorbing_manual_removes', _manualAbsorbRemoves.toList());
+    await ScopedPrefs.setStringList('absorbing_seen_ids', _absorbingBookIds.toList());
+    await ScopedPrefs.setStringList('absorbing_item_cache_v2',
+        _absorbingItemCache.values.map((e) => jsonEncode(e)).toList());
+  }
+
+  /// Scans current sections and adds qualifying items to the persisted absorbing list.
+  /// Called after each section refresh so finished books stay visible even after
+  /// the server removes them from continue-listening.
+  Future<void> _updateAbsorbingCache() async {
+    for (final section in _personalizedSections) {
+      final id = section['id'] as String? ?? '';
+      if (id == 'continue-listening' || id == 'continue-series' || id == 'downloaded-books') {
+        for (final e in (section['entities'] as List<dynamic>? ?? [])) {
+          if (e is Map<String, dynamic>) {
+            final itemId = e['id'] as String?;
+            if (itemId != null && !_manualAbsorbRemoves.contains(itemId)) {
+              _absorbingBookIds.add(itemId);
+              _absorbingItemCache[itemId] = e;
+            }
+          }
+        }
+      }
+    }
+    await _saveManualAbsorbing();
   }
 
   /// Add a book to the absorbing list manually.
   Future<void> addToAbsorbing(String itemId) async {
     _manualAbsorbAdds.add(itemId);
     _manualAbsorbRemoves.remove(itemId);
+    _absorbingBookIds.add(itemId);
     await _saveManualAbsorbing();
     notifyListeners();
   }
@@ -528,23 +576,25 @@ class LibraryProvider extends ChangeNotifier {
   Future<void> removeFromAbsorbing(String itemId) async {
     _manualAbsorbRemoves.add(itemId);
     _manualAbsorbAdds.remove(itemId);
+    _absorbingBookIds.remove(itemId);
+    _absorbingItemCache.remove(itemId);
     await _saveManualAbsorbing();
     notifyListeners();
   }
 
-  /// Check if a book is manually added or on the absorbing page.
+  /// Mark an item as finished locally so the overlay appears immediately,
+  /// before the next server refresh confirms isFinished.
+  void markFinishedLocally(String itemId) {
+    if (_resetItems.contains(itemId)) return;
+    final existing = _progressMap[itemId] ?? {};
+    _progressMap[itemId] = {...existing, 'isFinished': true};
+    _localProgressOverrides[itemId] = 1.0;
+    notifyListeners();
+  }
+
+  /// Check if a book is on the absorbing page (persisted local list, not removed).
   bool isOnAbsorbingList(String itemId) {
     if (_manualAbsorbRemoves.contains(itemId)) return false;
-    if (_manualAbsorbAdds.contains(itemId)) return true;
-    // Check if it's in the server sections
-    for (final section in _personalizedSections) {
-      final id = section['id'] as String? ?? '';
-      if (id == 'continue-listening' || id == 'continue-series' || id == 'downloaded-books') {
-        for (final e in (section['entities'] as List<dynamic>? ?? [])) {
-          if (e is Map<String, dynamic> && e['id'] == itemId) return true;
-        }
-      }
-    }
-    return false;
+    return _absorbingBookIds.contains(itemId);
   }
 }

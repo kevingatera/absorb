@@ -65,6 +65,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final autoSeries = await PlayerSettings.getAutoContinueSeries();
     final hideEbook = await PlayerSettings.getHideEbookOnly();
     final showGoodreads = await PlayerSettings.getShowGoodreadsButton();
+
     final dlLabel = await DownloadService().downloadLocationLabel;
     final dlSize = await DownloadService().totalDownloadSize;
     final autoSleep = await AutoSleepSettings.load();

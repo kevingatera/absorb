@@ -40,18 +40,24 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   }
 
   String? _lastPlayingId;
+  String? _lastFinishedId;
   bool _isSyncing = false;
 
   void _rebuild() {
     if (!mounted) return;
-    setState(() {});
-    // Auto-scroll to the newly active card if the playing book changed
     if (_player.currentItemId != _lastPlayingId) {
+      final wasPlayingId = _lastPlayingId;
       _lastPlayingId = _player.currentItemId;
       if (_player.hasBook) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToActiveCard());
+      } else if (wasPlayingId != null && !_isSyncing) {
+        // Book just stopped (natural completion or session end)
+        _lastFinishedId = wasPlayingId;
+        final lib = context.read<LibraryProvider>();
+        lib.markFinishedLocally(wasPlayingId);
       }
     }
+    setState(() {});
   }
 
   void _scrollToActiveCard({int retries = 2}) {
@@ -89,50 +95,40 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   }
 
   List<Map<String, dynamic>> _getAbsorbingBooks(LibraryProvider lib) {
-    final items = <Map<String, dynamic>>[];
-    final seen = <String>{};
-    
-    // Exclude manually removed items
     final removes = lib.manualAbsorbRemoves;
+    final cache = lib.absorbingItemCache;
 
-    for (final section in lib.personalizedSections) {
-      final id = section['id'] as String? ?? '';
-      if (id == 'continue-listening' || id == 'continue-series' || id == 'downloaded-books') {
-        for (final e in (section['entities'] as List<dynamic>? ?? [])) {
-          if (e is Map<String, dynamic>) {
-            final itemId = e['id'] as String?;
-            if (itemId != null && seen.add(itemId) && !removes.contains(itemId)) {
-              items.add(e);
-            }
-          }
-        }
-      }
-    }
-
-    // Add manually added items that aren't already in the list
+    // Quick lookup of fresh data from the current server sections
+    final sectionLookup = <String, Map<String, dynamic>>{};
     for (final section in lib.personalizedSections) {
       for (final e in (section['entities'] as List<dynamic>? ?? [])) {
         if (e is Map<String, dynamic>) {
           final itemId = e['id'] as String?;
-          if (itemId != null && lib.manualAbsorbAdds.contains(itemId) && seen.add(itemId)) {
-            items.add(e);
-          }
+          if (itemId != null) sectionLookup[itemId] = e;
         }
       }
     }
-    
-    // If the currently playing book isn't in the list, add it at the front
-    // If it IS in the list, move it to the front
+
+    // Build list from the persisted local absorbing set.
+    // Books stay here even after the server removes them from continue-listening
+    // (e.g. when marked finished). Only removed when the user explicitly removes.
+    final items = <Map<String, dynamic>>[];
+    for (final itemId in lib.absorbingBookIds) {
+      if (removes.contains(itemId)) continue;
+      final itemData = sectionLookup[itemId] ?? cache[itemId];
+      if (itemData != null) items.add(itemData);
+    }
+
+    // If the currently playing book isn't in the list, add it at the front.
+    // If it IS in the list, move it to the front.
     if (_player.hasBook && _player.currentItemId != null) {
       final playingId = _player.currentItemId!;
       if (!removes.contains(playingId)) {
         final existingIdx = items.indexWhere((b) => (b['id'] as String?) == playingId);
         if (existingIdx > 0) {
-          // Move to front
           final item = items.removeAt(existingIdx);
           items.insert(0, item);
         } else if (existingIdx < 0) {
-          // Not in list at all — add to front
           items.insert(0, {
             'id': playingId,
             'media': {
@@ -145,10 +141,18 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             },
           });
         }
-        // existingIdx == 0 means it's already at front, do nothing
       }
     }
-    
+
+    // When nothing is playing, keep the last-finished book at the front
+    if (!_player.hasBook && _lastFinishedId != null && !removes.contains(_lastFinishedId)) {
+      final finishedIdx = items.indexWhere((b) => (b['id'] as String?) == _lastFinishedId);
+      if (finishedIdx > 0) {
+        final item = items.removeAt(finishedIdx);
+        items.insert(0, item);
+      }
+    }
+
     return items;
   }
 

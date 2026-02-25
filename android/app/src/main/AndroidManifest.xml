@@ -74,6 +74,12 @@
             android:exported="true"
             android:grantUriPermissions="true" />
 
+        <!--Forground notification for better download-->
+        <service
+            android:name="com.dexterous.flutterlocalnotifications.ForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />    
+
     </application>
 
     <queries>
