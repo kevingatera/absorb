@@ -264,7 +264,7 @@ class DownloadService extends ChangeNotifier {
           // Try to download from server
           final url = coverUrl ?? api.getCoverUrl(info.itemId);
           try {
-            final resp = await http.get(Uri.parse(url))
+            final resp = await http.get(Uri.parse(url), headers: api.mediaHeaders)
                 .timeout(const Duration(seconds: 10));
             if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
               final dir = Directory('$basePath/${info.itemId}');
@@ -395,7 +395,7 @@ class DownloadService extends ChangeNotifier {
       String? localCoverPath;
       if (coverUrl != null && coverUrl.isNotEmpty) {
         try {
-          final coverResp = await http.get(Uri.parse(coverUrl))
+          final coverResp = await http.get(Uri.parse(coverUrl), headers: api.mediaHeaders)
               .timeout(const Duration(seconds: 10));
           if (coverResp.statusCode == 200 && coverResp.bodyBytes.isNotEmpty) {
             final coverFile = File('${bookDir.path}/cover.jpg');
@@ -461,6 +461,7 @@ class DownloadService extends ChangeNotifier {
         debugPrint('[Download] Track ${i + 1}/${audioTracks.length}: $fullUrl');
 
         final request = http.Request('GET', Uri.parse(fullUrl));
+        api.mediaHeaders.forEach((key, value) => request.headers[key] = value);
         final response = await _httpClient!.send(request);
 
         if (response.statusCode != 200) {

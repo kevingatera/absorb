@@ -37,10 +37,12 @@ class BookCard extends StatelessWidget {
       progress = lib.getProgress(itemId);
     }
 
+    final headers = lib.mediaHeaders;
+
     if (isWide) {
-      return _buildWideCard(context, cs, tt, title, authorName, coverUrl, progress);
+      return _buildWideCard(context, cs, tt, title, authorName, coverUrl, progress, headers);
     }
-    return _buildCompactCard(context, cs, tt, title, authorName, coverUrl, progress);
+    return _buildCompactCard(context, cs, tt, title, authorName, coverUrl, progress, headers);
   }
 
   void _navigateToDetail(BuildContext context) {
@@ -59,6 +61,7 @@ class BookCard extends StatelessWidget {
     String authorName,
     String? coverUrl,
     double progress,
+    Map<String, String> headers,
   ) {
     return Card(
       elevation: 0,
@@ -76,7 +79,7 @@ class BookCard extends StatelessWidget {
               height: 120,
               child: Stack(
                 children: [
-                  _CoverImage(coverUrl: coverUrl, cs: cs, fit: BoxFit.contain),
+                  _CoverImage(coverUrl: coverUrl, cs: cs, fit: BoxFit.contain, httpHeaders: headers),
                   if (DownloadService().isDownloaded(item['id'] as String? ?? ''))
                     Positioned(
                       top: 4, right: 4,
@@ -166,6 +169,7 @@ class BookCard extends StatelessWidget {
     String authorName,
     String? coverUrl,
     double progress,
+    Map<String, String> headers,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -188,7 +192,7 @@ class BookCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  _CoverImage(coverUrl: coverUrl, cs: cs),
+                  _CoverImage(coverUrl: coverUrl, cs: cs, httpHeaders: headers),
                   if (DownloadService().isDownloaded(item['id'] as String? ?? ''))
                     Positioned(
                       top: 4, right: 4,
@@ -260,8 +264,9 @@ class _CoverImage extends StatelessWidget {
   final String? coverUrl;
   final ColorScheme cs;
   final BoxFit fit;
+  final Map<String, String> httpHeaders;
 
-  const _CoverImage({required this.coverUrl, required this.cs, this.fit = BoxFit.cover});
+  const _CoverImage({required this.coverUrl, required this.cs, this.fit = BoxFit.cover, this.httpHeaders = const {}});
 
   @override
   Widget build(BuildContext context) {
@@ -272,6 +277,7 @@ class _CoverImage extends StatelessWidget {
     return CachedNetworkImage(
       imageUrl: coverUrl!,
       fit: fit,
+      httpHeaders: httpHeaders,
       placeholder: (_, __) => _placeholder(),
       errorWidget: (_, __, ___) => _placeholder(),
     );

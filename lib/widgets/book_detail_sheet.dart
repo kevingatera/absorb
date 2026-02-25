@@ -148,6 +148,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         if (_coverUrl != null)
           Positioned.fill(child: CachedNetworkImage(
             imageUrl: _coverUrl!, fit: BoxFit.cover,
+            httpHeaders: context.read<LibraryProvider>().mediaHeaders,
             imageBuilder: (_, p) => ImageFiltered(
               imageFilter: ImageFilter.blur(sigmaX: 80, sigmaY: 80, tileMode: TileMode.decal),
               child: Image(image: p, fit: BoxFit.cover)),

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_chrome_cast/flutter_chrome_cast.dart';
+import 'package:provider/provider.dart';
+import '../providers/library_provider.dart';
 import '../services/chromecast_service.dart';
 import '../services/api_service.dart';
 
@@ -159,6 +161,7 @@ class CastControlSheet extends StatelessWidget {
                     if (cast.castingCoverUrl != null)
                       ClipRRect(borderRadius: BorderRadius.circular(8),
                         child: Image.network(cast.castingCoverUrl!, width: 48, height: 48, fit: BoxFit.cover,
+                          headers: context.read<LibraryProvider>().mediaHeaders,
                           errorBuilder: (_, __, ___) => Container(width: 48, height: 48,
                             decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
                             child: const Icon(Icons.headphones_rounded, size: 24, color: Colors.white24)))),

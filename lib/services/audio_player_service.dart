@@ -988,19 +988,21 @@ class AudioPlayerService extends ChangeNotifier {
       _buildTrackOffsets(audioTracks);
       _currentTrackIndex = 0;
 
+      final audioHeaders = api.mediaHeaders;
+
       AudioSource source;
       if (audioTracks.length == 1) {
         final track = audioTracks.first as Map<String, dynamic>;
         final contentUrl = track['contentUrl'] as String? ?? '';
         final fullUrl = api.buildTrackUrl(contentUrl);
-        source = AudioSource.uri(Uri.parse(fullUrl));
+        source = AudioSource.uri(Uri.parse(fullUrl), headers: audioHeaders);
       } else {
         final sources = <AudioSource>[];
         for (final t in audioTracks) {
           final track = t as Map<String, dynamic>;
           final contentUrl = track['contentUrl'] as String? ?? '';
           final fullUrl = api.buildTrackUrl(contentUrl);
-          sources.add(AudioSource.uri(Uri.parse(fullUrl)));
+          sources.add(AudioSource.uri(Uri.parse(fullUrl), headers: audioHeaders));
         }
         source = ConcatenatingAudioSource(children: sources);
       }

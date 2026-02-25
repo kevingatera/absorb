@@ -149,6 +149,7 @@ class _AdminPodcastsScreenState extends State<AdminPodcastsScreen> {
     final auth = context.read<AuthProvider>();
     final url = '${auth.serverUrl}/api/items/$itemId/cover?token=${auth.token}';
     return Image.network(url, width: 56, height: 56, fit: BoxFit.cover,
+      headers: auth.apiService?.mediaHeaders ?? {},
       errorBuilder: (_, __, ___) => _coverPlaceholder(cs));
   }
 
@@ -792,6 +793,7 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             ClipRRect(borderRadius: BorderRadius.circular(12),
               child: Image.network(coverUrl, width: 72, height: 72, fit: BoxFit.cover,
+                headers: auth.apiService?.mediaHeaders ?? {},
                 errorBuilder: (_, __, ___) => Container(width: 72, height: 72,
                   decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
                   child: Icon(Icons.podcasts_rounded, color: cs.primary.withValues(alpha: 0.4), size: 28)))),

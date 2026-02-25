@@ -44,6 +44,13 @@ class ApiService {
         'Content-Type': 'application/json',
       };
 
+  /// Public headers for image/audio requests (no Content-Type needed).
+  /// Use this for CachedNetworkImage, Image.network, AudioSource.uri, etc.
+  Map<String, String> get mediaHeaders => {
+        ...customHeaders,
+        'Authorization': 'Bearer $token',
+      };
+
   String get _cleanBaseUrl =>
       baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
 

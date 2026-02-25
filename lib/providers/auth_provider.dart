@@ -334,9 +334,26 @@ class AuthProvider extends ChangeNotifier {
       if (_username != null) await prefs.setString('username', _username!);
     } catch (_) {}
 
+    // Restore custom headers for this session
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final headersJson = prefs.getString('custom_headers');
+      if (headersJson != null) {
+        try {
+          _customHeaders = Map<String, String>.from(jsonDecode(headersJson) as Map);
+        } catch (_) {
+          _customHeaders = {};
+        }
+      } else {
+        _customHeaders = {};
+      }
+    } catch (_) {
+      _customHeaders = {};
+    }
+
     // Verify the token still works and get user info
     try {
-      final api = ApiService(baseUrl: _serverUrl!, token: _token!);
+      final api = ApiService(baseUrl: _serverUrl!, token: _token!, customHeaders: _customHeaders);
       final me = await api.getMe();
       if (me != null) {
         _userJson = me;

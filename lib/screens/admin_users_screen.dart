@@ -375,6 +375,7 @@ class _UserDetailScreenState extends State<_UserDetailScreen> {
             borderRadius: BorderRadius.circular(8),
             child: coverUrl != null
                 ? Image.network(coverUrl, width: 44, height: 44, fit: BoxFit.cover,
+                    headers: auth.apiService?.mediaHeaders ?? {},
                     errorBuilder: (_, __, ___) => _coverFallback(cs))
                 : _coverFallback(cs),
           ),

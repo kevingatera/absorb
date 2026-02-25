@@ -468,6 +468,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
                 width: 48, height: 48,
                 child: coverUrl != null
                     ? CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover,
+                        httpHeaders: lib.mediaHeaders,
                         errorWidget: (_, __, ___) => Container(
                           color: cs.surfaceContainerHighest,
                           child: Icon(Icons.headphones_rounded, size: 18, color: cs.onSurfaceVariant)))

@@ -200,6 +200,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     final bgDark = cs.surface;
 
     final lib = context.watch<LibraryProvider>();
+    final mediaHeaders = lib.mediaHeaders;
     final progress = lib.getProgress(_itemId);
     final chapterIdx = _currentChapterIndex();
     final totalChapters = _isActive ? widget.player.chapters.length : _chapters.length;
@@ -243,6 +244,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
               child: CachedNetworkImage(
                 imageUrl: _coverUrl!,
                 fit: BoxFit.cover,
+                httpHeaders: mediaHeaders,
                 imageBuilder: (_, provider) {
                   _onCoverLoaded(provider);
                   return Opacity(
@@ -336,6 +338,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                 // Cover image
                                 _coverUrl != null
                                     ? CachedNetworkImage(imageUrl: _coverUrl!, fit: BoxFit.cover,
+                                          httpHeaders: mediaHeaders,
                                           placeholder: (_, __) => _coverPlaceholder(),
                                           errorWidget: (_, __, ___) => _coverPlaceholder())
                                     : _coverPlaceholder(),

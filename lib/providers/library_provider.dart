@@ -491,6 +491,10 @@ class LibraryProvider extends ChangeNotifier {
     return dl.coverUrl;
   }
 
+  /// Headers needed for authenticated media requests (covers, audio).
+  /// Returns empty map if no API is available.
+  Map<String, String> get mediaHeaders => _api?.mediaHeaders ?? {};
+
   // ── Manual Absorbing List ──
 
   Set<String> _manualAbsorbAdds = {};

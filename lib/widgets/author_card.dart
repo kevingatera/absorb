@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
+import '../providers/library_provider.dart';
 
 class AuthorCard extends StatelessWidget {
   final Map<String, dynamic> author;
@@ -13,6 +14,7 @@ class AuthorCard extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final auth = context.read<AuthProvider>();
+    final lib = context.read<LibraryProvider>();
 
     final name = author['name'] as String? ?? 'Unknown';
     final authorId = author['id'] as String? ?? '';
@@ -22,6 +24,8 @@ class AuthorCard extends StatelessWidget {
       imageUrl =
           '${auth.serverUrl}/api/authors/$authorId/image?width=200&token=${auth.token}';
     }
+
+    final headers = lib.mediaHeaders;
 
     return InkWell(
       onTap: () {},
@@ -42,6 +46,7 @@ class AuthorCard extends StatelessWidget {
                 ? CachedNetworkImage(
                     imageUrl: imageUrl,
                     fit: BoxFit.cover,
+                    httpHeaders: headers,
                     placeholder: (_, __) => _placeholder(cs),
                     errorWidget: (_, __, ___) => _placeholder(cs),
                   )

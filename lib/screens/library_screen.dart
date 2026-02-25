@@ -1225,6 +1225,7 @@ class _GridBookTileState extends State<_GridBookTile> {
                       ? CachedNetworkImage(
                           imageUrl: coverUrl,
                           fit: BoxFit.cover,
+                          httpHeaders: lib.mediaHeaders,
                           placeholder: (_, __) => _placeholder(cs),
                           errorWidget: (_, __, ___) => _placeholder(cs),
                         )
@@ -1395,6 +1396,7 @@ class _AuthorResultTile extends StatelessWidget {
                       ? CachedNetworkImage(
                           imageUrl: imageUrl,
                           fit: BoxFit.cover,
+                          httpHeaders: context.read<LibraryProvider>().mediaHeaders,
                           placeholder: (_, __) => _ph(cs),
                           errorWidget: (_, __, ___) => _ph(cs),
                         )
@@ -1649,6 +1651,7 @@ class _BookResultTile extends StatelessWidget {
                     ? CachedNetworkImage(
                         imageUrl: coverUrl,
                         fit: BoxFit.cover,
+                        httpHeaders: context.read<LibraryProvider>().mediaHeaders,
                         placeholder: (_, __) => _ph(cs),
                         errorWidget: (_, __, ___) => _ph(cs),
                       )
@@ -2025,6 +2028,7 @@ class _SeriesBooksSheetState extends State<_SeriesBooksSheet> {
                                       ? CachedNetworkImage(
                                           imageUrl: coverUrl,
                                           fit: BoxFit.cover,
+                                          httpHeaders: context.read<LibraryProvider>().mediaHeaders,
                                           placeholder: (_, __) =>
                                               _placeholder(cs),
                                           errorWidget: (_, __, ___) =>
