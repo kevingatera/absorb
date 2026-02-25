@@ -305,7 +305,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                 Flexible(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: LayoutBuilder(
+                    child: ListenableBuilder(
+                    listenable: ChromecastService(),
+                    builder: (context, _) => LayoutBuilder(
                     builder: (context, constraints) {
                       final coverWidth = constraints.maxWidth * 0.85;
                       // Use the smaller of desired width or available height to prevent squishing
@@ -313,6 +315,8 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                           ? coverWidth
                           : constraints.maxHeight;
                       final isDownloaded = DownloadService().isDownloaded(_itemId);
+                      final castService = ChromecastService();
+                      final isCastingThis = castService.isCasting && castService.castingItemId == _itemId;
                       return Container(
                           width: coverSize,
                           height: coverSize,
@@ -355,12 +359,45 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                       ),
                                     ),
                                   ),
+                                // Casting overlay
+                                if (isCastingThis) ...[
+                                  Positioned.fill(
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.45),
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned.fill(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.cast_connected_rounded, size: 36, color: accent.withValues(alpha: 0.9)),
+                                        const SizedBox(height: 8),
+                                        Text('Casting to', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.w500)),
+                                        const SizedBox(height: 2),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                                          child: Text(
+                                            castService.connectedDeviceName ?? 'Device',
+                                            style: TextStyle(color: accent, fontSize: 14, fontWeight: FontWeight.w700),
+                                            textAlign: TextAlign.center,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
                         ),
                       );
                     },
+                  ),
                   ),
                   ),
                 ),
@@ -383,6 +420,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                         isActive: _isActive,
                         isStarting: _isStarting,
                         onStart: _startPlayback,
+                        itemId: _itemId,
                       ),
                       const Spacer(flex: 3),
                       // ── Button grid (hugs bottom) ──
@@ -501,6 +539,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
 
   Future<void> _startPlayback() async {
     if (_isStarting) return;
+    // If we're casting this book, don't start local playback
+    final cast = ChromecastService();
+    if (cast.isCasting && cast.castingItemId == _itemId) return;
     setState(() => _isStarting = true);
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
@@ -664,27 +705,36 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                   onTap: () { Navigator.pop(ctx); showBookDetailSheet(context, _itemId); },
                 ),
                 const SizedBox(height: 6),
+                // Equalizer / Audio Enhancements
+                MoreMenuItem(
+                  icon: Icons.equalizer_rounded,
+                  label: 'Audio Enhancements',
+                  accent: accent,
+                  onTap: () { Navigator.pop(ctx); showEqualizerSheet(context, accent); },
+                ),
+                const SizedBox(height: 6),
                 // Cast to device
                 ListenableBuilder(
                   listenable: ChromecastService(),
                   builder: (_, __) {
                     final cast = ChromecastService();
+                    final String castLabel;
+                    if (cast.isCasting && cast.castingItemId == _itemId) {
+                      castLabel = 'Casting to ${cast.connectedDeviceName ?? "device"}';
+                    } else if (cast.isConnected) {
+                      castLabel = 'Cast to ${cast.connectedDeviceName ?? "device"}';
+                    } else {
+                      castLabel = 'Cast to Device';
+                    }
                     return MoreMenuItem(
                       icon: cast.isConnected ? Icons.cast_connected_rounded : Icons.cast_rounded,
-                      label: cast.isCasting ? 'Casting to ${cast.connectedDeviceName ?? "device"}' : 'Cast to Device',
+                      label: castLabel,
                       accent: accent,
                       onTap: () {
+                        final auth = context.read<AuthProvider>();
+                        final api = auth.apiService;
                         Navigator.pop(ctx);
-                        if (cast.isConnected && !cast.isCasting) {
-                          final auth = context.read<AuthProvider>();
-                          final api = auth.apiService;
-                          if (api != null) {
-                            cast.castItem(
-                              api: api, itemId: _itemId, title: _title, author: _author,
-                              coverUrl: _coverUrl, totalDuration: _duration, chapters: _chapters,
-                            );
-                          }
-                        } else if (cast.isCasting) {
+                        if (cast.isCasting && cast.castingItemId == _itemId) {
                           showModalBottomSheet(
                             context: context,
                             backgroundColor: const Color(0xFF1A1A1A),
@@ -693,20 +743,21 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                             ),
                             builder: (_) => CastControlSheet(),
                           );
+                        } else if (cast.isConnected) {
+                          if (api != null) {
+                            cast.castItem(
+                              api: api, itemId: _itemId, title: _title, author: _author,
+                              coverUrl: _coverUrl, totalDuration: _duration, chapters: _chapters,
+                            );
+                          }
                         } else {
-                          showCastDevicePicker(context);
+                          showCastDevicePicker(context,
+                            api: api, itemId: _itemId, title: _title, author: _author,
+                            coverUrl: _coverUrl, totalDuration: _duration, chapters: _chapters);
                         }
                       },
                     );
                   },
-                ),
-                const SizedBox(height: 6),
-                // Equalizer / Audio Enhancements
-                MoreMenuItem(
-                  icon: Icons.equalizer_rounded,
-                  label: 'Audio Enhancements',
-                  accent: accent,
-                  onTap: () { Navigator.pop(ctx); showEqualizerSheet(context, accent); },
                 ),
                 const SizedBox(height: 6),
                 // History option

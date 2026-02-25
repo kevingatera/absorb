@@ -1,9 +1,21 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_chrome_cast/flutter_chrome_cast.dart';
 import '../services/chromecast_service.dart';
+import '../services/api_service.dart';
 
-/// Shows a device picker bottom sheet using the devicesStream.
-void showCastDevicePicker(BuildContext context) {
+/// Shows a device picker. If castAfter params are provided, automatically
+/// casts the book after connecting to the selected device.
+void showCastDevicePicker(
+  BuildContext context, {
+  ApiService? api,
+  String? itemId,
+  String? title,
+  String? author,
+  String? coverUrl,
+  double? totalDuration,
+  List<dynamic>? chapters,
+}) {
   final cast = ChromecastService();
   showModalBottomSheet(
     context: context,
@@ -51,6 +63,12 @@ void showCastDevicePicker(BuildContext context) {
                         onTap: () {
                           Navigator.pop(ctx);
                           cast.connectToDevice(device);
+                          if (api != null && itemId != null) {
+                            _waitAndCast(cast, api: api, itemId: itemId,
+                              title: title ?? '', author: author ?? '',
+                              coverUrl: coverUrl, totalDuration: totalDuration ?? 0,
+                              chapters: chapters ?? []);
+                          }
                         },
                       );
                     },
@@ -63,6 +81,47 @@ void showCastDevicePicker(BuildContext context) {
       ),
     ),
   );
+}
+
+/// Wait for connection to establish, then cast the item.
+void _waitAndCast(
+  ChromecastService cast, {
+  required ApiService api,
+  required String itemId,
+  required String title,
+  required String author,
+  required String? coverUrl,
+  required double totalDuration,
+  required List<dynamic> chapters,
+}) {
+  if (cast.isConnected) {
+    cast.castItem(api: api, itemId: itemId, title: title, author: author,
+      coverUrl: coverUrl, totalDuration: totalDuration, chapters: chapters);
+    return;
+  }
+
+  StreamSubscription? sub;
+  Timer? timeout;
+
+  void cleanup() {
+    sub?.cancel();
+    timeout?.cancel();
+  }
+
+  sub = GoogleCastSessionManager.instance.currentSessionStream.listen((session) {
+    if (cast.isConnected) {
+      cleanup();
+      Future.delayed(const Duration(milliseconds: 500), () {
+        cast.castItem(api: api, itemId: itemId, title: title, author: author,
+          coverUrl: coverUrl, totalDuration: totalDuration, chapters: chapters);
+      });
+    }
+  });
+
+  timeout = Timer(const Duration(seconds: 15), () {
+    debugPrint('[Cast] Connection timeout — giving up auto-cast');
+    cleanup();
+  });
 }
 
 /// Bottom sheet with cast controls when connected.
@@ -95,6 +154,7 @@ class CastControlSheet extends StatelessWidget {
 
                 if (cast.isCasting) ...[
                   const SizedBox(height: 20),
+                  // Book info + chapter
                   Row(children: [
                     if (cast.castingCoverUrl != null)
                       ClipRRect(borderRadius: BorderRadius.circular(8),
@@ -107,10 +167,15 @@ class CastControlSheet extends StatelessWidget {
                       Text(cast.castingTitle ?? 'Unknown', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 2),
                       Text(cast.castingAuthor ?? '', style: const TextStyle(fontSize: 12, color: Colors.white60), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      if (cast.currentChapterTitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(cast.currentChapterTitle!, style: TextStyle(fontSize: 11, color: accent.withValues(alpha: 0.7)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ],
                     ])),
                   ]),
                   const SizedBox(height: 16),
 
+                  // Progress bar
                   StreamBuilder<Duration>(
                     stream: cast.castPositionStream?.map((d) => d ?? Duration.zero),
                     initialData: cast.castPosition,
@@ -130,6 +195,7 @@ class CastControlSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
 
+                  // Playback controls
                   Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                     IconButton(onPressed: cast.skipToPreviousChapter, icon: const Icon(Icons.skip_previous_rounded, size: 24, color: Colors.white38)),
                     IconButton(onPressed: () => cast.skipBackward(10), icon: const Icon(Icons.replay_10_rounded, size: 32, color: Colors.white70)),
@@ -143,6 +209,14 @@ class CastControlSheet extends StatelessWidget {
                     IconButton(onPressed: () => cast.skipForward(30), icon: const Icon(Icons.forward_30_rounded, size: 32, color: Colors.white70)),
                     IconButton(onPressed: cast.skipToNextChapter, icon: const Icon(Icons.skip_next_rounded, size: 24, color: Colors.white38)),
                   ]),
+
+                  // Speed control
+                  const SizedBox(height: 12),
+                  _CastSpeedControl(cast: cast, accent: accent),
+
+                  // Volume control
+                  const SizedBox(height: 8),
+                  _CastVolumeControl(cast: cast, accent: accent),
                 ],
 
                 const SizedBox(height: 20),
@@ -174,5 +248,121 @@ class CastControlSheet extends StatelessWidget {
     final h = d.inHours, m = d.inMinutes % 60, s = d.inSeconds % 60;
     if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
     return '$m:${s.toString().padLeft(2, '0')}';
+  }
+}
+
+// ─── Cast Speed Control ─────────────────────────────────────
+
+class _CastSpeedControl extends StatelessWidget {
+  final ChromecastService cast;
+  final Color accent;
+  const _CastSpeedControl({required this.cast, required this.accent});
+
+  static const _presets = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+
+  @override
+  Widget build(BuildContext context) {
+    final speed = cast.castSpeed;
+    return Row(
+      children: [
+        Icon(Icons.speed_rounded, size: 16, color: accent),
+        const SizedBox(width: 8),
+        Text('${speed.toStringAsFixed(2)}x',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: accent)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: SizedBox(
+            height: 32,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: _presets.map((s) {
+                final selected = (s - speed).abs() < 0.01;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: GestureDetector(
+                    onTap: () => cast.setSpeed(s),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: selected ? accent.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: selected ? accent.withValues(alpha: 0.4) : Colors.white12),
+                      ),
+                      child: Text('${s}x',
+                        style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600,
+                          color: selected ? accent : Colors.white54,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Cast Volume Control ────────────────────────────────────
+
+class _CastVolumeControl extends StatefulWidget {
+  final ChromecastService cast;
+  final Color accent;
+  const _CastVolumeControl({required this.cast, required this.accent});
+
+  @override
+  State<_CastVolumeControl> createState() => _CastVolumeControlState();
+}
+
+class _CastVolumeControlState extends State<_CastVolumeControl> {
+  late double _localVolume;
+  bool _dragging = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _localVolume = widget.cast.volume;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vol = _dragging ? _localVolume : widget.cast.volume;
+    return Row(
+      children: [
+        Icon(
+          vol <= 0.01 ? Icons.volume_off_rounded
+            : vol < 0.5 ? Icons.volume_down_rounded
+            : Icons.volume_up_rounded,
+          size: 18, color: Colors.white54,
+        ),
+        Expanded(
+          child: SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 3,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+              activeTrackColor: widget.accent,
+              inactiveTrackColor: Colors.white12,
+              thumbColor: widget.accent,
+              overlayColor: widget.accent.withValues(alpha: 0.15),
+            ),
+            child: Slider(
+              value: vol.clamp(0.0, 1.0),
+              min: 0.0,
+              max: 1.0,
+              onChangeStart: (_) => _dragging = true,
+              onChanged: (v) => setState(() => _localVolume = v),
+              onChangeEnd: (v) {
+                _dragging = false;
+                widget.cast.setVolume(v);
+              },
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
