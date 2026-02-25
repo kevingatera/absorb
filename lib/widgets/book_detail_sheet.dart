@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
@@ -46,8 +47,13 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   bool _chaptersExpanded = false;
   bool _isAbsorbing = false;
   bool _hasLocalOverride = false;
+  bool _showGoodreads = false;
 
-  @override void initState() { super.initState(); _loadItem(); }
+  @override void initState() {
+    super.initState();
+    _loadItem();
+    PlayerSettings.getShowGoodreadsButton().then((v) { if (mounted) setState(() => _showGoodreads = v); });
+  }
 
   Future<void> _loadItem() async {
     final auth = context.read<AuthProvider>();
@@ -426,6 +432,14 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
               ]));
           })]],
       // ─── Metadata lookup (bottom of sheet) ─────────────────
+      if (_showGoodreads) ...[
+        const SizedBox(height: 8),
+        _sheetBtn(
+          icon: Icons.local_library_rounded,
+          label: 'Search on Goodreads',
+          onTap: () => _openGoodreads(title, authorName),
+        ),
+      ],
       if (auth.apiService != null && !lib.isOffline) ...[
         const SizedBox(height: 20),
         _sheetBtn(
@@ -713,6 +727,20 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         duration: const Duration(seconds: 3),
         content: Text(serverSuccess ? 'Progress reset — fresh start!' : 'Reset may not have synced — check your server'),
         behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+    }
+  }
+
+  void _openGoodreads(String title, String author) async {
+    final q = author.isNotEmpty ? '$title $author' : title;
+    final uri = Uri.https('www.goodreads.com', '/search', {'q': q});
+    try {
+      // Open in Goodreads app if installed
+      if (!await launchUrl(uri, mode: LaunchMode.externalNonBrowserApplication)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {
+      // App not installed — fall back to browser
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 

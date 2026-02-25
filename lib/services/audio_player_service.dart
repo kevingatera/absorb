@@ -120,6 +120,9 @@ class PlayerSettings {
   static Future<bool> getHideEbookOnly() => _get('hideEbookOnly', false);
   static Future<void> setHideEbookOnly(bool value) => _set('hideEbookOnly', value, notify: true);
 
+  static Future<bool> getShowGoodreadsButton() => _get('showGoodreadsButton', false);
+  static Future<void> setShowGoodreadsButton(bool value) => _set('showGoodreadsButton', value);
+
   /// Check if an item has no audio content.
   /// For minified responses (library list), duration == 0 means no audio files.
   /// For full responses (detail sheet), we also check ebookFile + audioFiles.

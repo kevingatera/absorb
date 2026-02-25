@@ -38,6 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _shakeAddMinutes = 5;
   bool _autoContinueSeries = true;
   bool _hideEbookOnly = false;
+  bool _showGoodreadsButton = false;
   bool _loaded = false;
   String _downloadLocationLabel = 'App Internal Storage (Default)';
   int _totalDownloadSizeBytes = 0;
@@ -63,6 +64,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final shakeMins = await PlayerSettings.getShakeAddMinutes();
     final autoSeries = await PlayerSettings.getAutoContinueSeries();
     final hideEbook = await PlayerSettings.getHideEbookOnly();
+    final showGoodreads = await PlayerSettings.getShowGoodreadsButton();
     final dlLabel = await DownloadService().downloadLocationLabel;
     final dlSize = await DownloadService().totalDownloadSize;
     final autoSleep = await AutoSleepSettings.load();
@@ -80,6 +82,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _shakeAddMinutes = shakeMins;
       _autoContinueSeries = autoSeries;
       _hideEbookOnly = hideEbook;
+      _showGoodreadsButton = showGoodreads;
       _downloadLocationLabel = dlLabel;
       _totalDownloadSizeBytes = dlSize;
       _autoSleepSettings = autoSleep;
@@ -840,6 +843,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onChanged: _loaded ? (v) {
                         setState(() => _hideEbookOnly = v);
                         PlayerSettings.setHideEbookOnly(v);
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    SwitchListTile(
+                      title: const Text('Show Goodreads button'),
+                      subtitle: Text(
+                        _showGoodreadsButton
+                            ? 'Book detail sheet shows a link to Goodreads'
+                            : 'Off — Goodreads button hidden',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _showGoodreadsButton,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _showGoodreadsButton = v);
+                        PlayerSettings.setShowGoodreadsButton(v);
                       } : null,
                     ),
                     if (lib.libraries.where((l) => (l['mediaType'] as String? ?? 'book') != 'podcast').length > 1) ...[
