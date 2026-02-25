@@ -152,15 +152,19 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       decoration: const BoxDecoration(color: Color(0xFF111111), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       child: Stack(children: [
         if (_coverUrl != null)
-          Positioned.fill(child: CachedNetworkImage(
-            imageUrl: _coverUrl!, fit: BoxFit.cover,
-            httpHeaders: context.read<LibraryProvider>().mediaHeaders,
-            imageBuilder: (_, p) => ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 80, sigmaY: 80, tileMode: TileMode.decal),
-              child: Image(image: p, fit: BoxFit.cover)),
-            placeholder: (_, __) => const SizedBox(),
-            errorWidget: (_, __, ___) => const SizedBox(),
-          )),
+          Positioned.fill(
+            child: RepaintBoundary(
+              child: CachedNetworkImage(
+                imageUrl: _coverUrl!, fit: BoxFit.cover,
+                httpHeaders: context.read<LibraryProvider>().mediaHeaders,
+                imageBuilder: (_, p) => ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50, tileMode: TileMode.decal),
+                  child: Image(image: p, fit: BoxFit.cover)),
+                placeholder: (_, __) => const SizedBox(),
+                errorWidget: (_, __, ___) => const SizedBox(),
+              ),
+            ),
+          ),
         Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
           begin: Alignment.topCenter, end: Alignment.bottomCenter,
           colors: [const Color(0xFF111111).withValues(alpha: 0.6), const Color(0xFF111111).withValues(alpha: 0.85), const Color(0xFF111111)],
