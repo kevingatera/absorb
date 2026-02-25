@@ -42,6 +42,10 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   String? _lastPlayingId;
   String? _lastFinishedId;
   bool _isSyncing = false;
+  // When true, _getAbsorbingBooks keeps the original list order (no move-to-front).
+  // Used during the slide-to-front animation so the user sees their book smoothly
+  // slide to the beginning rather than the list instantly reordering underneath them.
+  bool _suppressReorder = false;
 
   void _rebuild() {
     if (!mounted) return;
@@ -49,9 +53,16 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       final wasPlayingId = _lastPlayingId;
       _lastPlayingId = _player.currentItemId;
       if (_player.hasBook) {
+        // Suppress the list reorder if we're not already at page 0, so the
+        // animation slides the current view to the front instead of jumping.
+        final currentPage = _pageController.hasClients
+            ? (_pageController.page ?? 0).round()
+            : 0;
+        _suppressReorder = currentPage > 0;
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToActiveCard());
       } else if (wasPlayingId != null && !_isSyncing) {
         // Book just stopped (natural completion or session end)
+        _suppressReorder = false;
         _lastFinishedId = wasPlayingId;
         final lib = context.read<LibraryProvider>();
         lib.markFinishedLocally(wasPlayingId);
@@ -66,12 +77,32 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     final books = _getAbsorbingBooks(lib);
     final idx = books.indexWhere((b) => (b['id'] as String?) == _player.currentItemId);
     if (idx >= 0 && _pageController.hasClients) {
-      _pageController.animateToPage(idx, duration: const Duration(milliseconds: 350), curve: Curves.easeOutCubic);
+      if (_suppressReorder) {
+        // Animate from the current page to 0 while keeping the original list order.
+        // After the animation lands at 0, release suppression so the list properly
+        // reorders with the playing item at index 0.
+        _pageController
+            .animateToPage(0,
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeInOutCubic)
+            .then((_) {
+          if (!mounted) return;
+          _suppressReorder = false;
+          setState(() {});
+        });
+      } else {
+        _pageController.animateToPage(idx,
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOutCubic);
+      }
     } else if (retries > 0) {
       // Book might not be in the list yet — retry after a rebuild
+      _suppressReorder = false;
       Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) _scrollToActiveCard(retries: retries - 1);
       });
+    } else {
+      _suppressReorder = false;
     }
   }
 
@@ -120,15 +151,18 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     }
 
     // If the currently playing book isn't in the list, add it at the front.
-    // If it IS in the list, move it to the front.
+    // If it IS in the list, move it to the front — unless we're mid-animation
+    // (_suppressReorder), in which case we keep the original order and let the
+    // scroll animation carry the view to page 0 first.
     if (_player.hasBook && _player.currentItemId != null) {
       final playingId = _player.currentItemId!;
       if (!removes.contains(playingId)) {
         final existingIdx = items.indexWhere((b) => (b['id'] as String?) == playingId);
-        if (existingIdx > 0) {
+        if (!_suppressReorder && existingIdx > 0) {
           final item = items.removeAt(existingIdx);
           items.insert(0, item);
         } else if (existingIdx < 0) {
+          // Always insert new (previously unseen) books at the front.
           items.insert(0, {
             'id': playingId,
             'media': {
