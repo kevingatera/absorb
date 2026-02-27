@@ -715,6 +715,7 @@ class AudioPlayerService extends ChangeNotifier {
       final service = _instance;
       if (service.isPlaying) {
         debugPrint('[AudioSession] Becoming noisy — pausing');
+        service._wasPlayingBeforeInterrupt = false;
         await service.pause();
       }
     });
@@ -1462,6 +1463,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> pause() async {
     debugPrint('[Service] pause() called');
+    _wasPlayingBeforeInterrupt = false;
     _lastPauseTime = DateTime.now();
     await _player?.pause();
     _logEvent(PlaybackEventType.pause);
