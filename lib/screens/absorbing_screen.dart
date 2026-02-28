@@ -83,6 +83,9 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             ? '${_player.currentItemId!}-${_player.currentEpisodeId!}'
             : _player.currentItemId!;
         lib.unblockFromAbsorbing(playingKey);
+        // Persist so this item stays at front even if the app is killed
+        _lastFinishedId = playingKey;
+        ScopedPrefs.setString('absorbing_last_finished', playingKey);
         // Suppress the list reorder if we're not already at page 0, so the
         // animation slides the current view to the front instead of jumping.
         final currentPage = _pageController.hasClients

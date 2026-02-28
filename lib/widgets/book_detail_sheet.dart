@@ -8,6 +8,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
@@ -49,11 +50,17 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   bool _isAbsorbing = false;
   bool _hasLocalOverride = false;
   bool _showGoodreads = false;
+  bool _ebookSaved = false;
 
   @override void initState() {
     super.initState();
     _loadItem();
     PlayerSettings.getShowGoodreadsButton().then((v) { if (mounted) setState(() => _showGoodreads = v); });
+    SharedPreferences.getInstance().then((p) {
+      if (mounted && (p.getStringList('saved_ebooks') ?? []).contains(widget.itemId)) {
+        setState(() => _ebookSaved = true);
+      }
+    });
   }
 
   Future<void> _loadItem() async {
@@ -275,10 +282,10 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               _ebookSaving
                   ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: cs.onSurfaceVariant))
-                  : Icon(Icons.save_alt_rounded, size: 16, color: cs.onSurfaceVariant),
+                  : Icon(_ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded, size: 16, color: cs.onSurfaceVariant),
               const SizedBox(width: 6),
               Text(
-                _ebookSaving ? 'Saving…' : 'Download eBook',
+                _ebookSaving ? 'Saving…' : _ebookSaved ? 'Download eBook Again' : 'Download eBook',
                 style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500),
               ),
             ]),
@@ -333,10 +340,10 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               _ebookSaving
                   ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: cs.onSurfaceVariant))
-                  : Icon(Icons.save_alt_rounded, size: 16, color: cs.onSurfaceVariant),
+                  : Icon(_ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded, size: 16, color: cs.onSurfaceVariant),
               const SizedBox(width: 6),
               Text(
-                _ebookSaving ? 'Saving…' : 'Download eBook',
+                _ebookSaving ? 'Saving…' : _ebookSaved ? 'Download eBook Again' : 'Download eBook',
                 style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500),
               ),
             ]),
@@ -512,29 +519,37 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       // Download to cache first (reuse if already cached)
       final cacheDir = await getTemporaryDirectory();
       final cachedFile = File('${cacheDir.path}/$safeTitle$ext');
-      late final List<int> bytes;
 
-      if (cachedFile.existsSync()) {
-        bytes = await cachedFile.readAsBytes();
-      } else {
+      if (!cachedFile.existsSync()) {
         final cleanBase = api.baseUrl.endsWith('/') ? api.baseUrl.substring(0, api.baseUrl.length - 1) : api.baseUrl;
         final url = '$cleanBase/api/items/${widget.itemId}/file/$ino';
-        final response = await http.get(
-          Uri.parse(url),
-          headers: {'Authorization': 'Bearer ${api.token}'},
-        ).timeout(const Duration(seconds: 60));
 
-        if (response.statusCode == 200) {
-          bytes = response.bodyBytes;
-          await cachedFile.writeAsBytes(bytes);
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Failed to download ebook (${response.statusCode})')));
+        // Use streamed download to avoid loading entire file into memory
+        // and to prevent timeout-based truncation of large files
+        final request = http.Request('GET', Uri.parse(url));
+        request.headers['Authorization'] = 'Bearer ${api.token}';
+        final client = http.Client();
+        try {
+          final response = await client.send(request);
+          if (response.statusCode != 200) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to download ebook (${response.statusCode})')));
+            }
+            return;
           }
-          return;
+          final sink = cachedFile.openWrite();
+          try {
+            await response.stream.pipe(sink);
+          } finally {
+            await sink.close();
+          }
+        } finally {
+          client.close();
         }
       }
+
+      final bytes = await cachedFile.readAsBytes();
 
       // Open system save dialog so user can choose the location
       final savedPath = await FilePicker.platform.saveFile(
@@ -544,6 +559,15 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       );
 
       if (savedPath == null) return; // user cancelled
+
+      // Track that this ebook has been saved
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList('saved_ebooks') ?? [];
+      if (!saved.contains(widget.itemId)) {
+        saved.add(widget.itemId);
+        await prefs.setStringList('saved_ebooks', saved);
+      }
+      if (mounted) setState(() => _ebookSaved = true);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

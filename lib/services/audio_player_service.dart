@@ -702,6 +702,7 @@ class AudioPlayerService extends ChangeNotifier {
   static Future<void> _configureAudioSession() async {
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.speech());
+    await session.setActive(true);
 
     _interruptSub?.cancel();
     _interruptSub = session.interruptionEventStream.listen((event) async {
@@ -710,8 +711,8 @@ class AudioPlayerService extends ChangeNotifier {
       if (event.begin) {
         if (service.isPlaying) {
           debugPrint('[AudioSession] Interrupted (${event.type}) — pausing');
-          service._wasPlayingBeforeInterrupt = true;
           await service.pause();
+          service._wasPlayingBeforeInterrupt = true;
         }
       } else {
         if (service._wasPlayingBeforeInterrupt) {
@@ -1468,6 +1469,8 @@ class AudioPlayerService extends ChangeNotifier {
       }
     }
     _lastPauseTime = null;
+    // Re-activate audio session (needed after stop() releases it)
+    try { (await AudioSession.instance).setActive(true); } catch (_) {}
     _player?.play();
     _logEvent(PlaybackEventType.play);
     // Check auto sleep on every resume — catches window entry between pauses
@@ -1621,6 +1624,8 @@ class AudioPlayerService extends ChangeNotifier {
     if (SleepTimerService().isActive) {
       SleepTimerService().cancel();
     }
+    // Release audio focus so other apps can use it
+    try { (await AudioSession.instance).setActive(false); } catch (_) {}
   }
 
   /// Stop playback without saving progress — used by reset progress.
