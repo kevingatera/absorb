@@ -123,6 +123,20 @@ class PlayerSettings {
   static Future<bool> getCollapseSeries() => _get('collapseSeries', false);
   static Future<void> setCollapseSeries(bool value) => _set('collapseSeries', value, notify: true);
 
+  // ── Library sort/filter persistence ──
+
+  static Future<String> getLibrarySort() => _get('librarySort', 'recentlyAdded');
+  static Future<void> setLibrarySort(String value) => _set('librarySort', value);
+
+  static Future<bool> getLibrarySortAsc() => _get('librarySortAsc', false);
+  static Future<void> setLibrarySortAsc(bool value) => _set('librarySortAsc', value);
+
+  static Future<String> getLibraryFilter() => _get('libraryFilter', 'none');
+  static Future<void> setLibraryFilter(String value) => _set('libraryFilter', value);
+
+  static Future<String> getLibraryGenreFilter() => _get('libraryGenreFilter', '');
+  static Future<void> setLibraryGenreFilter(String? value) => _set('libraryGenreFilter', value ?? '');
+
   static Future<bool> getShowGoodreadsButton() => _get('showGoodreadsButton', false);
   static Future<void> setShowGoodreadsButton(bool value) => _set('showGoodreadsButton', value);
 

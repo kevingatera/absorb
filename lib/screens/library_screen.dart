@@ -81,9 +81,6 @@ class LibraryScreenState extends State<LibraryScreen> {
     // Load initial page once the library is ready
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _tryInitialLoad();
-      final lib = context.read<LibraryProvider>();
-      _lastLibraryId = lib.selectedLibraryId;
-      lib.addListener(_onLibraryProviderChanged);
     });
   }
 
@@ -98,10 +95,12 @@ class LibraryScreenState extends State<LibraryScreen> {
         _hasMore = true;
         _isLoadingPage = false;
         _availableGenres = [];
-        // Reset all filters on library switch — filters don't carry across libraries
+        // Reset filter on library switch — genre filters don't carry across libraries
         _filter = LibraryFilter.none;
         _genreFilter = null;
       });
+      PlayerSettings.setLibraryFilter('none');
+      PlayerSettings.setLibraryGenreFilter(null);
       if (_scrollController.hasClients) _scrollController.jumpTo(0);
       _loadPage();
       _loadGenres();
@@ -116,13 +115,45 @@ class LibraryScreenState extends State<LibraryScreen> {
     PlayerSettings.getCollapseSeries().then((v) {
       if (mounted) setState(() => _collapseSeries = v);
     });
+    _restoreSortFilter().then((_) {
+      if (!mounted) return;
+      _lastLibraryId = lib.selectedLibraryId;
+      lib.addListener(_onLibraryProviderChanged);
+      if (lib.selectedLibraryId != null) {
+        _loadPage();
+        _loadGenres();
+      } else {
+        lib.addListener(_onLibraryChanged);
+      }
+    });
     PlayerSettings.settingsChanged.addListener(_onSettingsChanged);
-    if (lib.selectedLibraryId != null) {
-      _loadPage();
-      _loadGenres();
-    } else {
-      lib.addListener(_onLibraryChanged);
-    }
+  }
+
+  Future<void> _restoreSortFilter() async {
+    final results = await Future.wait([
+      PlayerSettings.getLibrarySort(),
+      PlayerSettings.getLibrarySortAsc(),
+      PlayerSettings.getLibraryFilter(),
+      PlayerSettings.getLibraryGenreFilter(),
+    ]);
+    if (!mounted) return;
+    final sortName = results[0] as String;
+    final sortAsc = results[1] as bool;
+    final filterName = results[2] as String;
+    final genreFilter = results[3] as String;
+    setState(() {
+      _sort = LibrarySort.values.firstWhere(
+        (s) => s.name == sortName,
+        orElse: () => LibrarySort.recentlyAdded,
+      );
+      _sortAsc = sortAsc;
+      if (_sort == LibrarySort.random) _randomSeed = Random().nextInt(100000);
+      _filter = LibraryFilter.values.firstWhere(
+        (f) => f.name == filterName,
+        orElse: () => LibraryFilter.none,
+      );
+      _genreFilter = genreFilter.isNotEmpty ? genreFilter : null;
+    });
   }
 
   void _onSettingsChanged() {
@@ -298,6 +329,7 @@ class LibraryScreenState extends State<LibraryScreen> {
         _hasMore = true;
         _isLoadingPage = false;
       });
+      PlayerSettings.setLibrarySortAsc(_sortAsc);
       if (_scrollController.hasClients) _scrollController.jumpTo(0);
       _loadPage();
       return;
@@ -314,6 +346,8 @@ class LibraryScreenState extends State<LibraryScreen> {
         _randomSeed = Random().nextInt(100000);
       }
     });
+    PlayerSettings.setLibrarySort(_sort.name);
+    PlayerSettings.setLibrarySortAsc(_sortAsc);
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
     _loadPage();
   }
@@ -331,6 +365,8 @@ class LibraryScreenState extends State<LibraryScreen> {
       _hasMore = true;
       _isLoadingPage = false;
     });
+    PlayerSettings.setLibraryFilter(_filter.name);
+    PlayerSettings.setLibraryGenreFilter(_genreFilter);
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
     _loadPage();
   }
