@@ -19,3 +19,6 @@
 -keepclasseswithmembernames class * {
     native <methods>;
 }
+
+# home_widget
+-keep class es.antonborri.home_widget.** { *; }
