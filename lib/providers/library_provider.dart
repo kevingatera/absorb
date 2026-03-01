@@ -26,6 +26,11 @@ class LibraryProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isLoadingSeries = false;
   String? _errorMessage;
+  Future<void>? _personalizedInFlight;
+  DateTime? _lastPersonalizedFetchAt;
+  String? _lastPersonalizedFetchLibraryId;
+
+  static const Duration _personalizedFetchCooldown = Duration(seconds: 5);
 
   // Cache of item updatedAt timestamps for cover cache-busting
   final Map<String, int> _itemUpdatedAt = {};
@@ -324,13 +329,9 @@ class LibraryProvider extends ChangeNotifier {
         _manualAbsorbRemoves.clear();
         _absorbingBookIds.clear();
         _absorbingItemCache.clear();
-        _itemUpdatedAt.clear();
         _personalizedInFlight = null;
         _lastPersonalizedFetchAt = null;
         _lastPersonalizedFetchLibraryId = null;
-        _networkOffline = false;
-        _connectivitySub?.cancel();
-        _stopServerPingTimer();
         _isLoading = true;
         notifyListeners(); // Immediately clear old user's data from UI
       }
@@ -536,24 +537,22 @@ class LibraryProvider extends ChangeNotifier {
   }
 
   /// Fetch personalized home sections for the selected library.
-  /// Deduplicates concurrent calls and enforces a cooldown unless [force] is true.
   Future<void> loadPersonalizedView({bool force = false}) async {
-    // If a fetch is already in flight, just await it
     final existing = _personalizedInFlight;
     if (existing != null) {
       await existing;
       return;
     }
 
-    // Skip if within cooldown (same library, not forced)
     if (!force &&
         _lastPersonalizedFetchAt != null &&
         _lastPersonalizedFetchLibraryId == _selectedLibraryId &&
-        DateTime.now().difference(_lastPersonalizedFetchAt!) < _personalizedFetchCooldown) {
+        DateTime.now().difference(_lastPersonalizedFetchAt!) <
+            _personalizedFetchCooldown) {
       return;
     }
 
-    final inFlight = _doLoadPersonalizedView();
+    final inFlight = _loadPersonalizedView();
     _personalizedInFlight = inFlight;
     try {
       await inFlight;
@@ -564,7 +563,7 @@ class LibraryProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _doLoadPersonalizedView() async {
+  Future<void> _loadPersonalizedView() async {
     if (_api == null || _selectedLibraryId == null) return;
 
     if (isOffline) {
@@ -583,21 +582,8 @@ class LibraryProvider extends ChangeNotifier {
     try {
       _lastPersonalizedFetchAt = DateTime.now();
       _lastPersonalizedFetchLibraryId = _selectedLibraryId;
-      await _refreshProgress();
-      _personalizedSections = await _api!.getPersonalizedView(
-        _selectedLibraryId!,
-        include: const ['numEpisodesIncomplete'],
-      );
-      // Cache updatedAt timestamps for cover cache-busting
-      for (final section in _personalizedSections) {
-        for (final e in (section['entities'] as List<dynamic>? ?? [])) {
-          if (e is Map<String, dynamic>) {
-            final id = e['id'] as String?;
-            final ts = e['updatedAt'] as num?;
-            if (id != null && ts != null) _itemUpdatedAt[id] = ts.toInt();
-          }
-        }
-      }
+      _personalizedSections =
+          await _api!.getPersonalizedView(_selectedLibraryId!);
       await _updateAbsorbingCache();
     } catch (e) {
       if (_isLikelyNetworkError(e)) {
@@ -659,10 +645,8 @@ class LibraryProvider extends ChangeNotifier {
     if (_api != null) {
       await ProgressSyncService().flushPendingSync(api: _api!);
     }
-    await Future.wait([
-      loadPersonalizedView(force: true),
-      _refreshProgress(),
-    ]);
+    await _refreshProgress();
+    await loadPersonalizedView(force: true);
     // Clear stale local overrides — server data is now authoritative
     _localProgressOverrides.clear();
     // Update local SharedPreferences from fresh server data so they stay in sync
@@ -1143,16 +1127,10 @@ class LibraryProvider extends ChangeNotifier {
     _progressMap[itemId] = {...existing, 'isFinished': true};
     _localProgressOverrides[itemId] = 1.0;
     _lastFinishedItemId = itemId;
-    _locallyFinishedItems.add(itemId);
-    // Move finished item to front so the next-in-series/episode lands at index 1
-    _absorbingBookIds.remove(itemId);
-    _absorbingBookIds.insert(0, itemId);
-    // Ensure cache entry has _absorbingKey so the card can extract the episode ID
-    if (itemId.length > 36) {
-      final cached = _absorbingItemCache[itemId];
-      if (cached != null && cached['_absorbingKey'] == null) {
-        cached['_absorbingKey'] = itemId;
-      }
+    notifyListeners();
+    // Refresh sections so continue-series items appear immediately
+    if (_api != null && _selectedLibraryId != null && !isOffline) {
+      loadPersonalizedView(force: true);
     }
     notifyListeners();
 

@@ -142,7 +142,7 @@ class ApiService {
   Future<List<dynamic>> getPersonalizedView(
     String libraryId, {
     bool minified = true,
-    List<String> include = const ['numEpisodesIncomplete'],
+    List<String> include = const ['rssfeed', 'numEpisodesIncomplete'],
     List<String>? shelves,
     int? limit,
   }) async {
