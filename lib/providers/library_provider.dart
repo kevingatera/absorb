@@ -25,6 +25,11 @@ class LibraryProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isLoadingSeries = false;
   String? _errorMessage;
+  Future<void>? _personalizedInFlight;
+  DateTime? _lastPersonalizedFetchAt;
+  String? _lastPersonalizedFetchLibraryId;
+
+  static const Duration _personalizedFetchCooldown = Duration(seconds: 5);
 
   // Offline mode
   bool _manualOffline = false;
@@ -303,6 +308,9 @@ class LibraryProvider extends ChangeNotifier {
         _manualAbsorbRemoves.clear();
         _absorbingBookIds.clear();
         _absorbingItemCache.clear();
+        _personalizedInFlight = null;
+        _lastPersonalizedFetchAt = null;
+        _lastPersonalizedFetchLibraryId = null;
         _isLoading = true;
         notifyListeners(); // Immediately clear old user's data from UI
       }
@@ -346,6 +354,9 @@ class LibraryProvider extends ChangeNotifier {
       _errorMessage = null;
       _connectivitySub?.cancel();
       _stopServerPingTimer();
+      _personalizedInFlight = null;
+      _lastPersonalizedFetchAt = null;
+      _lastPersonalizedFetchLibraryId = null;
       notifyListeners();
     }
   }
@@ -459,7 +470,7 @@ class LibraryProvider extends ChangeNotifier {
               ? bookLibraries.first['id']
               : _libraries.first['id'];
         }
-        await loadPersonalizedView();
+        await loadPersonalizedView(force: true);
       }
     } catch (e) {
       // Network error — auto-switch to offline view
@@ -480,11 +491,37 @@ class LibraryProvider extends ChangeNotifier {
     _series = [];
     await ScopedPrefs.setString('last_selected_library', libraryId);
     notifyListeners();
-    await loadPersonalizedView();
+    await loadPersonalizedView(force: true);
   }
 
   /// Fetch personalized home sections for the selected library.
-  Future<void> loadPersonalizedView() async {
+  Future<void> loadPersonalizedView({bool force = false}) async {
+    final existing = _personalizedInFlight;
+    if (existing != null) {
+      await existing;
+      return;
+    }
+
+    if (!force &&
+        _lastPersonalizedFetchAt != null &&
+        _lastPersonalizedFetchLibraryId == _selectedLibraryId &&
+        DateTime.now().difference(_lastPersonalizedFetchAt!) <
+            _personalizedFetchCooldown) {
+      return;
+    }
+
+    final inFlight = _loadPersonalizedView();
+    _personalizedInFlight = inFlight;
+    try {
+      await inFlight;
+    } finally {
+      if (identical(_personalizedInFlight, inFlight)) {
+        _personalizedInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _loadPersonalizedView() async {
     if (_api == null || _selectedLibraryId == null) return;
 
     if (isOffline) {
@@ -501,7 +538,8 @@ class LibraryProvider extends ChangeNotifier {
     }
 
     try {
-      await _refreshProgress();
+      _lastPersonalizedFetchAt = DateTime.now();
+      _lastPersonalizedFetchLibraryId = _selectedLibraryId;
       _personalizedSections =
           await _api!.getPersonalizedView(_selectedLibraryId!);
       await _updateAbsorbingCache();
@@ -552,10 +590,8 @@ class LibraryProvider extends ChangeNotifier {
     if (_api != null) {
       await ProgressSyncService().flushPendingSync(api: _api!);
     }
-    await Future.wait([
-      loadPersonalizedView(),
-      _refreshProgress(),
-    ]);
+    await _refreshProgress();
+    await loadPersonalizedView(force: true);
     // Clear stale local overrides — server data is now authoritative
     _localProgressOverrides.clear();
     // Update local SharedPreferences from fresh server data so they stay in sync
@@ -959,7 +995,7 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
     // Refresh sections so continue-series items appear immediately
     if (_api != null && _selectedLibraryId != null && !isOffline) {
-      loadPersonalizedView();
+      loadPersonalizedView(force: true);
     }
   }
 
