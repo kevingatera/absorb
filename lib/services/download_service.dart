@@ -59,7 +59,8 @@ class DownloadInfo {
     // Fallback: extract metadata from cached sessionData for old downloads
     if ((title == null || title.isEmpty) && json['sessionData'] != null) {
       try {
-        final session = jsonDecode(json['sessionData'] as String) as Map<String, dynamic>;
+        final session =
+            jsonDecode(json['sessionData'] as String) as Map<String, dynamic>;
         // Try session-level metadata first
         final sessionMeta = session['mediaMetadata'] as Map<String, dynamic>?;
         if (sessionMeta != null) {
@@ -258,24 +259,25 @@ class DownloadService extends ChangeNotifier {
   bool isDownloading(String itemId) =>
       _downloads[itemId]?.status == DownloadStatus.downloading;
 
-  double downloadProgress(String itemId) =>
-      _downloads[itemId]?.progress ?? 0;
+  double downloadProgress(String itemId) => _downloads[itemId]?.progress ?? 0;
 
   /// Get all downloaded items (for home screen display).
-  List<DownloadInfo> get downloadedItems =>
-      _downloads.values
-          .where((d) => d.status == DownloadStatus.downloaded)
-          .toList();
+  List<DownloadInfo> get downloadedItems => _downloads.values
+      .where((d) => d.status == DownloadStatus.downloaded)
+      .toList();
 
   /// Get actively downloading items (in progress right now).
-  List<DownloadInfo> get activeDownloads =>
-      _downloads.values
-          .where((d) => d.status == DownloadStatus.downloading && _activeDownloadIds.contains(d.itemId))
-          .toList();
+  List<DownloadInfo> get activeDownloads => _downloads.values
+      .where((d) =>
+          d.status == DownloadStatus.downloading &&
+          _activeDownloadIds.contains(d.itemId))
+      .toList();
 
   /// Get queued items (waiting for a download slot).
-  List<DownloadInfo> get queuedDownloads =>
-      _queue.map((q) => _downloads[q.itemId]).whereType<DownloadInfo>().toList();
+  List<DownloadInfo> get queuedDownloads => _queue
+      .map((q) => _downloads[q.itemId])
+      .whereType<DownloadInfo>()
+      .toList();
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
@@ -322,7 +324,8 @@ class DownloadService extends ChangeNotifier {
             } catch (_) {}
             try {
               final coverDir = Directory('$internalBase/$id');
-              if (await coverDir.exists()) await coverDir.delete(recursive: true);
+              if (await coverDir.exists())
+                await coverDir.delete(recursive: true);
             } catch (_) {}
           }
         }
@@ -351,9 +354,8 @@ class DownloadService extends ChangeNotifier {
 
       // For podcast episodes, the itemId is a composite "showUUID-episodeId".
       // Extract the library item ID (first 36 chars = UUID) for API calls.
-      final apiItemId = info.itemId.length > 36
-          ? info.itemId.substring(0, 36)
-          : info.itemId;
+      final apiItemId =
+          info.itemId.length > 36 ? info.itemId.substring(0, 36) : info.itemId;
 
       // Enrich missing title/author from server
       if (title == null || title.isEmpty) {
@@ -366,7 +368,8 @@ class DownloadService extends ChangeNotifier {
             author = metadata['authorName'] as String? ?? author;
             coverUrl = api.getCoverUrl(apiItemId);
             needsUpdate = true;
-            debugPrint('[Download] Enriched metadata for ${info.itemId}: $title');
+            debugPrint(
+                '[Download] Enriched metadata for ${info.itemId}: $title');
           }
         } catch (e) {
           debugPrint('[Download] Enrich failed for ${info.itemId}: $e');
@@ -392,7 +395,8 @@ class DownloadService extends ChangeNotifier {
             // Download from server into internal storage
             final url = coverUrl ?? api.getCoverUrl(apiItemId);
             try {
-              final resp = await http.get(Uri.parse(url), headers: api.mediaHeaders)
+              final resp = await http
+                  .get(Uri.parse(url), headers: api.mediaHeaders)
                   .timeout(const Duration(seconds: 10));
               if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
                 final dir = Directory('$internalBase/${info.itemId}');
@@ -404,7 +408,8 @@ class DownloadService extends ChangeNotifier {
                 debugPrint('[Download] Cached cover for ${info.itemId}');
               }
             } catch (e) {
-              debugPrint('[Download] Cover cache failed for ${info.itemId}: $e');
+              debugPrint(
+                  '[Download] Cover cache failed for ${info.itemId}: $e');
             }
           }
         }
@@ -458,7 +463,8 @@ class DownloadService extends ChangeNotifier {
     if (info == null || info.status != DownloadStatus.downloaded) return null;
 
     // Check persisted path
-    if (info.localCoverPath != null && File(info.localCoverPath!).existsSync()) {
+    if (info.localCoverPath != null &&
+        File(info.localCoverPath!).existsSync()) {
       return info.localCoverPath;
     }
 
@@ -486,6 +492,7 @@ class DownloadService extends ChangeNotifier {
     String? author,
     String? coverUrl,
     String? episodeId,
+    bool waitForCompletion = true,
   }) async {
     if (_activeDownloadIds.contains(itemId)) return null;
     if (isDownloaded(itemId)) return null;
@@ -542,12 +549,18 @@ class DownloadService extends ChangeNotifier {
     final maxConcurrent = await PlayerSettings.getMaxConcurrentDownloads();
     while (_queue.isNotEmpty && _activeDownloadIds.length < maxConcurrent) {
       final next = _queue.removeAt(0);
+      debugPrint(
+          '[Download] Dequeued item=${next.itemId} remaining=${_queue.length}');
       // Skip if cancelled/removed while waiting
       if (isDownloaded(next.itemId)) continue;
       if (_activeDownloadIds.contains(next.itemId)) continue;
       unawaited(_executeDownload(
-        api: next.api, itemId: next.itemId, title: next.title,
-        author: next.author, coverUrl: next.coverUrl, episodeId: next.episodeId,
+        api: next.api,
+        itemId: next.itemId,
+        title: next.title,
+        author: next.author,
+        coverUrl: next.coverUrl,
+        episodeId: next.episodeId,
       ));
     }
   }
@@ -628,7 +641,8 @@ class DownloadService extends ChangeNotifier {
       String? localCoverPath;
       if (coverUrl != null && coverUrl.isNotEmpty) {
         try {
-          final coverResp = await http.get(Uri.parse(coverUrl), headers: api.mediaHeaders)
+          final coverResp = await http
+              .get(Uri.parse(coverUrl), headers: api.mediaHeaders)
               .timeout(const Duration(seconds: 10));
           if (coverResp.statusCode == 200 && coverResp.bodyBytes.isNotEmpty) {
             final internalBase = await _internalBasePath;
@@ -665,7 +679,8 @@ class DownloadService extends ChangeNotifier {
       }
 
       void updateProgress() {
-        final overall = trackProgress.reduce((a, b) => a + b) / audioTracks.length;
+        final overall =
+            trackProgress.reduce((a, b) => a + b) / audioTracks.length;
         final now = DateTime.now();
         // Throttle UI updates to max ~4/sec
         if (now.difference(lastUIUpdate).inMilliseconds > 250) {
@@ -726,8 +741,8 @@ class DownloadService extends ChangeNotifier {
 
         final request = http.Request('GET', Uri.parse(fullUrl));
         api.mediaHeaders.forEach((key, value) => request.headers[key] = value);
-        final response = await client.send(request)
-            .timeout(const Duration(seconds: 30));
+        final response =
+            await client.send(request).timeout(const Duration(seconds: 30));
 
         if (response.statusCode != 200) {
           throw Exception('HTTP ${response.statusCode} for track ${i + 1}');
@@ -737,10 +752,12 @@ class DownloadService extends ChangeNotifier {
         int receivedBytes = 0;
         final sink = file.openWrite();
         try {
-          await for (final chunk in response.stream.timeout(const Duration(seconds: 60))) {
+          await for (final chunk
+              in response.stream.timeout(const Duration(seconds: 60))) {
             sink.add(chunk);
             receivedBytes += chunk.length;
-            trackProgress[i] = totalBytes > 0 ? receivedBytes / totalBytes : 0.5;
+            trackProgress[i] =
+                totalBytes > 0 ? receivedBytes / totalBytes : 0.5;
             updateProgress();
           }
         } finally {
@@ -751,7 +768,9 @@ class DownloadService extends ChangeNotifier {
 
       // Download tracks in parallel batches of 3
       const trackConcurrency = 3;
-      for (int batch = 0; batch < audioTracks.length; batch += trackConcurrency) {
+      for (int batch = 0;
+          batch < audioTracks.length;
+          batch += trackConcurrency) {
         if (_cancelledIds.contains(itemId)) break;
         final end = (batch + trackConcurrency).clamp(0, audioTracks.length);
         await Future.wait([
@@ -806,7 +825,8 @@ class DownloadService extends ChangeNotifier {
         }
       } catch (_) {}
 
-      debugPrint('[Download] Complete: $title (${completedPaths.length} files)');
+      debugPrint(
+          '[Download] Complete: $title (${completedPaths.length} files)');
     } catch (e) {
       // Clean up partial files on any failure
       try {
@@ -870,7 +890,8 @@ class DownloadService extends ChangeNotifier {
     unawaited(_processQueue());
   }
 
-  Future<void> deleteDownload(String itemId, {bool skipStopCheck = false}) async {
+  Future<void> deleteDownload(String itemId,
+      {bool skipStopCheck = false}) async {
     final info = _downloads[itemId];
     if (info == null) return;
 
@@ -878,7 +899,8 @@ class DownloadService extends ChangeNotifier {
     if (!skipStopCheck) {
       final player = AudioPlayerService();
       if (player.currentItemId == itemId ||
-          (itemId.length > 36 && player.currentItemId == itemId.substring(0, 36))) {
+          (itemId.length > 36 &&
+              player.currentItemId == itemId.substring(0, 36))) {
         await player.stop();
       }
     }
