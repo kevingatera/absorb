@@ -568,15 +568,15 @@ class LibraryProvider extends ChangeNotifier {
         // doesn't treat all existing episodes as new.
         Future.microtask(() => seedSubscribedPodcastCounts());
 
-        // If server was unreachable on startup, force offline mode and ping
+        // Do not trust /ping as an absolute offline signal.
+        // Some reverse proxies block /ping while authenticated API calls still work.
+        // Reset transient network-offline state and let real API calls decide.
+        _networkOffline = false;
+
+        // If initial reachability probe failed, keep pinging in background,
+        // but continue with normal API loading.
         if (!auth.serverReachable) {
-          debugPrint('[Library] Server not reachable — going offline');
-          _networkOffline = true;
-          _buildOfflineSections();
-          _isLoading = false;
-          notifyListeners();
           if (_deviceHasConnectivity) _startServerPingTimer();
-          return;
         }
 
         _buildProgressMap(auth);
