@@ -126,28 +126,56 @@ class LibraryProvider extends ChangeNotifier {
   Timer? _idleDisconnectTimer;
   static const _idleTimeout = Duration(minutes: 5);
 
+  void _logOfflineState(String source, {String? extra}) {
+    final suffix = (extra == null || extra.isEmpty) ? '' : ' $extra';
+    debugPrint(
+      '[Library] $source '
+      'manual=$_manualOffline '
+      'network=$_networkOffline '
+      'deviceNet=$_deviceHasConnectivity '
+      'effective=$isOffline '
+      'selected=$_selectedLibraryId '
+      'sections=${_personalizedSections.length}$suffix',
+    );
+  }
+
   /// Toggle manual offline mode.
   Future<void> setManualOffline(bool value) async {
-    debugPrint('[Library] setManualOffline($value)');
+    _logOfflineState('setManualOffline($value)');
     _manualOffline = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('manual_offline_mode', value);
     if (!value) {
-      // Going back online — clear any stale network-offline flag too
-      _networkOffline = false;
-      _stopServerPingTimer();
-      if (_api != null) {
-        debugPrint('[Library] Manual offline off — flushing pending syncs');
-        ProgressSyncService().flushPendingSync(api: _api!);
-      }
-      if (_selectedLibraryId == null) {
-        loadLibraries();
+      if (_deviceHasConnectivity) {
+        final wasNetworkOffline = _networkOffline;
+        _networkOffline = false;
+        _stopServerPingTimer();
+        _logOfflineState(
+          'manual offline disabled',
+          extra: 'clearedNetworkOffline=$wasNetworkOffline',
+        );
+
+        // Going back online — flush pending syncs and refresh
+        if (_api != null) {
+          debugPrint('[Library] Manual offline off — flushing pending syncs');
+          ProgressSyncService().flushPendingSync(api: _api!);
+        }
+        if (_selectedLibraryId == null) {
+          loadLibraries();
+        } else {
+          refresh();
+        }
+        if (wasNetworkOffline) {
+          AndroidAutoService().refresh(force: true);
+        }
       } else {
-        refresh();
+        // User disabled manual offline but device has no network.
+        setNetworkOffline(true, reason: 'manual-off-disabled-no-connectivity');
       }
     } else {
       // Going offline — show downloaded books
       _buildOfflineSections();
+      _logOfflineState('manual offline enabled');
     }
     notifyListeners();
   }
@@ -156,12 +184,22 @@ class LibraryProvider extends ChangeNotifier {
   Future<void> restoreOfflineMode() async {
     final prefs = await SharedPreferences.getInstance();
     _manualOffline = prefs.getBool('manual_offline_mode') ?? false;
+    _logOfflineState('restoreOfflineMode',
+        extra: 'restoredManual=$_manualOffline');
   }
 
   /// Called when network connectivity changes.
-  void setNetworkOffline(bool offline) {
+  void setNetworkOffline(bool offline, {String reason = 'unknown'}) {
     final wasOffline = _networkOffline;
+    if (wasOffline == offline) {
+      _logOfflineState('setNetworkOffline($offline) noop',
+          extra: 'reason=$reason');
+      return;
+    }
+
     _networkOffline = offline;
+    _logOfflineState('setNetworkOffline($offline)', extra: 'reason=$reason');
+
     if (offline && !wasOffline) {
       // Just went offline — show downloads, and force AA to clear server tabs
       _buildOfflineSections();
@@ -201,6 +239,8 @@ class LibraryProvider extends ChangeNotifier {
         .toList();
     debugPrint(
         '[Library] Building offline sections: ${downloads.length}/${allDownloads.length} downloads (${isPodcast ? "podcast" : "book"})');
+    _logOfflineState('buildOfflineSections',
+        extra: 'downloads=${downloads.length}');
     if (downloads.isEmpty) {
       _personalizedSections = [];
       _errorMessage = null;
@@ -520,6 +560,10 @@ class LibraryProvider extends ChangeNotifier {
         // Some reverse proxies block /ping while authenticated API calls still work.
         // Reset transient network-offline state and let real API calls decide.
         _networkOffline = false;
+        _logOfflineState(
+          'auth update reset network offline',
+          extra: 'serverReachable=${auth.serverReachable}',
+        );
 
         // If initial reachability probe failed, keep pinging in background,
         // but continue with normal API loading.
@@ -585,9 +629,10 @@ class LibraryProvider extends ChangeNotifier {
     // Check current state immediately
     Connectivity().checkConnectivity().then((result) {
       _deviceHasConnectivity = !result.contains(ConnectivityResult.none);
+      _logOfflineState('connectivity initial', extra: 'result=$result');
       if (!_deviceHasConnectivity) {
         _stopServerPingTimer();
-        setNetworkOffline(true);
+        setNetworkOffline(true, reason: 'initial-no-connectivity');
       } else if (_networkOffline && !_manualOffline) {
         // Device has connectivity but we're still offline — server was unreachable
         _startServerPingTimer();
@@ -597,17 +642,18 @@ class LibraryProvider extends ChangeNotifier {
     _connectivitySub = Connectivity().onConnectivityChanged.listen((result) {
       final hasConnectivity = !result.contains(ConnectivityResult.none);
       _deviceHasConnectivity = hasConnectivity;
+      _logOfflineState('connectivity changed', extra: 'result=$result');
       if (!hasConnectivity) {
         _stopServerPingTimer();
-        setNetworkOffline(true);
-        _auth?.clearLocalOverride();
+        setNetworkOffline(true, reason: 'connectivity-lost');
       } else if (!_manualOffline) {
         // Connectivity restored — optimistically go online; if server is still
         // down the API call will fail and _goOfflineWithPing() will be called.
-        setNetworkOffline(false);
+        setNetworkOffline(false, reason: 'connectivity-restored');
+        // WiFi restored — catch up on any pending rolling downloads
         if (result.contains(ConnectivityResult.wifi)) {
-          // WiFi available — check if local server is reachable
           _auth?.checkLocalServer();
+          // WiFi available — check if local server is reachable
           if (_rollingDownloadSeries.isNotEmpty) _catchUpRollingDownloads();
           _catchUpQueueAutoDownloads();
         } else {
@@ -632,6 +678,7 @@ class LibraryProvider extends ChangeNotifier {
         _stopServerPingTimer();
         return;
       }
+      _logOfflineState('server ping tick');
       final reachable = await ApiService.pingServer(
         serverUrl,
         customHeaders: _auth?.customHeaders ?? {},
@@ -639,7 +686,9 @@ class LibraryProvider extends ChangeNotifier {
       if (reachable) {
         debugPrint('[Library] Server ping succeeded — going online');
         _stopServerPingTimer();
-        setNetworkOffline(false);
+        setNetworkOffline(false, reason: 'ping-succeeded');
+      } else {
+        debugPrint('[Library] Server ping failed — staying offline');
       }
     });
   }
@@ -837,6 +886,7 @@ class LibraryProvider extends ChangeNotifier {
     if (_api == null) return;
 
     if (isOffline) {
+      _logOfflineState('loadLibraries aborted (offline)');
       _buildOfflineSections();
       return;
     }
@@ -870,11 +920,9 @@ class LibraryProvider extends ChangeNotifier {
         await loadPersonalizedView(force: true);
       }
     } catch (e) {
-      if (_isLikelyNetworkError(e)) {
-        _goOffline();
-      } else {
-        debugPrint('[Library] Non-network error (staying online): $e');
-      }
+      // Network error — auto-switch to offline view
+      debugPrint('[Library] loadLibraries error: $e');
+      setNetworkOffline(true, reason: 'loadLibraries-error');
     }
 
     _isLoading = false;
@@ -930,6 +978,7 @@ class LibraryProvider extends ChangeNotifier {
     if (_api == null || _selectedLibraryId == null) return;
 
     if (isOffline) {
+      _logOfflineState('loadPersonalizedView aborted (offline)');
       _buildOfflineSections();
       return;
     }
@@ -958,11 +1007,9 @@ class LibraryProvider extends ChangeNotifier {
       loadPlaylists();
       loadCollections();
     } catch (e) {
-      if (_isLikelyNetworkError(e)) {
-        _goOffline();
-      } else {
-        debugPrint('[Library] Non-network error (staying online): $e');
-      }
+      // Network error — auto-switch to offline view
+      debugPrint('[Library] loadPersonalizedView error: $e');
+      setNetworkOffline(true, reason: 'loadPersonalizedView-error');
     }
 
     _isLoading = false;
@@ -1152,6 +1199,7 @@ class LibraryProvider extends ChangeNotifier {
   /// Refresh data (pull-to-refresh).
   Future<void> refresh() async {
     if (isOffline) {
+      _logOfflineState('refresh aborted (offline)');
       _buildOfflineSections();
       notifyListeners();
       return;
