@@ -414,6 +414,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(Icons.auto_stories_rounded, size: 20, color: cs.primary),
               const SizedBox(width: 8),
