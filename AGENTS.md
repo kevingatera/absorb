@@ -31,3 +31,19 @@ Agent guidance for work in `/home/kevingatera/tmp-agents/absorb`.
 - Signed release requires local `android/key.properties` plus a local keystore path.
 - Keep release output naming consistent with project conventions.
 - For homelab work, finish by creating a homelab release on the fork with a signed APK.
+
+## Reusable commands
+
+- Device and adb checks:
+  - `"/home/kevingatera/android-sdk/platform-tools/adb" devices -l`
+- Start paired app/server logging session:
+  - `LOGDIR="/home/kevingatera/tmp-agents/absorb/data/generated/debug-logs"; TS=$(date +%Y%m%d-%H%M%S); APPLOG="$LOGDIR/app-$TS.log"; SRVLOG="$LOGDIR/server-$TS.log"; nohup "/home/kevingatera/android-sdk/platform-tools/adb" logcat -v time > "$APPLOG" 2>&1 & APPPID=$!; nohup ssh -o BatchMode=yes -o ConnectTimeout=10 root@192.168.1.108 "docker logs -f --since 30s audiobookshelf 2>&1" > "$SRVLOG" 2>&1 & SRVPID=$!; printf "ts=%s\napp_pid=%s\nserver_pid=%s\napp_log=%s\nserver_log=%s\n" "$TS" "$APPPID" "$SRVPID" "$APPLOG" "$SRVLOG" > "$LOGDIR/current-session.meta"`
+- Stop active paired logging session:
+  - `META="/home/kevingatera/tmp-agents/absorb/data/generated/debug-logs/current-session.meta"; APPPID=$(awk -F= '/^app_pid=/{print $2}' "$META"); SRVPID=$(awk -F= '/^server_pid=/{print $2}' "$META"); kill "$APPPID" "$SRVPID" 2>/dev/null || true`
+- Focused app log scan for offline/absorbing states:
+  - `grep -nE "\[Library\]|\[Absorbing\]|setNetworkOffline|setManualOffline|buildOfflineSections|loadPersonalizedView error|loadLibraries error" <app-log-path>`
+- Signed release build:
+  - `JAVA_HOME=/home/kevingatera/jdks/jdk-21.0.10+7 PATH=$JAVA_HOME/bin:$PATH ANDROID_HOME=/home/kevingatera/android-sdk ANDROID_SDK_ROOT=/home/kevingatera/android-sdk flutter build apk --release`
+- Verify built APK identity/signature:
+  - `"/home/kevingatera/android-sdk/build-tools/35.0.0/aapt" dump badging build/app/outputs/flutter-apk/app-release.apk | grep -E "^package:|application-label:"`
+  - `"/home/kevingatera/android-sdk/build-tools/35.0.0/apksigner" verify --print-certs build/app/outputs/flutter-apk/app-release.apk`
