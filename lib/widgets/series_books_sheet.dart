@@ -63,7 +63,7 @@ class SeriesBooksSheet extends StatefulWidget {
 class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
   List<Map<String, dynamic>> _books = [];
   bool _isLoading = true;
-  bool _isDownloadingAll = false;
+  bool _isQueueingSeriesDownload = false;
 
   @override
   void initState() {
@@ -173,33 +173,69 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     if (mounted) setState(() => _isLoading = false);
   }
 
-  Future<void> _downloadAll() async {
+  Future<void> _downloadWholeSeries() async {
+    if (_isQueueingSeriesDownload || _books.isEmpty) return;
+
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) return;
 
-    setState(() => _isDownloadingAll = true);
+    final dl = DownloadService();
+    setState(() => _isQueueingSeriesDownload = true);
+
+    var queued = 0;
+    String? firstError;
 
     for (final book in _books) {
       if (!mounted) break;
+
       final bookId = book['id'] as String? ?? '';
-      if (DownloadService().isDownloaded(bookId) || DownloadService().isDownloading(bookId)) continue;
+      if (bookId.isEmpty) continue;
+      if (dl.isDownloaded(bookId) || dl.isDownloading(bookId)) continue;
 
       final media = book['media'] as Map<String, dynamic>? ?? {};
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-      final title = metadata['title'] as String? ?? 'Unknown';
-      final author = metadata['authorName'] as String? ?? '';
+      final title = metadata['title'] as String? ?? 'Book';
+      final author = metadata['authorName'] as String?;
 
-      await DownloadService().downloadItem(
+      final error = await dl.downloadItem(
         api: api,
         itemId: bookId,
         title: title,
         author: author,
         coverUrl: api.getCoverUrl(bookId),
       );
+
+      if (error != null) {
+        firstError ??= error;
+        break;
+      }
+
+      queued++;
     }
 
-    if (mounted) setState(() => _isDownloadingAll = false);
+    if (mounted) {
+      setState(() => _isQueueingSeriesDownload = false);
+      if (firstError != null) {
+        final msg = queued > 0
+            ? 'Queued $queued book${queued == 1 ? '' : 's'}. $firstError'
+            : firstError;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(msg)));
+      } else if (queued > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Queued $queued book${queued == 1 ? '' : 's'} for download',
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('All books are already downloaded')),
+        );
+      }
+    }
   }
 
   @override
@@ -237,6 +273,59 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                     overflow: TextOverflow.ellipsis,
                     style: tt.titleLarge
                         ?.copyWith(fontWeight: FontWeight.w600)),
+              ),
+              ListenableBuilder(
+                listenable: DownloadService(),
+                builder: (_, __) {
+                  final dl = DownloadService();
+                  var downloaded = 0;
+                  var downloading = 0;
+                  for (final book in _books) {
+                    final id = book['id'] as String? ?? '';
+                    if (id.isEmpty) continue;
+                    if (dl.isDownloaded(id)) {
+                      downloaded++;
+                    } else if (dl.isDownloading(id)) {
+                      downloading++;
+                    }
+                  }
+
+                  final total = _books.length;
+                  final allDone = total > 0 && downloaded == total;
+                  final anyActive = _isQueueingSeriesDownload || downloading > 0;
+
+                  IconData icon;
+                  if (allDone) {
+                    icon = Icons.download_done_rounded;
+                  } else if (anyActive) {
+                    icon = Icons.downloading_rounded;
+                  } else {
+                    icon = Icons.download_for_offline_rounded;
+                  }
+
+                  final tooltip = allDone
+                      ? 'All books downloaded'
+                      : anyActive
+                          ? 'Downloading ${downloaded + downloading}/$total'
+                          : 'Download whole series';
+
+                  return IconButton(
+                    tooltip: tooltip,
+                    onPressed: (total == 0 || allDone || anyActive)
+                        ? null
+                        : _downloadWholeSeries,
+                    icon: anyActive
+                        ? SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: cs.primary,
+                            ),
+                          )
+                        : Icon(icon, size: 20),
+                  );
+                },
               ),
             ],
           ),
