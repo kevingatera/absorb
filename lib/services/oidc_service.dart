@@ -45,7 +45,12 @@ class OidcService {
   // was shared with it before, and Android hands a shared scheme to whichever
   // app answers first. A server allows this one under Settings > Authentication
   // > Mobile redirect URIs, so a rejection gets its own message below.
-  static const _redirectUri = 'absorb://oauth';
+  // The homelab build keeps its own scheme so it can install beside the stable
+  // app; its server already allows that one.
+  static const _isHomelabBuild = bool.fromEnvironment('HOMELAB_BUILD');
+  static const _webAuthScheme =
+      _isHomelabBuild ? 'audiobookshelfhomelab' : 'absorb';
+  static const _redirectUri = '$_webAuthScheme://oauth';
   static const redirectUri = _redirectUri;
   static const _clientId = 'Audiobookshelf-App';
 
@@ -159,7 +164,7 @@ class OidcService {
     }
 
     debugPrint('[OIDC] Opening Custom Tab for: $providerUrl');
-    return _openBrowser(providerUrl, 'absorb');
+    return _openBrowser(providerUrl, _webAuthScheme);
   }
 
   /// BookOrbit only takes this return address from an app (unless its admin
