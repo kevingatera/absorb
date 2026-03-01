@@ -118,6 +118,13 @@ class LibraryProvider extends ChangeNotifier {
     );
   }
 
+  bool _isLikelyNetworkError(Object error) {
+    return error is SocketException ||
+        error is TimeoutException ||
+        error is HandshakeException ||
+        error is HttpException;
+  }
+
   /// Toggle manual offline mode.
   Future<void> setManualOffline(bool value) async {
     _logOfflineState('setManualOffline($value)');
@@ -784,9 +791,14 @@ class LibraryProvider extends ChangeNotifier {
         await loadPersonalizedView(force: true);
       }
     } catch (e) {
-      // Network error — auto-switch to offline view
       debugPrint('[Library] loadLibraries error: $e');
-      setNetworkOffline(true, reason: 'loadLibraries-error');
+      if (_isLikelyNetworkError(e)) {
+        // Network error — auto-switch to offline view
+        setNetworkOffline(true, reason: 'loadLibraries-network-error');
+      } else {
+        // Non-network failures should not force offline mode.
+        _errorMessage = 'Failed to load libraries';
+      }
     }
 
     _isLoading = false;
@@ -864,9 +876,14 @@ class LibraryProvider extends ChangeNotifier {
         _hydrateRssFeedFieldsDeferred();
       }
     } catch (e) {
-      // Network error — auto-switch to offline view
       debugPrint('[Library] loadPersonalizedView error: $e');
-      setNetworkOffline(true, reason: 'loadPersonalizedView-error');
+      if (_isLikelyNetworkError(e)) {
+        // Network error — auto-switch to offline view
+        setNetworkOffline(true, reason: 'loadPersonalizedView-network-error');
+      } else {
+        // Non-network failures should not force offline mode.
+        _errorMessage = 'Failed to load home sections';
+      }
     }
 
     _isLoading = false;
@@ -1218,12 +1235,7 @@ class LibraryProvider extends ChangeNotifier {
         return;
       }
     }
-    if (_absorbingBookIds.contains(key)) return;
-    if (atFront) {
-      _absorbingBookIds.insert(0, key);
-    } else {
-      _absorbingBookIds.add(key);
-    }
+    _absorbingBookIds.add(key);
   }
 
   Map<String, Map<String, dynamic>> get absorbingItemCache =>
