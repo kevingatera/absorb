@@ -25,6 +25,7 @@ class DownloadInfo {
   final String? coverUrl;
   final String? localCoverPath;
   final String? localDirPath;
+  final int? itemUpdatedAt;
 
   DownloadInfo({
     required this.itemId,
@@ -37,6 +38,7 @@ class DownloadInfo {
     this.coverUrl,
     this.localCoverPath,
     this.localDirPath,
+    this.itemUpdatedAt,
   });
 
   Map<String, dynamic> toJson() => {
@@ -49,6 +51,7 @@ class DownloadInfo {
         'coverUrl': coverUrl,
         'localCoverPath': localCoverPath,
         if (localDirPath != null) 'localDirPath': localDirPath,
+        'itemUpdatedAt': itemUpdatedAt,
       };
 
   factory DownloadInfo.fromJson(Map<String, dynamic> json) {
@@ -59,7 +62,8 @@ class DownloadInfo {
     // Fallback: extract metadata from cached sessionData for old downloads
     if ((title == null || title.isEmpty) && json['sessionData'] != null) {
       try {
-        final session = jsonDecode(json['sessionData'] as String) as Map<String, dynamic>;
+        final session =
+            jsonDecode(json['sessionData'] as String) as Map<String, dynamic>;
         // Try session-level metadata first
         final sessionMeta = session['mediaMetadata'] as Map<String, dynamic>?;
         if (sessionMeta != null) {
@@ -87,12 +91,13 @@ class DownloadInfo {
               ?.map((e) => e as String)
               .toList() ??
           [],
-      sessionData: _stripLibraryItem(json['sessionData'] as String?),
+      sessionData: json['sessionData'] as String?,
       title: title,
       author: author,
       coverUrl: coverUrl,
       localCoverPath: json['localCoverPath'] as String?,
       localDirPath: json['localDirPath'] as String?,
+      itemUpdatedAt: (json['itemUpdatedAt'] as num?)?.toInt(),
     );
   }
 }
@@ -113,20 +118,6 @@ class _QueuedDownload {
     this.coverUrl,
     this.episodeId,
   });
-}
-
-/// Strip the bulky `libraryItem` from persisted session data.
-/// For podcasts this contains ALL episodes and can be hundreds of KB.
-String? _stripLibraryItem(String? sessionJson) {
-  if (sessionJson == null) return null;
-  try {
-    final session = jsonDecode(sessionJson) as Map<String, dynamic>;
-    if (session.containsKey('libraryItem')) {
-      session.remove('libraryItem');
-      return jsonEncode(session);
-    }
-  } catch (_) {}
-  return sessionJson;
 }
 
 /// Sanitize a string for use as a filesystem directory/file name.
@@ -272,24 +263,25 @@ class DownloadService extends ChangeNotifier {
   bool isDownloading(String itemId) =>
       _downloads[itemId]?.status == DownloadStatus.downloading;
 
-  double downloadProgress(String itemId) =>
-      _downloads[itemId]?.progress ?? 0;
+  double downloadProgress(String itemId) => _downloads[itemId]?.progress ?? 0;
 
   /// Get all downloaded items (for home screen display).
-  List<DownloadInfo> get downloadedItems =>
-      _downloads.values
-          .where((d) => d.status == DownloadStatus.downloaded)
-          .toList();
+  List<DownloadInfo> get downloadedItems => _downloads.values
+      .where((d) => d.status == DownloadStatus.downloaded)
+      .toList();
 
   /// Get actively downloading items (in progress right now).
-  List<DownloadInfo> get activeDownloads =>
-      _downloads.values
-          .where((d) => d.status == DownloadStatus.downloading && _activeDownloadIds.contains(d.itemId))
-          .toList();
+  List<DownloadInfo> get activeDownloads => _downloads.values
+      .where((d) =>
+          d.status == DownloadStatus.downloading &&
+          _activeDownloadIds.contains(d.itemId))
+      .toList();
 
   /// Get queued items (waiting for a download slot).
-  List<DownloadInfo> get queuedDownloads =>
-      _queue.map((q) => _downloads[q.itemId]).whereType<DownloadInfo>().toList();
+  List<DownloadInfo> get queuedDownloads => _queue
+      .map((q) => _downloads[q.itemId])
+      .whereType<DownloadInfo>()
+      .toList();
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
@@ -298,6 +290,7 @@ class DownloadService extends ChangeNotifier {
     if (json != null) {
       try {
         final map = jsonDecode(json) as Map<String, dynamic>;
+        final orphanIds = <String>[];
         for (final entry in map.entries) {
           final info =
               DownloadInfo.fromJson(entry.value as Map<String, dynamic>);
@@ -306,9 +299,38 @@ class DownloadService extends ChangeNotifier {
               'cover=${info.coverUrl != null ? "yes" : "null"} '
               'sessionData=${info.sessionData != null ? "${info.sessionData!.length} chars" : "null"}');
           if (info.status == DownloadStatus.downloaded) {
-            _downloads[entry.key] = info;
+            bool allExist = true;
+            for (final path in info.localPaths) {
+              if (!await File(path).exists()) {
+                allExist = false;
+                break;
+              }
+            }
+            if (allExist) {
+              _downloads[entry.key] = info;
+            } else {
+              orphanIds.add(entry.key);
+            }
           } else {
-            debugPrint('[Download] Skipping stale ${info.status} entry: ${entry.key}');
+            // Stale downloading/error entries from a previous crash
+            orphanIds.add(entry.key);
+          }
+        }
+        // Clean up partial/orphaned files on disk
+        if (orphanIds.isNotEmpty) {
+          final basePath = await downloadBasePath;
+          final internalBase = await _internalBasePath;
+          for (final id in orphanIds) {
+            debugPrint('[Download] Cleaning up orphaned entry: $id');
+            try {
+              final dir = Directory('$basePath/$id');
+              if (await dir.exists()) await dir.delete(recursive: true);
+            } catch (_) {}
+            try {
+              final coverDir = Directory('$internalBase/$id');
+              if (await coverDir.exists())
+                await coverDir.delete(recursive: true);
+            } catch (_) {}
           }
         }
       } catch (e) {
@@ -318,61 +340,6 @@ class DownloadService extends ChangeNotifier {
     // Re-save to persist any metadata extracted from sessionData
     if (_downloads.isNotEmpty) await _save();
     notifyListeners();
-
-    // Validate files and clean up orphans in background after startup
-    _validateDownloads();
-  }
-
-  /// Validate that downloaded files still exist on disk and clean up orphans.
-  /// Runs in background so it doesn't block app startup.
-  Future<void> _validateDownloads() async {
-    try {
-      final orphanIds = <String>[];
-      final entries = Map<String, DownloadInfo>.from(_downloads);
-      for (final entry in entries.entries) {
-        if (entry.value.status != DownloadStatus.downloaded) continue;
-        bool allExist = true;
-        for (final path in entry.value.localPaths) {
-          try {
-            final exists = await File(path).exists()
-                .timeout(const Duration(seconds: 3));
-            if (!exists) {
-              allExist = false;
-              break;
-            }
-          } catch (_) {
-            // Timeout or permission error — treat as missing
-            allExist = false;
-            break;
-          }
-        }
-        if (!allExist) {
-          debugPrint('[Download] Files missing for ${entry.key}, removing');
-          _downloads.remove(entry.key);
-          orphanIds.add(entry.key);
-        }
-      }
-      if (orphanIds.isNotEmpty) {
-        await _save();
-        notifyListeners();
-        // Clean up partial/orphaned files on disk
-        final basePath = await downloadBasePath;
-        final internalBase = await _internalBasePath;
-        for (final id in orphanIds) {
-          debugPrint('[Download] Cleaning up orphaned entry: $id');
-          try {
-            final dir = Directory('$basePath/$id');
-            if (await dir.exists()) await dir.delete(recursive: true);
-          } catch (_) {}
-          try {
-            final coverDir = Directory('$internalBase/$id');
-            if (await coverDir.exists()) await coverDir.delete(recursive: true);
-          } catch (_) {}
-        }
-      }
-    } catch (e) {
-      debugPrint('[Download] Validation error: $e');
-    }
   }
 
   /// Try to fill in missing metadata from the API (for old downloads).
@@ -388,36 +355,50 @@ class DownloadService extends ChangeNotifier {
       String? author = info.author;
       String? coverUrl = info.coverUrl;
       String? localCoverPath = info.localCoverPath;
+      int? itemUpdatedAt = info.itemUpdatedAt;
 
       // For podcast episodes, the itemId is a composite "showUUID-episodeId".
       // Extract the library item ID (first 36 chars = UUID) for API calls.
-      final apiItemId = info.itemId.length > 36
-          ? info.itemId.substring(0, 36)
-          : info.itemId;
+      final apiItemId =
+          info.itemId.length > 36 ? info.itemId.substring(0, 36) : info.itemId;
 
-      // Enrich missing title/author from server
-      if (title == null || title.isEmpty) {
-        try {
-          final item = await api.getLibraryItem(apiItemId);
-          if (item != null) {
-            final media = item['media'] as Map<String, dynamic>? ?? {};
-            final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-            title = metadata['title'] as String? ?? title;
-            author = metadata['authorName'] as String? ?? author;
-            coverUrl = api.getCoverUrl(apiItemId);
-            needsUpdate = true;
-            debugPrint('[Download] Enriched metadata for ${info.itemId}: $title');
-          }
-        } catch (e) {
-          debugPrint('[Download] Enrich failed for ${info.itemId}: $e');
+      Map<String, dynamic>? item;
+      try {
+        item = await api.getLibraryItem(apiItemId);
+      } catch (e) {
+        debugPrint('[Download] Enrich failed for ${info.itemId}: $e');
+      }
+
+      if (item != null) {
+        final media = item['media'] as Map<String, dynamic>? ?? {};
+        final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+        final nextTitle = metadata['title'] as String? ?? title;
+        final nextAuthor = metadata['authorName'] as String? ?? author;
+        final nextUpdatedAt = (item['updatedAt'] as num?)?.toInt();
+        final nextCoverUrl =
+            api.getCoverUrl(apiItemId, updatedAt: nextUpdatedAt);
+
+        if (nextTitle != title ||
+            nextAuthor != author ||
+            nextCoverUrl != coverUrl ||
+            nextUpdatedAt != itemUpdatedAt) {
+          title = nextTitle;
+          author = nextAuthor;
+          coverUrl = nextCoverUrl;
+          itemUpdatedAt = nextUpdatedAt;
+          needsUpdate = true;
+          debugPrint(
+              '[Download] Refreshed metadata for ${info.itemId}: $title');
         }
       }
 
-      // Cache cover in internal storage if not already cached
-      if (localCoverPath == null || !File(localCoverPath).existsSync()) {
+      // Cache cover in internal storage if missing or stale.
+      if (localCoverPath == null ||
+          !File(localCoverPath).existsSync() ||
+          itemUpdatedAt != info.itemUpdatedAt) {
         final internalBase = await _internalBasePath;
         final existingCover = File('$internalBase/${info.itemId}/cover.jpg');
-        if (existingCover.existsSync()) {
+        if (existingCover.existsSync() && itemUpdatedAt == info.itemUpdatedAt) {
           // Already on disk from a previous download, just not tracked
           localCoverPath = existingCover.path;
           needsUpdate = true;
@@ -432,7 +413,8 @@ class DownloadService extends ChangeNotifier {
             // Download from server into internal storage
             final url = coverUrl ?? api.getCoverUrl(apiItemId);
             try {
-              final resp = await http.get(Uri.parse(url), headers: api.mediaHeaders)
+              final resp = await http
+                  .get(Uri.parse(url), headers: api.mediaHeaders)
                   .timeout(const Duration(seconds: 10));
               if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
                 final dir = Directory('$internalBase/${info.itemId}');
@@ -444,7 +426,8 @@ class DownloadService extends ChangeNotifier {
                 debugPrint('[Download] Cached cover for ${info.itemId}');
               }
             } catch (e) {
-              debugPrint('[Download] Cover cache failed for ${info.itemId}: $e');
+              debugPrint(
+                  '[Download] Cover cache failed for ${info.itemId}: $e');
             }
           }
         }
@@ -460,6 +443,7 @@ class DownloadService extends ChangeNotifier {
           author: author ?? info.author,
           coverUrl: coverUrl ?? info.coverUrl,
           localCoverPath: localCoverPath,
+          itemUpdatedAt: itemUpdatedAt,
         );
         changed = true;
       }
@@ -498,7 +482,8 @@ class DownloadService extends ChangeNotifier {
     if (info == null || info.status != DownloadStatus.downloaded) return null;
 
     // Check persisted path
-    if (info.localCoverPath != null && File(info.localCoverPath!).existsSync()) {
+    if (info.localCoverPath != null &&
+        File(info.localCoverPath!).existsSync()) {
       return info.localCoverPath;
     }
 
@@ -526,6 +511,7 @@ class DownloadService extends ChangeNotifier {
     String? author,
     String? coverUrl,
     String? episodeId,
+    bool waitForCompletion = true,
   }) async {
     if (_activeDownloadIds.contains(itemId)) return null;
     if (isDownloaded(itemId)) return null;
@@ -582,12 +568,18 @@ class DownloadService extends ChangeNotifier {
     final maxConcurrent = await PlayerSettings.getMaxConcurrentDownloads();
     while (_queue.isNotEmpty && _activeDownloadIds.length < maxConcurrent) {
       final next = _queue.removeAt(0);
+      debugPrint(
+          '[Download] Dequeued item=${next.itemId} remaining=${_queue.length}');
       // Skip if cancelled/removed while waiting
       if (isDownloaded(next.itemId)) continue;
       if (_activeDownloadIds.contains(next.itemId)) continue;
       unawaited(_executeDownload(
-        api: next.api, itemId: next.itemId, title: next.title,
-        author: next.author, coverUrl: next.coverUrl, episodeId: next.episodeId,
+        api: next.api,
+        itemId: next.itemId,
+        title: next.title,
+        author: next.author,
+        coverUrl: next.coverUrl,
+        episodeId: next.episodeId,
       ));
     }
   }
@@ -668,7 +660,8 @@ class DownloadService extends ChangeNotifier {
       String? localCoverPath;
       if (coverUrl != null && coverUrl.isNotEmpty) {
         try {
-          final coverResp = await http.get(Uri.parse(coverUrl), headers: api.mediaHeaders)
+          final coverResp = await http
+              .get(Uri.parse(coverUrl), headers: api.mediaHeaders)
               .timeout(const Duration(seconds: 10));
           if (coverResp.statusCode == 200 && coverResp.bodyBytes.isNotEmpty) {
             final internalBase = await _internalBasePath;
@@ -705,7 +698,8 @@ class DownloadService extends ChangeNotifier {
       }
 
       void updateProgress() {
-        final overall = trackProgress.reduce((a, b) => a + b) / audioTracks.length;
+        final overall =
+            trackProgress.reduce((a, b) => a + b) / audioTracks.length;
         final now = DateTime.now();
         // Throttle UI updates to max ~4/sec
         if (now.difference(lastUIUpdate).inMilliseconds > 250) {
@@ -740,13 +734,15 @@ class DownloadService extends ChangeNotifier {
         if (originalName.isEmpty) {
           final contentPath = Uri.tryParse(contentUrl)?.path ?? contentUrl;
           originalName = Uri.decodeComponent(contentPath.split('/').last);
-          if (originalName.contains('?')) originalName = originalName.split('?').first;
+          if (originalName.contains('?'))
+            originalName = originalName.split('?').first;
         }
 
         final String fileName;
         if (originalName.isNotEmpty && originalName.contains('.')) {
-          fileName = _sanitizePath(originalName.replaceAll(RegExp(r'\.[^.]+$'), ''))
-              + originalName.substring(originalName.lastIndexOf('.'));
+          fileName =
+              _sanitizePath(originalName.replaceAll(RegExp(r'\.[^.]+$'), '')) +
+                  originalName.substring(originalName.lastIndexOf('.'));
         } else {
           final mimeType = track['mimeType'] as String? ?? 'audio/mpeg';
           final ext = mimeType.contains('mp4')
@@ -766,8 +762,8 @@ class DownloadService extends ChangeNotifier {
 
         final request = http.Request('GET', Uri.parse(fullUrl));
         api.mediaHeaders.forEach((key, value) => request.headers[key] = value);
-        final response = await client.send(request)
-            .timeout(const Duration(seconds: 30));
+        final response =
+            await client.send(request).timeout(const Duration(seconds: 30));
 
         if (response.statusCode != 200) {
           throw Exception('HTTP ${response.statusCode} for track ${i + 1}');
@@ -777,10 +773,12 @@ class DownloadService extends ChangeNotifier {
         int receivedBytes = 0;
         final sink = file.openWrite();
         try {
-          await for (final chunk in response.stream.timeout(const Duration(seconds: 60))) {
+          await for (final chunk
+              in response.stream.timeout(const Duration(seconds: 60))) {
             sink.add(chunk);
             receivedBytes += chunk.length;
-            trackProgress[i] = totalBytes > 0 ? receivedBytes / totalBytes : 0.5;
+            trackProgress[i] =
+                totalBytes > 0 ? receivedBytes / totalBytes : 0.5;
             updateProgress();
           }
         } finally {
@@ -791,7 +789,9 @@ class DownloadService extends ChangeNotifier {
 
       // Download tracks in parallel batches of 3
       const trackConcurrency = 3;
-      for (int batch = 0; batch < audioTracks.length; batch += trackConcurrency) {
+      for (int batch = 0;
+          batch < audioTracks.length;
+          batch += trackConcurrency) {
         if (_cancelledIds.contains(itemId)) break;
         final end = (batch + trackConcurrency).clamp(0, audioTracks.length);
         await Future.wait([
@@ -815,23 +815,15 @@ class DownloadService extends ChangeNotifier {
       final sessionId = sessionData['id'] as String?;
       if (sessionId != null) {
         try {
-          await api.closePlaybackSession(sessionId)
-              .timeout(const Duration(seconds: 10));
+          await api.closePlaybackSession(sessionId);
         } catch (_) {}
       }
-
-      // Strip large nested objects from session data before persisting.
-      // libraryItem contains the full item (with ALL episodes for podcasts)
-      // and can be hundreds of KB - storing one per downloaded episode
-      // bloats SharedPreferences and can cause ANR/OOM.
-      final slimSession = Map<String, dynamic>.from(sessionData);
-      slimSession.remove('libraryItem');
 
       _downloads[itemId] = DownloadInfo(
         itemId: itemId,
         status: DownloadStatus.downloaded,
         localPaths: completedPaths,
-        sessionData: jsonEncode(slimSession),
+        sessionData: jsonEncode(sessionData),
         title: title,
         author: author,
         coverUrl: coverUrl,
@@ -854,7 +846,8 @@ class DownloadService extends ChangeNotifier {
         }
       } catch (_) {}
 
-      debugPrint('[Download] Complete: $title (${completedPaths.length} files)');
+      debugPrint(
+          '[Download] Complete: $title (${completedPaths.length} files)');
     } catch (e) {
       // Clean up partial files on any failure
       try {
@@ -909,7 +902,6 @@ class DownloadService extends ChangeNotifier {
 
     _activeDownloadIds.remove(itemId);
     _downloadSlots.remove(itemId);
-    try { _httpClients[itemId]?.close(); } catch (_) {}
     _httpClients.remove(itemId);
     _cancelledIds.remove(itemId);
 
@@ -919,7 +911,8 @@ class DownloadService extends ChangeNotifier {
     unawaited(_processQueue());
   }
 
-  Future<void> deleteDownload(String itemId, {bool skipStopCheck = false}) async {
+  Future<void> deleteDownload(String itemId,
+      {bool skipStopCheck = false}) async {
     final info = _downloads[itemId];
     if (info == null) return;
 
@@ -927,7 +920,8 @@ class DownloadService extends ChangeNotifier {
     if (!skipStopCheck) {
       final player = AudioPlayerService();
       if (player.currentItemId == itemId ||
-          (itemId.length > 36 && player.currentItemId == itemId.substring(0, 36))) {
+          (itemId.length > 36 &&
+              player.currentItemId == itemId.substring(0, 36))) {
         await player.stop();
       }
     }
