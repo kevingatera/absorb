@@ -51,3 +51,7 @@ Absorb is also in **closed testing on Google Play**. If you'd like access, reach
 
 - An [audiobookshelf](https://www.audiobookshelf.org/) server (self-hosted)
 - Android 7.0+
+
+## Homelab Releases
+
+- Homelab deployment and signed release workflow: `docs/homelab-releases.md`
