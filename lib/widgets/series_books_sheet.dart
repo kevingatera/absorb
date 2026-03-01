@@ -184,14 +184,20 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     setState(() => _isQueueingSeriesDownload = true);
 
     var queued = 0;
+    var skipped = 0;
     String? firstError;
+
+    debugPrint('[Series] Queueing whole series download for "${widget.seriesName}" (${_books.length} books)');
 
     for (final book in _books) {
       if (!mounted) break;
 
       final bookId = book['id'] as String? ?? '';
       if (bookId.isEmpty) continue;
-      if (dl.isDownloaded(bookId) || dl.isDownloading(bookId)) continue;
+      if (dl.isDownloaded(bookId) || dl.isDownloading(bookId)) {
+        skipped++;
+        continue;
+      }
 
       final media = book['media'] as Map<String, dynamic>? ?? {};
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
@@ -204,6 +210,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
         title: title,
         author: author,
         coverUrl: api.getCoverUrl(bookId),
+        waitForCompletion: false,
       );
 
       if (error != null) {
@@ -213,6 +220,8 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
 
       queued++;
     }
+
+    debugPrint('[Series] Queue complete queued=$queued skipped=$skipped error=${firstError ?? '-'}');
 
     if (mounted) {
       setState(() => _isQueueingSeriesDownload = false);
