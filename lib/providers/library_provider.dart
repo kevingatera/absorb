@@ -664,7 +664,8 @@ class LibraryProvider extends ChangeNotifier {
           if (itemId != null) {
             final key = episodeId != null ? '$itemId-$episodeId' : itemId;
             // Don't let stale server data overwrite a local mark-finished
-            if (_locallyFinishedItems.contains(key) && mp['isFinished'] != true) continue;
+            if (_locallyFinishedItems.contains(key) && mp['isFinished'] != true)
+              continue;
             // Don't overwrite progress for the currently playing item
             if (key == playingKey && player.hasBook) continue;
             _progressMap[key] = mp;
@@ -760,16 +761,13 @@ class LibraryProvider extends ChangeNotifier {
   }
 
   /// Fetch personalized home sections for the selected library.
-  /// Deduplicates concurrent calls and enforces a cooldown unless [force] is true.
   Future<void> loadPersonalizedView({bool force = false}) async {
-    // If a fetch is already in flight, just await it
     final existing = _personalizedInFlight;
     if (existing != null) {
       await existing;
       return;
     }
 
-    // Skip if within cooldown (same library, not forced)
     if (!force &&
         _lastPersonalizedFetchAt != null &&
         _lastPersonalizedFetchLibraryId == _selectedLibraryId &&
@@ -778,7 +776,7 @@ class LibraryProvider extends ChangeNotifier {
       return;
     }
 
-    final inFlight = _doLoadPersonalizedView();
+    final inFlight = _loadPersonalizedView();
     _personalizedInFlight = inFlight;
     try {
       await inFlight;
@@ -789,7 +787,7 @@ class LibraryProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _doLoadPersonalizedView() async {
+  Future<void> _loadPersonalizedView() async {
     if (_api == null || _selectedLibraryId == null) return;
 
     if (isOffline) {
@@ -808,21 +806,8 @@ class LibraryProvider extends ChangeNotifier {
     try {
       _lastPersonalizedFetchAt = DateTime.now();
       _lastPersonalizedFetchLibraryId = _selectedLibraryId;
-      await _refreshProgress();
-      _personalizedSections = await _api!.getPersonalizedView(
-        _selectedLibraryId!,
-        include: const ['numEpisodesIncomplete'],
-      );
-      // Cache updatedAt timestamps for cover cache-busting
-      for (final section in _personalizedSections) {
-        for (final e in (section['entities'] as List<dynamic>? ?? [])) {
-          if (e is Map<String, dynamic>) {
-            final id = e['id'] as String?;
-            final ts = e['updatedAt'] as num?;
-            if (id != null && ts != null) _itemUpdatedAt[id] = ts.toInt();
-          }
-        }
-      }
+      _personalizedSections =
+          await _api!.getPersonalizedView(_selectedLibraryId!);
       await _updateAbsorbingCache();
 
       // For podcast libraries, defer RSS-heavy fields until after first paint.
@@ -1032,10 +1017,8 @@ class LibraryProvider extends ChangeNotifier {
     if (_api != null) {
       await ProgressSyncService().flushPendingSync(api: _api!);
     }
-    await Future.wait([
-      loadPersonalizedView(force: true),
-      _refreshProgress(),
-    ]);
+    await _refreshProgress();
+    await loadPersonalizedView(force: true);
     // Clear stale local overrides — server data is now authoritative
     _localProgressOverrides.clear();
     // Cache fresh server data locally (without marking as pending syncs)
@@ -1878,7 +1861,8 @@ class LibraryProvider extends ChangeNotifier {
       debugPrint('[AutoAdvance] Manual queue: starting next item $key');
       return; // started the next item
     }
-    debugPrint('[AutoAdvance] Manual queue: no next item found after $finishedKey');
+    debugPrint(
+        '[AutoAdvance] Manual queue: no next item found after $finishedKey');
   }
 
   /// Offline auto-advance: find the next downloaded book in series or next
