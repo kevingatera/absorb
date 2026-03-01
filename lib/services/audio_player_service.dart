@@ -1979,7 +1979,7 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   /// Content provider authority — must match CoverContentProvider and AndroidManifest.
-  static const _coverAuthority = 'com.barnabas.absorb.covers';
+  static const _coverAuthority = 'com.barnabas.absorb.homelab.covers';
 
   void _pushMediaItem(String itemId, String title, String author,
       String? coverUrl, double totalDuration, {String? chapter}) {

@@ -38,7 +38,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.barnabas.absorb"
+        applicationId = "com.barnabas.absorb.homelab"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -63,7 +63,7 @@ android {
     applicationVariants.all {
         outputs.all {
             (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl)
-                .outputFileName = "absorb-${versionName}.apk"
+                .outputFileName = "absorb-homelab-${versionName}.apk"
         }
     }
 }
