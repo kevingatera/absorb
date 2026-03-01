@@ -9,6 +9,20 @@
 - False offline startup fallback committed as `876316a` (`Fix startup false offline detection`).
 - Offline toggle + absorbing empty-state stability committed as `530e077` (`Fix offline toggle and absorbing empty state`).
 
+## Live debug finding (2026-03-01)
+
+- During live test, app logs showed: `loadPersonalizedView error: Stack Overflow` followed by forced offline transition.
+- Root cause was a recursion bug in `lib/providers/library_provider.dart`:
+  - `_absorbingIdsAdd` called itself instead of appending when no `afterKey` insert point existed.
+- Impact:
+  - Threw during personalized load/cache update.
+  - Catch path treated it as network error and switched app to offline mode.
+  - Home + Absorbing were affected (offline sections), while Library could still appear online.
+- Fix:
+  - `_absorbingIdsAdd` now does `_absorbingBookIds.add(key)` for normal append.
+  - Offline fallback now only triggers on likely network exceptions (socket/timeout/http/handshake), not all exceptions.
+  - Added reasoned offline state logs and richer absorbing build logs for future debugging.
+
 ## Findings captured
 
 - Reported slowdown was tied to expensive server home shelf generation, not playback session start.
