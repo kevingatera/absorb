@@ -87,3 +87,8 @@ packages/whisper_ggml_plus/pubspec.lock
 
 # Kotlin build session caches
 **/android/.kotlin/
+
+# Homelab-local files (never track these)
+continuity.md
+issues/
+release-artifacts/

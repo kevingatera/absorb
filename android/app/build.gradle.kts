@@ -48,6 +48,7 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         resValue("string", "app_name", "Absorb")
+        manifestPlaceholders["webAuthScheme"] = "audiobookshelf"
         buildConfigField(
             "int",
             "ABSORB_BASE_VERSION_CODE",
@@ -81,6 +82,16 @@ android {
         create("fdroid") {
             dimension = "distribution"
         }
+        // Homelab build that installs beside the stable app: its own
+        // application id, name, and OIDC callback scheme, otherwise the
+        // github build.
+        create("homelab") {
+            dimension = "distribution"
+            applicationIdSuffix = ".homelab"
+            resValue("string", "app_name", "Absorb Homelab")
+            proguardFiles("proguard-flutter-keep.pro")
+            manifestPlaceholders["webAuthScheme"] = "audiobookshelfhomelab"
+        }
     }
 
     // GMS-touching Kotlin (cast + wear) is shared by github + playstore only.
@@ -91,6 +102,7 @@ android {
         getByName("github").java.srcDir("src/gms/kotlin")
         getByName("playstore").java.srcDir("src/gms/kotlin")
         getByName("dev").java.srcDir("src/gms/kotlin")
+        getByName("homelab").java.srcDir("src/gms/kotlin")
     }
 
     buildTypes {
@@ -140,7 +152,11 @@ android {
             // word "universal" stays in the name because newer updaters match it
             // as a token when no per-ABI build fits.
             val packageKind = abi ?: "all-universal"
-            val flavorTag = if (variant.flavorName == "dev") "-dev" else ""
+            val flavorTag = when (variant.flavorName) {
+                "dev" -> "-dev"
+                "homelab" -> "-homelab"
+                else -> ""
+            }
             output.outputFileName =
                 "absorb-${variant.versionName}-${variant.versionCode}$flavorTag-$packageKind.apk"
         }
@@ -176,6 +192,7 @@ dependencies {
         add("githubImplementation", it)
         add("playstoreImplementation", it)
         add("devImplementation", it)
+        add("homelabImplementation", it)
     }
 }
 

@@ -39,7 +39,12 @@ class OidcService {
   bool _lastWasUserCancel = false;
   bool get lastWasUserCancel => _lastWasUserCancel;
 
-  static const _redirectUri = 'audiobookshelf://oauth';
+  // The homelab build registers its own callback scheme so an installed
+  // stable Absorb can't intercept its OIDC redirects (and vice versa).
+  static const _isHomelabBuild = bool.fromEnvironment('HOMELAB_BUILD');
+  static String get _webAuthScheme =>
+      _isHomelabBuild ? 'audiobookshelfhomelab' : 'audiobookshelf';
+  static String get _redirectUri => '$_webAuthScheme://oauth';
   static const _clientId = 'Audiobookshelf-App';
 
   /// Generate a cryptographically random string of [length] bytes, base64url-encoded.
@@ -154,7 +159,7 @@ class OidcService {
     try {
       final resultUrl = await FlutterWebAuth2.authenticate(
         url: providerUrl,
-        callbackUrlScheme: 'audiobookshelf',
+        callbackUrlScheme: _webAuthScheme,
       );
       debugPrint('[OIDC] Custom Tab returned: $resultUrl');
       return Uri.parse(resultUrl);
