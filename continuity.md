@@ -4,6 +4,7 @@
 
 - Branch: `homelab` (fork: `kevingatera/absorb`, upstream: `pounat/absorb`).
 - Slowdown fix committed as `fee7730` (`Fix personalized refresh overhead`).
+- Agent docs committed as `9841e3d` (`Add homelab agent continuity docs`).
 
 ## Findings captured
 
@@ -36,7 +37,19 @@
   - JDK 21 (`/home/kevingatera/jdks/jdk-21.0.10+7`)
   - Android SDK (`/home/kevingatera/android-sdk`)
   - Local signing config (`android/key.properties` + local keystore)
+- Local homelab signing material created:
+  - Keystore: `/home/kevingatera/.keystores/absorb/absorb-homelab.jks`
+  - Signing env: `/home/kevingatera/.keystores/absorb/homelab-signing.env`
+  - Local key properties: `/home/kevingatera/tmp-agents/absorb/android/key.properties`
+- Signed APK build artifact:
+  - `/home/kevingatera/tmp-agents/absorb/build/app/outputs/flutter-apk/app-release.apk`
+  - release copy: `/home/kevingatera/tmp-agents/absorb/release-artifacts/absorb-v1.7.22-homelab.20260301-signed.apk`
+- APK signature verification:
+  - Cert DN: `CN=Absorb Homelab, OU=Homelab, O=Homelab, L=NA, ST=NA, C=US`
+  - SHA-256: `142bbef4f332280ab7df20ec012bd1b4fb39ced8fe080c06b3acb923ffee5ccb`
+- Homelab release published:
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301`
 
 ## Open work
 
-- Create local signing material (not committed), build signed release APK, and publish homelab release on fork.
+- None currently.
