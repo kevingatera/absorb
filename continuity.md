@@ -97,6 +97,7 @@
 - Signed APK build artifact:
   - `/home/kevingatera/tmp-agents/absorb/build/app/outputs/flutter-apk/app-release.apk`
   - release copy: `/home/kevingatera/tmp-agents/absorb/release-artifacts/absorb-v1.7.22-homelab.20260301-signed.apk`
+  - release copy: `/home/kevingatera/tmp-agents/absorb/release-artifacts/absorb-v1.7.22-homelab.20260301.6-signed.apk`
 - APK signature verification:
   - Cert DN: `CN=Absorb Homelab, OU=Homelab, O=Homelab, L=NA, ST=NA, C=US`
   - SHA-256: `142bbef4f332280ab7df20ec012bd1b4fb39ced8fe080c06b3acb923ffee5ccb`
@@ -106,6 +107,8 @@
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.2`
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.3`
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.4`
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.5`
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.6`
 
 ## Side-by-side install changes
 
