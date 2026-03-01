@@ -6,6 +6,8 @@
 - Slowdown fix committed as `fee7730` (`Fix personalized refresh overhead`).
 - Agent docs committed as `9841e3d` (`Add homelab agent continuity docs`).
 - Homelab side-by-side install support committed as `47eb5c1` (`Add homelab side-by-side install support`).
+- False offline startup fallback committed as `876316a` (`Fix startup false offline detection`).
+- Offline toggle + absorbing empty-state stability committed as `530e077` (`Fix offline toggle and absorbing empty state`).
 
 ## Findings captured
 
@@ -50,6 +52,9 @@
   - SHA-256: `142bbef4f332280ab7df20ec012bd1b4fb39ced8fe080c06b3acb923ffee5ccb`
 - Homelab release published:
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301`
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.1`
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.2`
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.3`
 
 ## Side-by-side install changes
 
@@ -67,6 +72,25 @@
   - keeps background ping retries but proceeds with normal API loading
   - resets transient `_networkOffline` on auth update and lets real API calls decide offline state
 - Validation: `flutter analyze lib/providers/library_provider.dart` passed.
+
+## Offline toggle + absorbing follow-up
+
+- Reproduced with adb + server logs under `data/generated/debug-logs/`.
+- Observed manual offline toggle race/stale state:
+  - `setManualOffline(false)` was followed by immediate offline section rebuild in logs.
+  - Server logs showed successful API cache hits at the same time.
+- Root cause:
+  - Manual toggle back to online still depended on stale `_networkOffline` state.
+  - Absorbing offline filter could hide the currently active item and show empty state.
+- Fixes in `lib/providers/library_provider.dart`:
+  - Manual offline OFF now clears stale `_networkOffline` when device connectivity exists, then refreshes/syncs.
+  - Added reasoned offline transition logging (`setNetworkOffline(..., reason: ...)`) and richer state logs.
+  - Connectivity/ping/load failure paths now log source/reason consistently.
+- Fixes in `lib/screens/absorbing_screen.dart`:
+  - Offline filter now preserves the active playing/casting item.
+  - Added throttled absorbing build-state logs for troubleshooting.
+- Validation:
+  - `flutter analyze lib/providers/library_provider.dart lib/screens/absorbing_screen.dart` (no errors; existing deprecation infos only).
 
 ## Open work
 
