@@ -435,59 +435,67 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
           )
         else
           Expanded(
-            child: ListView.builder(
-              controller: widget.scrollController,
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 24 + MediaQuery.of(context).viewPadding.bottom),
-              itemCount: _books.length,
-              itemBuilder: (context, index) {
-                final book = _books[index];
-                final bookId = book['id'] as String? ?? '';
-                final media = book['media'] as Map<String, dynamic>? ?? {};
-                final metadata =
-                    media['metadata'] as Map<String, dynamic>? ?? {};
-                final bookTitle = metadata['title'] as String? ?? 'Unknown';
-                final authorName = metadata['authorName'] as String? ?? '';
-                final sequence = _getSequenceString(book);
-                final duration = (media['duration'] is num)
-                    ? (media['duration'] as num).toDouble()
-                    : 0.0;
+            child: ListenableBuilder(
+              listenable: DownloadService(),
+              builder: (_, __) {
+                final dl = DownloadService();
+                return ListView.builder(
+                  controller: widget.scrollController,
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 24 + MediaQuery.of(context).viewPadding.bottom),
+                  itemCount: _books.length,
+                  itemBuilder: (context, index) {
+                    final book = _books[index];
+                    final bookId = book['id'] as String? ?? '';
+                    final media = book['media'] as Map<String, dynamic>? ?? {};
+                    final metadata =
+                        media['metadata'] as Map<String, dynamic>? ?? {};
+                    final bookTitle = metadata['title'] as String? ?? 'Unknown';
+                    final authorName = metadata['authorName'] as String? ?? '';
+                    final sequence = _getSequenceString(book);
+                    final duration = (media['duration'] is num)
+                        ? (media['duration'] as num).toDouble()
+                        : 0.0;
 
-                final progress = lib.getProgress(bookId);
-                final isFinished = lib.getProgressData(bookId)?['isFinished'] == true;
-                final isDownloaded = DownloadService().isDownloaded(bookId);
+                    final progress = lib.getProgress(bookId);
+                    final isFinished = lib.getProgressData(bookId)?['isFinished'] == true;
+                    final isDownloaded = dl.isDownloaded(bookId);
+                    final isDownloading = dl.isDownloading(bookId);
+                    final downloadPct = (dl.downloadProgress(bookId) * 100)
+                        .clamp(0, 100)
+                        .round();
 
-                String? coverUrl;
-                if (bookId.isNotEmpty &&
-                    widget.serverUrl != null &&
-                    widget.token != null) {
-                  final cleanUrl = widget.serverUrl!.endsWith('/')
-                      ? widget.serverUrl!
-                          .substring(0, widget.serverUrl!.length - 1)
-                      : widget.serverUrl!;
-                  coverUrl =
-                      '$cleanUrl/api/items/$bookId/cover?width=400&token=${widget.token}';
-                }
+                    String? coverUrl;
+                    if (bookId.isNotEmpty &&
+                        widget.serverUrl != null &&
+                        widget.token != null) {
+                      final cleanUrl = widget.serverUrl!.endsWith('/')
+                          ? widget.serverUrl!
+                              .substring(0, widget.serverUrl!.length - 1)
+                          : widget.serverUrl!;
+                      coverUrl =
+                          '$cleanUrl/api/items/$bookId/cover?width=400&token=${widget.token}';
+                    }
 
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Card(
-                    elevation: 0,
-                    color: cs.surfaceContainerHigh,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: () {
-                        if (bookId.isNotEmpty) {
-                          if (lib.isPodcastLibrary) {
-                            EpisodeListSheet.show(context, book);
-                          } else {
-                            showBookDetailSheet(context, bookId);
-                          }
-                        }
-                      },
-                      borderRadius: BorderRadius.circular(14),
-                      child: Row(
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Card(
+                        elevation: 0,
+                        color: cs.surfaceContainerHigh,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: () {
+                            if (bookId.isNotEmpty) {
+                              if (lib.isPodcastLibrary) {
+                                EpisodeListSheet.show(context, book);
+                              } else {
+                                showBookDetailSheet(context, bookId);
+                              }
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(14),
+                          child: Row(
                         children: [
                           // Square cover with sequence badge + status badges
                           SizedBox(
@@ -534,7 +542,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                                               fontWeight: FontWeight.w800)),
                                     ),
                                   ),
-                                // Downloaded badge (top-right)
+                                // Downloaded / downloading badge (top-right)
                                 if (isDownloaded)
                                   Positioned(
                                     top: 4,
@@ -545,8 +553,29 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                                         color: Colors.black54,
                                         borderRadius: BorderRadius.circular(6),
                                       ),
-                                      child: Icon(Icons.download_done_rounded,
-                                          size: 12, color: cs.primary),
+                                       child: Icon(Icons.download_done_rounded,
+                                           size: 12, color: cs.primary),
+                                     ),
+                                   ),
+                                if (!isDownloaded && isDownloading)
+                                  Positioned(
+                                    top: 4,
+                                    right: 4,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        '$downloadPct%',
+                                        style: TextStyle(
+                                          color: cs.primary,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 // Progress bar at bottom
@@ -658,9 +687,11 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                                 color: cs.onSurfaceVariant),
                           ),
                         ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 );
               },
             ),
