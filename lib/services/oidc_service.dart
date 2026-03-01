@@ -21,7 +21,7 @@ class OidcService {
   /// The raw cookie strings from the /auth/openid response.
   List<String> _rawCookies = [];
 
-  static const _redirectUri = 'audiobookshelf://oauth';
+  static const _redirectUri = 'audiobookshelfhomelab://oauth';
   static const _clientId = 'Audiobookshelf-App';
 
   /// Generate a cryptographically random string of [length] bytes, base64url-encoded.
@@ -108,12 +108,12 @@ class OidcService {
       debugPrint('[OIDC] Opening Custom Tab for: $providerUrl');
 
       // Open the OIDC provider in a Chrome Custom Tab. This blocks until the
-      // provider redirects back to audiobookshelf://oauth, which the Custom Tab
+      // provider redirects back to audiobookshelfhomelab://oauth, which the Custom Tab
       // intercepts and returns. Unlike an external browser, Custom Tabs won't
       // be hijacked by PWAs or other apps registered for the provider's domain.
       final resultUrl = await FlutterWebAuth2.authenticate(
         url: providerUrl,
-        callbackUrlScheme: 'audiobookshelf',
+        callbackUrlScheme: 'audiobookshelfhomelab',
       );
 
       debugPrint('[OIDC] Custom Tab returned: $resultUrl');
