@@ -9,6 +9,35 @@
 - False offline startup fallback committed as `876316a` (`Fix startup false offline detection`).
 - Offline toggle + absorbing empty-state stability committed as `530e077` (`Fix offline toggle and absorbing empty state`).
 
+## Series download enhancement (2026-03-01)
+
+- Added "download whole series" action in the top-right of the series books bottom sheet.
+- File: `lib/widgets/series_books_sheet.dart`
+  - New top-right header action queues all non-downloaded books in the series.
+  - Uses existing `DownloadService` queueing semantics.
+  - Shows contextual snackbars (`queued`, `already downloaded`, or first error).
+  - Displays reactive button state via `ListenableBuilder(DownloadService())`.
+
+## Build status (2026-03-01)
+
+- `flutter analyze lib/widgets/series_books_sheet.dart`: passed.
+- Built signed release APK:
+  - `/home/kevingatera/tmp-agents/absorb/build/app/outputs/flutter-apk/app-release.apk`
+- Verified package/signature:
+  - package: `com.barnabas.absorb.homelab`
+  - label: `Absorb Homelab`
+  - signer SHA-256: `142bbef4f332280ab7df20ec012bd1b4fb39ced8fe080c06b3acb923ffee5ccb`
+
+## Release/build process notes
+
+- Why no GitHub build was visible:
+  - Fork default branch is `main`, but homelab workflow was only on non-default branch.
+  - `gh workflow run` and Actions workflow listing only work for workflows present on default branch.
+- Why some release notes showed literal `\n`:
+  - Release notes were passed as a quoted single-line string with escaped newline sequences.
+  - GitHub stored the backslash characters literally instead of rendering new lines.
+  - Use HEREDOC-based `--notes` input to preserve real newlines.
+
 ## Live debug finding (2026-03-01)
 
 - During live test, app logs showed: `loadPersonalizedView error: Stack Overflow` followed by forced offline transition.

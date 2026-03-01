@@ -31,6 +31,7 @@ Agent guidance for work in `/home/kevingatera/tmp-agents/absorb`.
 - Signed release requires local `android/key.properties` plus a local keystore path.
 - Keep release output naming consistent with project conventions.
 - For homelab work, finish by creating a homelab release on the fork with a signed APK.
+- GitHub Actions note: workflows are only runnable via `gh workflow run` when the workflow file exists on the repo default branch.
 
 ## Reusable commands
 
@@ -47,3 +48,7 @@ Agent guidance for work in `/home/kevingatera/tmp-agents/absorb`.
 - Verify built APK identity/signature:
   - `"/home/kevingatera/android-sdk/build-tools/35.0.0/aapt" dump badging build/app/outputs/flutter-apk/app-release.apk | grep -E "^package:|application-label:"`
   - `"/home/kevingatera/android-sdk/build-tools/35.0.0/apksigner" verify --print-certs build/app/outputs/flutter-apk/app-release.apk`
+- Create release notes without literal `\n`:
+  - `gh release create <tag> <asset> --repo kevingatera/absorb --target homelab --title "<tag>" --notes "$(cat <<'EOF'`
+  - `<multi-line notes here>`
+  - `EOF` + `)"`
