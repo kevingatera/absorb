@@ -24,6 +24,10 @@
 - Handles long series names by limiting header title to 2 lines with ellipsis.
 - Added per-book live download percentage badge in the same top-right thumbnail position used by the done badge.
 - Series list now listens to `DownloadService` updates so item progress badges update without reopening the sheet.
+- Series "Download all" now queues all eligible books immediately instead of waiting for each full download to complete.
+- Added download diagnostics logs for queue flow:
+  - `[Series] Queueing whole series...`
+  - `[Download] Request/Queueing/Dequeued/Execute start/...`
 
 ## Build status (2026-03-01)
 
@@ -109,6 +113,7 @@
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.4`
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.5`
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.6`
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.7`
 
 ## Side-by-side install changes
 
