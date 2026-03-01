@@ -5,6 +5,7 @@
 - Branch: `homelab` (fork: `kevingatera/absorb`, upstream: `pounat/absorb`).
 - Slowdown fix committed as `fee7730` (`Fix personalized refresh overhead`).
 - Agent docs committed as `9841e3d` (`Add homelab agent continuity docs`).
+- Homelab side-by-side install support pending commit (separate package/app id).
 
 ## Findings captured
 
@@ -49,6 +50,13 @@
   - SHA-256: `142bbef4f332280ab7df20ec012bd1b4fb39ced8fe080c06b3acb923ffee5ccb`
 - Homelab release published:
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301`
+
+## Side-by-side install changes
+
+- Android package id changed to `com.barnabas.absorb.homelab` so it installs alongside original Absorb.
+- Launcher label changed to `Absorb Homelab` for easy visual distinction.
+- Cover content provider authority now tracks app id (`${applicationId}.covers`) and uses homelab authority constants in app code.
+- OIDC callback scheme changed to `audiobookshelfhomelab://oauth` to avoid callback conflicts when both apps are installed.
 
 ## Open work
 
