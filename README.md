@@ -66,3 +66,7 @@ Absorb supports Android Auto for browsing and listening from your car. To use it
 
 - An [audiobookshelf](https://www.audiobookshelf.org/) server (self-hosted)
 - Android 7.0+
+
+## Homelab Releases
+
+- Homelab deployment and signed release workflow: `docs/homelab-releases.md`
