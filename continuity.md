@@ -69,6 +69,7 @@
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.1`
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.2`
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.3`
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.4`
 
 ## Side-by-side install changes
 
