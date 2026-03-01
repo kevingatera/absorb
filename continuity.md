@@ -5,7 +5,7 @@
 - Branch: `homelab` (fork: `kevingatera/absorb`, upstream: `pounat/absorb`).
 - Slowdown fix committed as `fee7730` (`Fix personalized refresh overhead`).
 - Agent docs committed as `9841e3d` (`Add homelab agent continuity docs`).
-- Homelab side-by-side install support pending commit (separate package/app id).
+- Homelab side-by-side install support committed as `47eb5c1` (`Add homelab side-by-side install support`).
 
 ## Findings captured
 
@@ -57,6 +57,16 @@
 - Launcher label changed to `Absorb Homelab` for easy visual distinction.
 - Cover content provider authority now tracks app id (`${applicationId}.covers`) and uses homelab authority constants in app code.
 - OIDC callback scheme changed to `audiobookshelfhomelab://oauth` to avoid callback conflicts when both apps are installed.
+
+## Offline detection follow-up
+
+- Investigated false offline state in homelab build (home showing downloaded-only sections while server was reachable).
+- Root cause: startup logic trusted `/ping` probe as authoritative and forced `_networkOffline = true`, which can be wrong behind some reverse proxies.
+- Fix applied in `lib/providers/library_provider.dart`:
+  - startup no longer forces offline only because `auth.serverReachable` is false
+  - keeps background ping retries but proceeds with normal API loading
+  - resets transient `_networkOffline` on auth update and lets real API calls decide offline state
+- Validation: `flutter analyze lib/providers/library_provider.dart` passed.
 
 ## Open work
 
