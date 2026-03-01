@@ -264,6 +264,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(Icons.auto_stories_rounded, size: 20, color: cs.primary),
               const SizedBox(width: 8),
@@ -274,6 +275,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                     style: tt.titleLarge
                         ?.copyWith(fontWeight: FontWeight.w600)),
               ),
+              const SizedBox(width: 8),
               ListenableBuilder(
                 listenable: DownloadService(),
                 builder: (_, __) {
@@ -294,36 +296,92 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                   final allDone = total > 0 && downloaded == total;
                   final anyActive = _isQueueingSeriesDownload || downloading > 0;
 
-                  IconData icon;
-                  if (allDone) {
-                    icon = Icons.download_done_rounded;
-                  } else if (anyActive) {
-                    icon = Icons.downloading_rounded;
-                  } else {
-                    icon = Icons.download_for_offline_rounded;
-                  }
+                  final enabled = total > 0 && !allDone && !anyActive;
+                  final progress = total > 0
+                      ? (downloaded + downloading) / total
+                      : 0.0;
 
-                  final tooltip = allDone
-                      ? 'All books downloaded'
+                  final buttonText = allDone
+                      ? 'Downloaded'
                       : anyActive
-                          ? 'Downloading ${downloaded + downloading}/$total'
-                          : 'Download whole series';
+                          ? '${downloaded + downloading}/$total'
+                          : 'Download all';
 
-                  return IconButton(
-                    tooltip: tooltip,
-                    onPressed: (total == 0 || allDone || anyActive)
-                        ? null
-                        : _downloadWholeSeries,
-                    icon: anyActive
-                        ? SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: cs.primary,
+                  final doneColor = Theme.of(context).brightness == Brightness.dark
+                      ? Colors.greenAccent
+                      : Colors.green.shade700;
+
+                  return GestureDetector(
+                    onTap: enabled ? _downloadWholeSeries : null,
+                    child: Container(
+                      width: 132,
+                      height: 34,
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: allDone
+                            ? doneColor.withValues(alpha: 0.06)
+                            : cs.onSurface.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: allDone
+                              ? doneColor.withValues(alpha: 0.15)
+                              : cs.onSurface.withValues(alpha: 0.1),
+                        ),
+                      ),
+                      child: Stack(
+                        children: [
+                          if (anyActive)
+                            FractionallySizedBox(
+                              widthFactor: progress.clamp(0.0, 1.0),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: cs.primary.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(11),
+                                ),
+                              ),
                             ),
-                          )
-                        : Icon(icon, size: 20),
+                          Center(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (anyActive)
+                                  SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: cs.primary,
+                                    ),
+                                  )
+                                else
+                                  Icon(
+                                    allDone
+                                        ? Icons.download_done_rounded
+                                        : Icons.download_rounded,
+                                    size: 14,
+                                    color: allDone
+                                        ? doneColor
+                                        : cs.onSurfaceVariant,
+                                  ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  buttonText,
+                                  style: TextStyle(
+                                    color: anyActive
+                                        ? cs.primary
+                                        : allDone
+                                            ? doneColor
+                                            : cs.onSurfaceVariant,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   );
                 },
               ),
