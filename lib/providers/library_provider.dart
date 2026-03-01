@@ -976,7 +976,8 @@ class LibraryProvider extends ChangeNotifier {
           if (itemId != null) {
             final key = episodeId != null ? '$itemId-$episodeId' : itemId;
             // Don't let stale server data overwrite a local mark-finished
-            if (_locallyFinishedItems.contains(key) && mp['isFinished'] != true) continue;
+            if (_locallyFinishedItems.contains(key) && mp['isFinished'] != true)
+              continue;
             // Don't overwrite progress for the currently playing item
             if (key == playingKey && player.hasBook) continue;
             _progressMap[key] = mp;
@@ -1084,16 +1085,13 @@ class LibraryProvider extends ChangeNotifier {
   }
 
   /// Fetch personalized home sections for the selected library.
-  /// Deduplicates concurrent calls and enforces a cooldown unless [force] is true.
   Future<void> loadPersonalizedView({bool force = false}) async {
-    // If a fetch is already in flight, just await it
     final existing = _personalizedInFlight;
     if (existing != null) {
       await existing;
       return;
     }
 
-    // Skip if within cooldown (same library, not forced)
     if (!force &&
         _lastPersonalizedFetchAt != null &&
         _lastPersonalizedFetchLibraryId == _selectedLibraryId &&
@@ -1102,7 +1100,7 @@ class LibraryProvider extends ChangeNotifier {
       return;
     }
 
-    final inFlight = _doLoadPersonalizedView();
+    final inFlight = _loadPersonalizedView();
     _personalizedInFlight = inFlight;
     try {
       await inFlight;
@@ -1113,7 +1111,7 @@ class LibraryProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _doLoadPersonalizedView() async {
+  Future<void> _loadPersonalizedView() async {
     if (_api == null || _selectedLibraryId == null) return;
 
     if (isOffline) {
@@ -1132,21 +1130,8 @@ class LibraryProvider extends ChangeNotifier {
     try {
       _lastPersonalizedFetchAt = DateTime.now();
       _lastPersonalizedFetchLibraryId = _selectedLibraryId;
-      await _refreshProgress();
-      _personalizedSections = await _api!.getPersonalizedView(
-        _selectedLibraryId!,
-        include: const ['numEpisodesIncomplete'],
-      );
-      // Cache updatedAt timestamps for cover cache-busting
-      for (final section in _personalizedSections) {
-        for (final e in (section['entities'] as List<dynamic>? ?? [])) {
-          if (e is Map<String, dynamic>) {
-            final id = e['id'] as String?;
-            final ts = e['updatedAt'] as num?;
-            if (id != null && ts != null) _itemUpdatedAt[id] = ts.toInt();
-          }
-        }
-      }
+      _personalizedSections =
+          await _api!.getPersonalizedView(_selectedLibraryId!);
       await _updateAbsorbingCache();
 
       // For podcast libraries, defer RSS-heavy fields until after first paint.
@@ -1360,12 +1345,10 @@ class LibraryProvider extends ChangeNotifier {
     if (_api != null) {
       await ProgressSyncService().flushPendingSync(api: _api!);
     }
-    // Clear local finished state before refresh so server data is authoritative
+    // Clear local finished state before refresh so server data is authoritative.
     _lastFinishedItemId = null;
-    await Future.wait([
-      loadPersonalizedView(force: true),
-      _refreshProgress(),
-    ]);
+    await _refreshProgress();
+    await loadPersonalizedView(force: true);
     // Clear stale local overrides — server data is now authoritative
     _localProgressOverrides.clear();
     _locallyFinishedItems.clear();
@@ -1469,7 +1452,9 @@ class LibraryProvider extends ChangeNotifier {
   }) async {
     if (_api == null) return false;
     final updated = await _api!.addItemToPlaylist(
-      playlistId, libraryItemId, episodeId: episodeId,
+      playlistId,
+      libraryItemId,
+      episodeId: episodeId,
     );
     if (updated != null) {
       // Reload full playlist data to get populated libraryItem fields
@@ -1486,7 +1471,9 @@ class LibraryProvider extends ChangeNotifier {
   }) async {
     if (_api == null) return false;
     final updated = await _api!.removeItemFromPlaylist(
-      playlistId, libraryItemId, episodeId: episodeId,
+      playlistId,
+      libraryItemId,
+      episodeId: episodeId,
     );
     if (updated != null) {
       await _doLoadPlaylists();
@@ -1519,7 +1506,8 @@ class LibraryProvider extends ChangeNotifier {
     if (_api == null) return false;
     final ok = await _api!.deletePlaylist(playlistId);
     if (ok) {
-      _playlists = _playlists.where((p) => (p as Map)['id'] != playlistId).toList();
+      _playlists =
+          _playlists.where((p) => (p as Map)['id'] != playlistId).toList();
       _hiddenSectionIds.remove('playlist:$playlistId');
       _sectionOrder.remove('playlist:$playlistId');
       await _saveSectionPrefs();
@@ -1559,18 +1547,22 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<Map<String, dynamic>?> createCollection(String name, {List<String> books = const []}) async {
+  Future<Map<String, dynamic>?> createCollection(String name,
+      {List<String> books = const []}) async {
     if (_api == null || _selectedLibraryId == null) return null;
-    final result = await _api!.createCollection(_selectedLibraryId!, name, books: books);
+    final result =
+        await _api!.createCollection(_selectedLibraryId!, name, books: books);
     if (result != null) {
       await _doLoadCollections();
     }
     return result;
   }
 
-  Future<bool> addToCollection(String collectionId, String libraryItemId) async {
+  Future<bool> addToCollection(
+      String collectionId, String libraryItemId) async {
     if (_api == null) return false;
-    final updated = await _api!.addBookToCollection(collectionId, libraryItemId);
+    final updated =
+        await _api!.addBookToCollection(collectionId, libraryItemId);
     if (updated != null) {
       await _doLoadCollections();
       return true;
@@ -1578,9 +1570,11 @@ class LibraryProvider extends ChangeNotifier {
     return false;
   }
 
-  Future<bool> removeFromCollection(String collectionId, String libraryItemId) async {
+  Future<bool> removeFromCollection(
+      String collectionId, String libraryItemId) async {
     if (_api == null) return false;
-    final updated = await _api!.removeBookFromCollection(collectionId, libraryItemId);
+    final updated =
+        await _api!.removeBookFromCollection(collectionId, libraryItemId);
     if (updated != null) {
       await _doLoadCollections();
       return true;
@@ -1605,7 +1599,8 @@ class LibraryProvider extends ChangeNotifier {
     if (_api == null) return false;
     final ok = await _api!.deleteCollection(collectionId);
     if (ok) {
-      _collections = _collections.where((c) => (c as Map)['id'] != collectionId).toList();
+      _collections =
+          _collections.where((c) => (c as Map)['id'] != collectionId).toList();
       _hiddenSectionIds.remove('collection:$collectionId');
       _sectionOrder.remove('collection:$collectionId');
       await _saveSectionPrefs();
@@ -1618,8 +1613,10 @@ class LibraryProvider extends ChangeNotifier {
 
   Future<void> _loadSectionPrefs() async {
     final libId = _selectedLibraryId ?? '';
-    final orderJson = await ScopedPrefs.getStringList('home_section_order_$libId');
-    final hiddenJson = await ScopedPrefs.getStringList('home_hidden_sections_$libId');
+    final orderJson =
+        await ScopedPrefs.getStringList('home_section_order_$libId');
+    final hiddenJson =
+        await ScopedPrefs.getStringList('home_hidden_sections_$libId');
     _sectionOrder = orderJson.toList();
     // If user has never customized (both order and hidden are empty),
     // apply default hidden sections plus all playlists/collections
@@ -1635,7 +1632,8 @@ class LibraryProvider extends ChangeNotifier {
   Future<void> _saveSectionPrefs() async {
     final libId = _selectedLibraryId ?? '';
     await ScopedPrefs.setStringList('home_section_order_$libId', _sectionOrder);
-    await ScopedPrefs.setStringList('home_hidden_sections_$libId', _hiddenSectionIds.toList());
+    await ScopedPrefs.setStringList(
+        'home_hidden_sections_$libId', _hiddenSectionIds.toList());
   }
 
   Future<void> saveSectionOrder(List<String> order) async {
@@ -2597,7 +2595,8 @@ class LibraryProvider extends ChangeNotifier {
       debugPrint('[AutoAdvance] Manual queue: starting next item $key');
       return; // started the next item
     }
-    debugPrint('[AutoAdvance] Manual queue: no next item found after $finishedKey');
+    debugPrint(
+        '[AutoAdvance] Manual queue: no next item found after $finishedKey');
   }
 
   /// Offline auto-advance: find the next downloaded book in series or next
