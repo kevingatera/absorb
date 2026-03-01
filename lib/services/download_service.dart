@@ -424,7 +424,11 @@ class DownloadService extends ChangeNotifier {
     String? author,
     String? coverUrl,
     String? episodeId,
+    bool waitForCompletion = true,
   }) async {
+    debugPrint('[Download] Request item=$itemId waitForCompletion=$waitForCompletion '
+        'active=${_activeDownloadId ?? '-'} queue=${_queue.length}');
+
     if (_activeDownloadId == itemId) return null;
     if (isDownloaded(itemId)) return null;
     // Already queued — don't duplicate
@@ -441,6 +445,7 @@ class DownloadService extends ChangeNotifier {
 
     // If another download is active, queue this one
     if (_activeDownloadId != null) {
+      debugPrint('[Download] Queueing item while active: $itemId');
       _queue.add(_QueuedDownload(
         api: api,
         itemId: itemId,
@@ -459,32 +464,55 @@ class DownloadService extends ChangeNotifier {
       );
       notifyListeners();
       // Ensure queue processor is running
-      if (!_processingQueue) unawaited(_processQueue());
+      if (!_processingQueue) {
+        debugPrint('[Download] Starting queue processor');
+        unawaited(_processQueue());
+      }
       return null;
     }
 
-    await _executeDownload(
-      api: api,
-      itemId: itemId,
-      title: title,
-      author: author,
-      coverUrl: coverUrl,
-      episodeId: episodeId,
-    );
-    // Process any queued downloads
-    if (_queue.isNotEmpty && !_processingQueue) {
-      unawaited(_processQueue());
+    if (waitForCompletion) {
+      debugPrint('[Download] Starting immediate download (await): $itemId');
+      await _executeDownload(
+        api: api,
+        itemId: itemId,
+        title: title,
+        author: author,
+        coverUrl: coverUrl,
+        episodeId: episodeId,
+      );
+      // Process any queued downloads
+      if (_queue.isNotEmpty && !_processingQueue) {
+        debugPrint('[Download] Processing queued downloads after completion');
+        unawaited(_processQueue());
+      }
+    } else {
+      debugPrint('[Download] Starting immediate download (background): $itemId');
+      unawaited(
+        _executeDownload(
+          api: api,
+          itemId: itemId,
+          title: title,
+          author: author,
+          coverUrl: coverUrl,
+          episodeId: episodeId,
+        ).whenComplete(() {
+          if (_queue.isNotEmpty && !_processingQueue) {
+            debugPrint('[Download] Processing queued downloads after background completion');
+            unawaited(_processQueue());
+          }
+        }),
+      );
     }
     return null;
   }
 
   Future<void> _processQueue() async {
     _processingQueue = true;
-    while (_activeDownloadId != null) {
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
+    debugPrint('[Download] Queue processor start size=${_queue.length}');
     while (_queue.isNotEmpty) {
       final next = _queue.removeAt(0);
+      debugPrint('[Download] Dequeued item=${next.itemId} remaining=${_queue.length}');
       // Skip if cancelled/removed while waiting
       if (isDownloaded(next.itemId)) continue;
       await _executeDownload(
@@ -493,6 +521,7 @@ class DownloadService extends ChangeNotifier {
       );
     }
     _processingQueue = false;
+    debugPrint('[Download] Queue processor complete');
   }
 
   Future<void> _executeDownload({
@@ -503,6 +532,7 @@ class DownloadService extends ChangeNotifier {
     String? coverUrl,
     String? episodeId,
   }) async {
+    debugPrint('[Download] Execute start item=$itemId episode=${episodeId ?? '-'}');
     _activeDownloadId = itemId;
     _cancelled = false;
     _downloads[itemId] = DownloadInfo(
