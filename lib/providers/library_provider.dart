@@ -173,42 +173,75 @@ class LibraryProvider extends ChangeNotifier {
   Timer? _idleDisconnectTimer;
   static const _idleTimeout = Duration(minutes: 5);
 
+  void _logOfflineState(String source, {String? extra}) {
+    final suffix = (extra == null || extra.isEmpty) ? '' : ' $extra';
+    debugPrint(
+      '[Library] $source '
+      'manual=$_manualOffline '
+      'network=$_networkOffline '
+      'deviceNet=$_deviceHasConnectivity '
+      'effective=$isOffline '
+      'selected=$_selectedLibraryId '
+      'sections=${_personalizedSections.length}$suffix',
+    );
+  }
+
   /// Toggle manual offline mode.
   Future<void> setManualOffline(bool value) async {
-    debugPrint('[Library] setManualOffline($value)');
+    _logOfflineState('setManualOffline($value)');
     _manualOffline = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('manual_offline_mode', value);
     if (!value) {
-      // Going back online — verify the server is actually reachable first
-      _stopServerPingTimer();
-      final serverUrl = _auth?.activeServerUrl ?? _auth?.serverUrl ?? '';
-      final reachable = serverUrl.isNotEmpty
-          ? await ApiService.pingServer(serverUrl, customHeaders: _auth?.customHeaders ?? {})
-              .timeout(const Duration(seconds: 5), onTimeout: () => false)
-          : false;
-      if (!reachable) {
-        debugPrint('[Library] Manual offline off but server unreachable — staying offline');
-        _networkOffline = true;
-        _buildOfflineSections();
-        notifyListeners();
-        if (_deviceHasConnectivity) _startServerPingTimer();
-        return;
-      }
-      _networkOffline = false;
-      if (_api != null) {
-        debugPrint('[Library] Manual offline off — flushing pending syncs');
-        ProgressSyncService().flushPendingSync(api: _api!);
-        ProgressSyncService().flushOfflineListeningTime(api: _api!);
-      }
-      if (_selectedLibraryId == null) {
-        loadLibraries();
+      if (_deviceHasConnectivity) {
+        // Going back online - verify the server is actually reachable first.
+        _stopServerPingTimer();
+        final serverUrl = _auth?.activeServerUrl ?? _auth?.serverUrl ?? '';
+        final reachable = serverUrl.isNotEmpty
+            ? await ApiService.pingServer(serverUrl,
+                    customHeaders: _auth?.customHeaders ?? {})
+                .timeout(const Duration(seconds: 5), onTimeout: () => false)
+            : false;
+        if (!reachable) {
+          debugPrint(
+              '[Library] Manual offline off but server unreachable - staying offline');
+          _networkOffline = true;
+          _buildOfflineSections();
+          notifyListeners();
+          if (_deviceHasConnectivity) _startServerPingTimer();
+          return;
+        }
+
+        final wasNetworkOffline = _networkOffline;
+        _networkOffline = false;
+        _stopServerPingTimer();
+        _logOfflineState(
+          'manual offline disabled',
+          extra: 'clearedNetworkOffline=$wasNetworkOffline',
+        );
+
+        // Going back online — flush pending syncs and refresh
+        if (_api != null) {
+          debugPrint('[Library] Manual offline off — flushing pending syncs');
+          ProgressSyncService().flushPendingSync(api: _api!, maxItems: 3);
+          ProgressSyncService().flushOfflineListeningTime(api: _api!);
+        }
+        if (_selectedLibraryId == null) {
+          loadLibraries();
+        } else {
+          refresh();
+        }
+        if (wasNetworkOffline) {
+          AndroidAutoService().refresh(force: true);
+        }
       } else {
-        refresh();
+        // User disabled manual offline but device has no network.
+        setNetworkOffline(true, reason: 'manual-off-disabled-no-connectivity');
       }
     } else {
       // Going offline — show downloaded books
       _buildOfflineSections();
+      _logOfflineState('manual offline enabled');
     }
     notifyListeners();
   }
@@ -217,12 +250,22 @@ class LibraryProvider extends ChangeNotifier {
   Future<void> restoreOfflineMode() async {
     final prefs = await SharedPreferences.getInstance();
     _manualOffline = prefs.getBool('manual_offline_mode') ?? false;
+    _logOfflineState('restoreOfflineMode',
+        extra: 'restoredManual=$_manualOffline');
   }
 
   /// Called when network connectivity changes.
-  void setNetworkOffline(bool offline) {
+  void setNetworkOffline(bool offline, {String reason = 'unknown'}) {
     final wasOffline = _networkOffline;
+    if (wasOffline == offline) {
+      _logOfflineState('setNetworkOffline($offline) noop',
+          extra: 'reason=$reason');
+      return;
+    }
+
     _networkOffline = offline;
+    _logOfflineState('setNetworkOffline($offline)', extra: 'reason=$reason');
+
     if (offline && !wasOffline) {
       // Just went offline — show downloads, and force AA to clear server tabs
       _buildOfflineSections();
@@ -263,6 +306,8 @@ class LibraryProvider extends ChangeNotifier {
         .toList();
     debugPrint(
         '[Library] Building offline sections: ${downloads.length}/${allDownloads.length} downloads (${isPodcast ? "podcast" : "book"})');
+    _logOfflineState('buildOfflineSections',
+        extra: 'downloads=${downloads.length}');
     if (downloads.isEmpty) {
       _personalizedSections = [];
       _errorMessage = null;
@@ -562,7 +607,8 @@ class LibraryProvider extends ChangeNotifier {
         // Delay queue auto-download so the absorbing queue has time to
         // reorder (moveToFront) before we check positions. Without this,
         // switching between adjacent books triggers unnecessary downloads.
-        Future.delayed(const Duration(seconds: 2), () => _checkQueueAutoDownloads(key));
+        Future.delayed(
+            const Duration(seconds: 2), () => _checkQueueAutoDownloads(key));
         _checkAutoDownloadOnStream(key);
       });
       AudioPlayerService.setOnPlaybackStateChangedCallback((playing) {
@@ -596,6 +642,10 @@ class LibraryProvider extends ChangeNotifier {
         // Some reverse proxies block /ping while authenticated API calls still work.
         // Reset transient network-offline state and let real API calls decide.
         _networkOffline = false;
+        _logOfflineState(
+          'auth update reset network offline',
+          extra: 'serverReachable=${auth.serverReachable}',
+        );
 
         // If initial reachability probe failed, keep pinging in background,
         // but continue with normal API loading.
@@ -663,15 +713,17 @@ class LibraryProvider extends ChangeNotifier {
     // Check current state immediately
     Connectivity().checkConnectivity().then((result) {
       _deviceHasConnectivity = !result.contains(ConnectivityResult.none);
+      _logOfflineState('connectivity initial', extra: 'result=$result');
       if (!_deviceHasConnectivity) {
         _stopServerPingTimer();
-        setNetworkOffline(true);
+        setNetworkOffline(true, reason: 'initial-no-connectivity');
       } else if (_networkOffline && !_manualOffline) {
         // Device has connectivity but we're still offline — server was unreachable.
         // If on WiFi, try local server first before falling back to ping timer.
         if (result.contains(ConnectivityResult.wifi)) {
           _auth?.checkLocalServer().then((_) {
-            if (_auth?.serverReachable == true || _auth?.useLocalServer == true) {
+            if (_auth?.serverReachable == true ||
+                _auth?.useLocalServer == true) {
               setNetworkOffline(false);
             } else {
               _startServerPingTimer();
@@ -683,17 +735,21 @@ class LibraryProvider extends ChangeNotifier {
       }
     });
     // Then listen for changes
-    _connectivitySub = Connectivity().onConnectivityChanged.listen((result) async {
+    _connectivitySub =
+        Connectivity().onConnectivityChanged.listen((result) async {
       final hasConnectivity = !result.contains(ConnectivityResult.none);
       _deviceHasConnectivity = hasConnectivity;
+      _logOfflineState('connectivity changed', extra: 'result=$result');
       if (!hasConnectivity) {
         _stopServerPingTimer();
-        setNetworkOffline(true);
-        _auth?.clearLocalOverride();
+        setNetworkOffline(true, reason: 'connectivity-lost');
       } else if (!_manualOffline) {
+        // Connectivity restored - optimistically go online; if server is still
+        // down the API call will fail and _goOfflineWithPing() will be called.
+        setNetworkOffline(false, reason: 'connectivity-restored');
         if (result.contains(ConnectivityResult.wifi)) {
-          // WiFi available — optimistically go online and check local server
-          setNetworkOffline(false);
+          // WiFi restored - catch up on any pending rolling downloads and
+          // check whether the local server is reachable.
           _auth?.checkLocalServer();
           if (_rollingDownloadSeries.isNotEmpty) _catchUpRollingDownloads();
           _catchUpQueueAutoDownloads();
@@ -706,7 +762,8 @@ class LibraryProvider extends ChangeNotifier {
           // of optimistically going online (which would flash green then fail).
           final serverUrl = _auth?.serverUrl ?? '';
           if (_isLocalUrl(serverUrl)) {
-            debugPrint('[Library] Mobile data only with local server URL — staying offline');
+            debugPrint(
+                '[Library] Mobile data only with local server URL — staying offline');
             if (_networkOffline) {
               _startServerPingTimer();
             } else {
@@ -716,12 +773,14 @@ class LibraryProvider extends ChangeNotifier {
             // Remote server should be reachable over mobile — verify first
             // instead of going online optimistically (which can leave the UI
             // empty if the connection isn't ready yet).
-            final reachable = await ApiService.pingServer(serverUrl, customHeaders: _auth?.customHeaders ?? {})
+            final reachable = await ApiService.pingServer(serverUrl,
+                    customHeaders: _auth?.customHeaders ?? {})
                 .timeout(const Duration(seconds: 5), onTimeout: () => false);
             if (reachable) {
               setNetworkOffline(false);
             } else {
-              debugPrint('[Library] Mobile data but remote unreachable — starting ping timer');
+              debugPrint(
+                  '[Library] Mobile data but remote unreachable — starting ping timer');
               if (_networkOffline) {
                 _startServerPingTimer();
               } else {
@@ -747,9 +806,12 @@ class LibraryProvider extends ChangeNotifier {
         _stopServerPingTimer();
         return;
       }
+      _logOfflineState('server ping tick');
       // Try local server first if enabled and on WiFi
       final auth = _auth;
-      if (auth != null && auth.localServerEnabled && auth.localServerUrl.isNotEmpty) {
+      if (auth != null &&
+          auth.localServerEnabled &&
+          auth.localServerUrl.isNotEmpty) {
         final localReachable = await ApiService.pingServer(
           auth.localServerUrl,
           customHeaders: auth.customHeaders,
@@ -769,7 +831,9 @@ class LibraryProvider extends ChangeNotifier {
       if (reachable) {
         debugPrint('[Library] Server ping succeeded — going online');
         _stopServerPingTimer();
-        setNetworkOffline(false);
+        setNetworkOffline(false, reason: 'ping-succeeded');
+      } else {
+        debugPrint('[Library] Server ping failed — staying offline');
       }
     });
   }
@@ -850,15 +914,17 @@ class LibraryProvider extends ChangeNotifier {
     final uri = Uri.tryParse(url);
     if (uri == null || uri.host.isEmpty) return false;
     final host = uri.host.toLowerCase();
-    if (host == 'localhost' || host == '127.0.0.1' || host == '::1') return true;
+    if (host == 'localhost' || host == '127.0.0.1' || host == '::1')
+      return true;
     // Private IPv4 ranges
     final parts = host.split('.');
     if (parts.length == 4) {
       final a = int.tryParse(parts[0]);
       final b = int.tryParse(parts[1]);
-      if (a == 10) return true;                              // 10.0.0.0/8
-      if (a == 172 && b != null && b >= 16 && b <= 31) return true; // 172.16.0.0/12
-      if (a == 192 && b == 168) return true;                 // 192.168.0.0/16
+      if (a == 10) return true; // 10.0.0.0/8
+      if (a == 172 && b != null && b >= 16 && b <= 31)
+        return true; // 172.16.0.0/12
+      if (a == 192 && b == 168) return true; // 192.168.0.0/16
     }
     // .local mDNS hostnames (e.g. myserver.local)
     if (host.endsWith('.local')) return true;
@@ -1021,6 +1087,7 @@ class LibraryProvider extends ChangeNotifier {
     if (_api == null) return;
 
     if (isOffline) {
+      _logOfflineState('loadLibraries aborted (offline)');
       _buildOfflineSections();
       return;
     }
@@ -1054,11 +1121,9 @@ class LibraryProvider extends ChangeNotifier {
         await loadPersonalizedView(force: true);
       }
     } catch (e) {
-      if (_isLikelyNetworkError(e)) {
-        _goOffline();
-      } else {
-        debugPrint('[Library] Non-network error (staying online): $e');
-      }
+      // Network error — auto-switch to offline view
+      debugPrint('[Library] loadLibraries error: $e');
+      setNetworkOffline(true, reason: 'loadLibraries-error');
     }
 
     _isLoading = false;
@@ -1115,6 +1180,7 @@ class LibraryProvider extends ChangeNotifier {
     if (_api == null || _selectedLibraryId == null) return;
 
     if (isOffline) {
+      _logOfflineState('loadPersonalizedView aborted (offline)');
       _buildOfflineSections();
       return;
     }
@@ -1143,11 +1209,9 @@ class LibraryProvider extends ChangeNotifier {
       loadPlaylists();
       loadCollections();
     } catch (e) {
-      if (_isLikelyNetworkError(e)) {
-        _goOffline();
-      } else {
-        debugPrint('[Library] Non-network error (staying online): $e');
-      }
+      // Network error — auto-switch to offline view
+      debugPrint('[Library] loadPersonalizedView error: $e');
+      setNetworkOffline(true, reason: 'loadPersonalizedView-error');
     }
 
     _isLoading = false;
@@ -1337,6 +1401,7 @@ class LibraryProvider extends ChangeNotifier {
   /// Refresh data (pull-to-refresh).
   Future<void> refresh() async {
     if (isOffline) {
+      _logOfflineState('refresh aborted (offline)');
       _buildOfflineSections();
       notifyListeners();
       return;
@@ -2331,7 +2396,8 @@ class LibraryProvider extends ChangeNotifier {
           ? PlayerSettings.getPodcastQueueMode()
           : PlayerSettings.getBookQueueMode();
       modeFuture.then((mode) {
-        debugPrint('[AutoAdvance] queueMode=$mode (${isPodcast ? 'podcast' : 'book'}) for finished item $itemId');
+        debugPrint(
+            '[AutoAdvance] queueMode=$mode (${isPodcast ? 'podcast' : 'book'}) for finished item $itemId');
         if (mode == 'manual') {
           _manualQueueAdvance(itemId);
         } else if (mode == 'auto_next') {
@@ -2423,13 +2489,16 @@ class LibraryProvider extends ChangeNotifier {
       // Check per-show advance direction
       final prefs = await SharedPreferences.getInstance();
       final advanceNewestFirst =
-          (prefs.getString('podcast_advance_dir_$showId') ?? 'oldest_first') == 'newest_first';
+          (prefs.getString('podcast_advance_dir_$showId') ?? 'oldest_first') ==
+              'newest_first';
 
       // Sort by publishedAt; direction determines which episode comes "next"
       episodes.sort((a, b) {
         final aTime = (a['publishedAt'] as num?)?.toInt() ?? 0;
         final bTime = (b['publishedAt'] as num?)?.toInt() ?? 0;
-        return advanceNewestFirst ? bTime.compareTo(aTime) : aTime.compareTo(bTime);
+        return advanceNewestFirst
+            ? bTime.compareTo(aTime)
+            : aTime.compareTo(bTime);
       });
 
       final currentIdx = episodes.indexWhere(
@@ -2450,7 +2519,8 @@ class LibraryProvider extends ChangeNotifier {
         final candidateId = candidate['id'] as String?;
         if (candidateId == null) continue;
         final candidateKey = '$showId-$candidateId';
-        final cachedFinished = _progressMap[candidateKey]?['isFinished'] == true;
+        final cachedFinished =
+            _progressMap[candidateKey]?['isFinished'] == true;
         if (cachedFinished) {
           if (trustCache) continue;
           // _progressMap can be stale; verify with server before skipping.
@@ -2724,7 +2794,8 @@ class LibraryProvider extends ChangeNotifier {
       // Check per-show advance direction
       final prefs = await SharedPreferences.getInstance();
       final advanceNewestFirst =
-          (prefs.getString('podcast_advance_dir_$showId') ?? 'oldest_first') == 'newest_first';
+          (prefs.getString('podcast_advance_dir_$showId') ?? 'oldest_first') ==
+              'newest_first';
 
       // Find all downloaded episodes for this show from the cache
       final dl = DownloadService();
@@ -3231,7 +3302,8 @@ class LibraryProvider extends ChangeNotifier {
     }
 
     if (newEpisodes.isNotEmpty) {
-      debugPrint('[Subscription] ${newEpisodes.length} new episode(s) for $itemId');
+      debugPrint(
+          '[Subscription] ${newEpisodes.length} new episode(s) for $itemId');
       int queued = 0;
 
       for (final epMap in newEpisodes) {
@@ -3278,7 +3350,8 @@ class LibraryProvider extends ChangeNotifier {
             .whereType<String>()
             .toSet();
         _knownEpisodeIds[podcastId] = ids;
-        debugPrint('[Subscription] Seeded $podcastId with ${ids.length} episodes');
+        debugPrint(
+            '[Subscription] Seeded $podcastId with ${ids.length} episodes');
       } catch (e) {
         debugPrint('[Subscription] Failed to seed $podcastId: $e');
       }
@@ -3292,7 +3365,8 @@ class LibraryProvider extends ChangeNotifier {
     if (wifiOnly) {
       final connectivity = await Connectivity().checkConnectivity();
       if (!connectivity.contains(ConnectivityResult.wifi)) {
-        debugPrint('[Subscription] Skipping download (not on WiFi) - will retry on WiFi');
+        debugPrint(
+            '[Subscription] Skipping download (not on WiFi) - will retry on WiFi');
         return;
       }
     }
@@ -3329,7 +3403,8 @@ class LibraryProvider extends ChangeNotifier {
       final media = cached['media'] as Map<String, dynamic>? ?? {};
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
       final showTitle = metadata['title'] as String? ?? 'Podcast';
-      _showRollingSnackBar('$showTitle: $downloaded new episode${downloaded == 1 ? '' : 's'} downloading');
+      _showRollingSnackBar(
+          '$showTitle: $downloaded new episode${downloaded == 1 ? '' : 's'} downloading');
     }
   }
 
