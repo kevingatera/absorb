@@ -30,3 +30,7 @@ Download the latest APK from [Releases](../../releases) or add the repo to [Obta
 
 - An [audiobookshelf](https://www.audiobookshelf.org/) server (self-hosted)
 - Android 7.0+
+
+## Homelab Releases
+
+- Homelab deployment and signed release workflow: `docs/homelab-releases.md`
