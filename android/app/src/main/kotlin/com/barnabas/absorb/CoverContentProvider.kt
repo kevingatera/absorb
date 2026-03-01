@@ -15,19 +15,19 @@ import java.net.URL
 /**
  * ContentProvider that serves cover images to Android Auto.
  *
- * Android Auto cannot load HTTP or file:// URIs directly — it requires
- * content:// URIs.  This provider maps:
- *   content://com.barnabas.absorb.covers/cover/<itemId>
+ * Android Auto cannot load file:// URIs directly — it requires content:// URIs.
+ * This provider maps:
+ *   content://com.barnabas.absorb.homelab.covers/cover/<itemId>
  *
  * Lookup order:
  *   1. Locally downloaded cover (item's download directory)
  *   2. Cached cover fetched from the ABS server (cacheDir/aa_covers/)
- *   3. Fetch from server on-demand → cache → serve
+ *   3. Fetch from server on-demand -> cache -> serve
  */
 class CoverContentProvider : ContentProvider() {
 
     companion object {
-        const val AUTHORITY = "com.barnabas.absorb.covers"
+        const val AUTHORITY = "com.barnabas.absorb.homelab.covers"
         private const val TAG = "CoverProvider"
 
         fun buildCoverUri(itemId: String): Uri {
