@@ -18,6 +18,13 @@
   - Shows contextual snackbars (`queued`, `already downloaded`, or first error).
   - Displays reactive button state via `ListenableBuilder(DownloadService())`.
 
+## Series download UX follow-up (2026-03-01)
+
+- Refined series header action to better match existing app download controls.
+- Handles long series names by limiting header title to 2 lines with ellipsis.
+- Added per-book live download percentage badge in the same top-right thumbnail position used by the done badge.
+- Series list now listens to `DownloadService` updates so item progress badges update without reopening the sheet.
+
 ## Build status (2026-03-01)
 
 - `flutter analyze lib/widgets/series_books_sheet.dart`: passed.
