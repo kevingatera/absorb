@@ -402,6 +402,7 @@ class DownloadService extends ChangeNotifier {
     String? author,
     String? coverUrl,
     String? episodeId,
+    bool waitForCompletion = true,
   }) async {
     if (_activeDownloadId == itemId) return null;
     if (isDownloaded(itemId)) return null;
@@ -441,17 +442,34 @@ class DownloadService extends ChangeNotifier {
       return null;
     }
 
-    await _executeDownload(
-      api: api,
-      itemId: itemId,
-      title: title,
-      author: author,
-      coverUrl: coverUrl,
-      episodeId: episodeId,
-    );
-    // Process any queued downloads
-    if (_queue.isNotEmpty && !_processingQueue) {
-      unawaited(_processQueue());
+    if (waitForCompletion) {
+      await _executeDownload(
+        api: api,
+        itemId: itemId,
+        title: title,
+        author: author,
+        coverUrl: coverUrl,
+        episodeId: episodeId,
+      );
+      // Process any queued downloads
+      if (_queue.isNotEmpty && !_processingQueue) {
+        unawaited(_processQueue());
+      }
+    } else {
+      unawaited(
+        _executeDownload(
+          api: api,
+          itemId: itemId,
+          title: title,
+          author: author,
+          coverUrl: coverUrl,
+          episodeId: episodeId,
+        ).whenComplete(() {
+          if (_queue.isNotEmpty && !_processingQueue) {
+            unawaited(_processQueue());
+          }
+        }),
+      );
     }
     return null;
   }
@@ -589,7 +607,13 @@ class DownloadService extends ChangeNotifier {
         final pct = (overall * 50).round();
         if (pct != _lastNotifPercent) {
           _lastNotifPercent = pct;
-          unawaited(_showProgressSafe(notif, title, author, overall));
+          unawaited(
+            notif
+                .showProgress(title: title, author: author, progress: overall)
+                .catchError((Object e) {
+              debugPrint('[Download] showProgress non-fatal error: $e');
+            }),
+          );
         }
       }
 
