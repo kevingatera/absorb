@@ -491,6 +491,12 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       activeKey: activeKey,
     );
 
+    final showBlockingLoader = lib.isLoading &&
+        books.isEmpty &&
+        !_player.hasBook &&
+        !_cast.isCasting &&
+        lib.personalizedSections.isEmpty;
+
     final muted = cs.onSurfaceVariant;
     final subtleBg = cs.onSurface.withValues(alpha: 0.06);
     final subtleBorder = cs.onSurface.withValues(alpha: 0.08);
