@@ -183,6 +183,7 @@
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.8` (size-optimized arm64 APK)
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.9` (download stall fixes)
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.10` (targeted tab refresh for latency)
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.11` (personalized include tuning + API cleanup)
 
 ## Side-by-side install changes
 
