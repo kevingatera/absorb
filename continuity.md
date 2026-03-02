@@ -85,19 +85,29 @@
 - Pattern observed:
   - Slow runs are cache misses on `/personalized?...include=numEpisodesIncomplete`
   - These often appear in duplicate bursts (two close misses) indicating multiple callers.
-- Additional client fix applied:
-  - `lib/services/android_auto_service.dart` now requests only targeted personalized shelves for Android Auto:
-    - `shelves=continue-listening,continue-series`
-    - `include=numEpisodesIncomplete`
-    - `limit=10`
-  - This avoids Android Auto accidentally triggering expensive full-home shelf recomputation.
 
 ## Startup/inactivity latency follow-up (2026-03-02)
 
 - User report: after long inactivity, opening app on Absorbing can feel slow before player/absorbing state is ready.
 - Additional reduction applied:
-  - `lib/main.dart`: Android Auto pre-population refresh is now backgrounded (`Future.microtask`) instead of running inline in startup init sequence.
-  - This prevents startup flow from waiting on Android Auto server work.
+  - `lib/main.dart`: non-critical background refresh is moved off the startup critical path (`Future.microtask`).
+  - This reduces launch blocking during app resume/open.
+
+## Phone-app session burst investigation (2026-03-02)
+
+- Scope correction: issue is reproduced in phone app usage after inactivity.
+- Server logs show a burst loop from device `CPH2655 / v1.7.23`:
+  - repeated `startSessionRequest -> syncSession(15s) -> closeSession`
+  - ~78 starts in one minute during the observed burst.
+- Impact:
+  - creates avoidable server/session churn and can coincide with delayed UI readiness.
+- Mitigation in progress:
+  - `lib/services/progress_sync_service.dart`
+    - single-flight pending-sync flush guard (`_isFlushing`) to prevent overlap
+    - batched flushing (`maxItems`) with short delayed continuation
+  - `lib/providers/library_provider.dart`
+    - non-blocking pending-sync flush calls in hot paths
+    - smaller default flush batches (`maxItems: 3`)
 
 ## Absorbing-first startup optimization (2026-03-02)
 
