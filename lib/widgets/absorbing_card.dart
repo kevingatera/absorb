@@ -673,7 +673,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                         child: ListenableBuilder(
                           listenable: ChromecastService(),
                           builder: (context, _) {
-                            final castActive = ChromecastService().isCasting;
+                            final castActive = ChromecastService().isCasting && !_buttonOrder.take(4).contains('cast');
                             return GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: castActive
