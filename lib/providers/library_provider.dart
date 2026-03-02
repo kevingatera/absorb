@@ -764,16 +764,6 @@ class LibraryProvider extends ChangeNotifier {
     SocketService().softReconnect();
   }
 
-  /// Returns true for exceptions that indicate a real network problem
-  /// (unreachable server, DNS failure, TLS error). Non-network errors like
-  /// server 500s or JSON parse failures should not trigger offline mode.
-  bool _isLikelyNetworkError(Object error) {
-    return error is SocketException ||
-        error is TimeoutException ||
-        error is HandshakeException ||
-        error is HttpException;
-  }
-
   /// Go offline due to a network error. Builds offline sections and starts
   /// pinging the server for recovery if the device still has connectivity.
   void _goOffline() {
@@ -1013,8 +1003,10 @@ class LibraryProvider extends ChangeNotifier {
     try {
       _lastPersonalizedFetchAt = DateTime.now();
       _lastPersonalizedFetchLibraryId = _selectedLibraryId;
-      _personalizedSections =
-          await _api!.getPersonalizedView(_selectedLibraryId!);
+      _personalizedSections = await _api!.getPersonalizedView(
+        _selectedLibraryId!,
+        include: const ['numEpisodesIncomplete'],
+      );
       await _updateAbsorbingCache();
 
       // For podcast libraries, defer RSS-heavy fields until after first paint.
