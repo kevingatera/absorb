@@ -172,7 +172,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _castDisconnectTimer?.cancel();
       _castDisconnectTimer = null;
-      _refreshData();
+      _refreshDataForTab(_currentIndex);
       // Check auto sleep in case we resumed into the window
       SleepTimerService().checkAutoSleep();
     } else if (state == AppLifecycleState.paused) {
@@ -193,13 +193,20 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   DateTime? _lastRefresh;
   static const _refreshCooldown = Duration(minutes: 1);
 
-  void _refreshData() {
+  void _refreshDataForTab(int tabIndex) {
     final now = DateTime.now();
     final lib = context.read<LibraryProvider>();
-    
+
     // Always sync local progress (cheap, no network)
     lib.refreshLocalProgress();
-    
+
+    // Tabs that do not need full personalized shelf rebuilds.
+    // Keep these fast with progress-only refresh.
+    if (tabIndex == 1 || tabIndex == 2 || tabIndex == 3) {
+      unawaited(lib.refreshProgressOnly());
+      return;
+    }
+
     // Only do a full server refresh if enough time has passed
     if (_lastRefresh == null || now.difference(_lastRefresh!) > _refreshCooldown) {
       _lastRefresh = now;
@@ -251,7 +258,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               }
               _navigateTo(i);
               // Refresh data on switching to Library, Home, Absorbing, or Stats
-              if (i == 0 || i == 1 || i == 2 || i == 3) _refreshData();
+              if (i == 0 || i == 1 || i == 2 || i == 3) {
+                _refreshDataForTab(i);
+              }
             },
             destinations: _buildDestinations(context),
           ),

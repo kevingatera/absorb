@@ -49,6 +49,21 @@
     - Preserve generic signatures for shrinked release builds (`-keepattributes Signature`).
     - Add keep rules for `flutter_local_notifications`/Gson TypeToken patterns.
 
+## Absorbing open latency analysis (2026-03-01)
+
+- Server-side finding from `.108` logs:
+  - Occasional expensive personalized rebuilds still occur (`Loaded 7 personalized shelves in ~16s`, `Discover` up to ~14s).
+  - In reproduction windows, many requests were cache hits, but personalized cache invalidation after progress updates can trigger cold rebuilds.
+- Root cause in app flow:
+  - Absorbing tab switches were still using generic refresh path that can invoke full `lib.refresh()` and force personalized fetch.
+- Fix applied:
+  - `lib/screens/app_shell.dart`
+    - Added tab-aware refresh path.
+    - Absorbing tab now does lightweight progress-only refresh (`refreshProgressOnly`) instead of full personalized refresh.
+    - App resume now refreshes according to current tab, so resuming on Absorbing avoids heavy personalized calls.
+  - `lib/providers/library_provider.dart`
+    - Added `refreshProgressOnly()` for targeted `/me` progress sync without personalized shelf rebuild.
+
 ## Build status (2026-03-01)
 
 - `flutter analyze lib/widgets/series_books_sheet.dart`: passed.

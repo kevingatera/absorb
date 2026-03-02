@@ -679,6 +679,16 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Lightweight refresh for views that only need fresh progress state.
+  /// Avoids expensive personalized shelf rebuilds.
+  Future<void> refreshProgressOnly() async {
+    if (isOffline || _api == null) return;
+    await ProgressSyncService().flushPendingSync(api: _api!);
+    await _refreshProgress();
+    _localProgressOverrides.clear();
+    notifyListeners();
+  }
+
   /// Fetch series for the selected library.
   Future<void> loadSeries({String sort = 'addedAt', int desc = 1}) async {
     if (_api == null || _selectedLibraryId == null) return;
