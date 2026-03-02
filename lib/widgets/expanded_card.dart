@@ -155,7 +155,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
     _fetchedChapters = widget.initialChapters;
     _currentItemId = widget.player.currentItemId;
     _currentEpisodeId = widget.player.currentEpisodeId;
-    _wasPlaying = widget.player.hasBook;
+    _wasPlaying = widget.player.hasBook && _isActive;
     widget.player.addListener(_onPlayerChanged);
     ChromecastService().addListener(_onCastChanged);
     PlayerSettings.settingsChanged.addListener(_reloadButtonOrder);
@@ -200,20 +200,21 @@ class _ExpandedCardState extends State<ExpandedCard> {
   void _onPlayerChanged() {
     if (!mounted || _isPopping) return;
 
-    // Detect book finished: was playing, now hasBook is false
+    // Detect book finished: only dismiss if THIS card's item was playing
     if (_wasPlaying && !widget.player.hasBook) {
       _dismissExpanded();
       return;
     }
 
-    // Detect item change: new book started
+    // Detect item change: only react if this card was the active item
     final newItemId = widget.player.currentItemId;
     final newEpisodeId = widget.player.currentEpisodeId;
-    if (newItemId != null && (newItemId != _currentItemId || newEpisodeId != _currentEpisodeId)) {
+    if (newItemId != null && _currentItemId == _itemId &&
+        (newItemId != _currentItemId || newEpisodeId != _currentEpisodeId)) {
       _handleItemChange(newItemId, newEpisodeId);
     }
 
-    _wasPlaying = widget.player.hasBook;
+    _wasPlaying = widget.player.hasBook && _isActive;
     _currentItemId = newItemId;
     _currentEpisodeId = newEpisodeId;
     setState(() {});

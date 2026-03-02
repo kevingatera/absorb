@@ -482,7 +482,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                       final castService = ChromecastService();
                       final isCastingThis = castService.isCasting && castService.castingItemId == _itemId;
                       return GestureDetector(
-                        onTap: _isPlaybackActive && !isFinished ? () => _expandCard(context) : null,
+                        onTap: () => _expandCard(context),
                         child: Container(
                           width: coverSize,
                           height: coverSize,
