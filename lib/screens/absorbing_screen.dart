@@ -435,6 +435,12 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       activeKey: activeKey,
     );
 
+    final showBlockingLoader = lib.isLoading &&
+        books.isEmpty &&
+        !_player.hasBook &&
+        !_cast.isCasting &&
+        lib.personalizedSections.isEmpty;
+
     final muted = cs.onSurfaceVariant;
     final subtleBg = cs.onSurface.withValues(alpha: 0.06);
     final subtleBorder = cs.onSurface.withValues(alpha: 0.08);
@@ -573,7 +579,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
               ),
             // ── Cards (refreshable) ──
             Expanded(
-              child: lib.isLoading
+              child: showBlockingLoader
                   ? Center(child: CircularProgressIndicator(strokeWidth: 2, color: cs.onSurface.withValues(alpha: 0.24)))
                   : books.isEmpty
                       ? _emptyState(cs, tt, effectiveOffline)

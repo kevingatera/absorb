@@ -51,6 +51,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   bool _expandedIsOpen = false;
   Timer? _castDisconnectTimer;
 
+  // Lazily build tabs so startup on Absorbing does not initialize Home/Library
+  // work until the user actually visits those tabs.
+  final List<Widget?> _pages = List<Widget?>.filled(5, null, growable: false);
+
   void _switchToAbsorbing() {
     if (mounted) {
       _navigateTo(2);
@@ -63,23 +67,38 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   void _navigateTo(int index) {
     if (index == _currentIndex) return;
+    _ensurePageBuilt(index);
     setState(() {
       _currentIndex = index;
     });
   }
 
-  late final _pages = [
-    const HomeScreen(),
-    LibraryScreen(key: _libraryKey),
-    AbsorbingScreen(key: AbsorbingScreen.globalKey),
-    const StatsScreen(),
-    const SettingsScreen(),
-  ];
+  void _ensurePageBuilt(int index) {
+    if (_pages[index] != null) return;
+    switch (index) {
+      case 0:
+        _pages[index] = const HomeScreen();
+        break;
+      case 1:
+        _pages[index] = LibraryScreen(key: _libraryKey);
+        break;
+      case 2:
+        _pages[index] = AbsorbingScreen(key: AbsorbingScreen.globalKey);
+        break;
+      case 3:
+        _pages[index] = const StatsScreen();
+        break;
+      case 4:
+        _pages[index] = const SettingsScreen();
+        break;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _instance = this;
+    _ensurePageBuilt(_currentIndex);
     _playerHadBook = _player.hasBook;
     _wasPlaying = _player.isPlaying;
     _lastItemId = _player.currentItemId;
@@ -242,7 +261,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       child: Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: _pages,
+        children: List<Widget>.generate(
+          _pages.length,
+          (i) => _pages[i] ?? const SizedBox.shrink(),
+        ),
       ),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
