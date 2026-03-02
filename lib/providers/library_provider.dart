@@ -39,12 +39,6 @@ class LibraryProvider extends ChangeNotifier {
   // Cache of item updatedAt timestamps for cover cache-busting
   final Map<String, int> _itemUpdatedAt = {};
 
-  // Fetch deduplication for loadPersonalizedView
-  Future<void>? _personalizedInFlight;
-  DateTime? _lastPersonalizedFetchAt;
-  String? _lastPersonalizedFetchLibraryId;
-  static const _personalizedFetchCooldown = Duration(seconds: 5);
-
   // Offline mode
   bool _manualOffline = false;
   bool _networkOffline = false;
@@ -502,16 +496,6 @@ class LibraryProvider extends ChangeNotifier {
   void _stopServerPingTimer() {
     _serverPingTimer?.cancel();
     _serverPingTimer = null;
-  }
-
-  /// Returns true for exceptions that indicate a real network problem
-  /// (unreachable server, DNS failure, TLS error). Non-network errors like
-  /// server 500s or JSON parse failures should not trigger offline mode.
-  bool _isLikelyNetworkError(Object error) {
-    return error is SocketException ||
-        error is TimeoutException ||
-        error is HandshakeException ||
-        error is HttpException;
   }
 
   /// Go offline due to a network error. Builds offline sections and starts
