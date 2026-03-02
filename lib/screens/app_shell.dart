@@ -320,6 +320,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     lib.refreshLocalProgress();
 
     // Tabs that do not need full personalized shelf rebuilds.
+    // Keep these fast with progress-only refresh.
     if (tabIndex == 1 || tabIndex == 2 || tabIndex == 3) {
       unawaited(lib.refreshProgressOnly());
       return;
