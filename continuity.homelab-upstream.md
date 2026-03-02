@@ -131,3 +131,8 @@
   - version: `1.7.23 (34)`
 - Signature check (`apksigner verify --print-certs`):
   - signer SHA-256: `142bbef4f332280ab7df20ec012bd1b4fb39ced8fe080c06b3acb923ffee5ccb`
+
+## Release published (2026-03-02)
+
+- GitHub release created from `homelab-upstream`:
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.23-homelab.20260302.1`
