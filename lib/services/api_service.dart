@@ -748,7 +748,8 @@ class ApiService {
           };
         }
       }
-    } catch (e) {
+    } catch (_) {
+      return null;
     }
     return null;
   }
@@ -866,11 +867,7 @@ class ApiService {
   Future<Map<String, dynamic>?> searchAudibleRating(
       String title, String? author) async {
     try {
-      // Use the ABS server's search endpoint to query Audible for the book
-      final query = author != null && author.isNotEmpty
-          ? '$title $author'
-          : title;
-      final encoded = Uri.encodeQueryComponent(query);
+      // Use the ABS server's search endpoint to query Audible for the book.
       final response = await http.get(
         Uri.parse(
           '$_cleanBaseUrl/api/search/covers?title=${Uri.encodeQueryComponent(title)}'
