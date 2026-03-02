@@ -109,3 +109,25 @@
 - Ran targeted analyze:
   - `flutter analyze lib/providers/library_provider.dart lib/services/api_service.dart lib/screens/app_shell.dart lib/screens/absorbing_screen.dart lib/main.dart lib/services/android_auto_service.dart lib/services/download_notification_service.dart lib/services/download_service.dart lib/widgets/series_books_sheet.dart lib/services/audio_player_service.dart lib/services/oidc_service.dart`
 - Result: no analyzer errors in modified files (existing repo-level infos/warnings remain).
+
+## Commit split (2026-03-02)
+
+- `ac050be` Improve startup and targeted refresh behavior
+- `a1a0226` Improve series download feedback and queueing
+- `319dbf0` Fix download notification and queue resilience
+- `982afae` Add homelab side-by-side app identity
+- `8d9ced9` Update homelab-upstream migration continuity
+
+## Release build prep (2026-03-02)
+
+- Built release APK:
+  - `JAVA_HOME=/home/kevingatera/jdks/jdk-21.0.10+7 PATH=$JAVA_HOME/bin:$PATH ANDROID_HOME=/home/kevingatera/android-sdk ANDROID_SDK_ROOT=/home/kevingatera/android-sdk flutter build apk --release --target-platform android-arm64`
+- Output artifact:
+  - `build/app/outputs/flutter-apk/app-release.apk`
+  - release copy: `release-artifacts/absorb-v1.7.23-homelab-upstream.20260302-signed.apk`
+- APK identity check (`aapt dump badging`):
+  - package: `com.barnabas.absorb.homelab`
+  - label: `Absorb Homelab`
+  - version: `1.7.23 (34)`
+- Signature check (`apksigner verify --print-certs`):
+  - signer SHA-256: `142bbef4f332280ab7df20ec012bd1b4fb39ced8fe080c06b3acb923ffee5ccb`
