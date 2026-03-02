@@ -441,11 +441,6 @@ class DownloadService extends ChangeNotifier {
         coverUrl: coverUrl,
       );
       notifyListeners();
-      // Ensure queue processor is running
-      if (!_processingQueue) {
-        debugPrint('[Download] Starting queue processor');
-        unawaited(_processQueue());
-      }
       return null;
     }
 
@@ -488,6 +483,9 @@ class DownloadService extends ChangeNotifier {
   Future<void> _processQueue() async {
     _processingQueue = true;
     debugPrint('[Download] Queue processor start size=${_queue.length}');
+    while (_activeDownloadId != null) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
     while (_queue.isNotEmpty) {
       final next = _queue.removeAt(0);
       debugPrint('[Download] Dequeued item=${next.itemId} remaining=${_queue.length}');
@@ -525,7 +523,11 @@ class DownloadService extends ChangeNotifier {
 
     // Show persistent download notification via foreground service
     final notif = DownloadNotificationService();
-    await notif.startForeground(title: title, author: author);
+    try {
+      await notif.startForeground(title: title, author: author);
+    } catch (e) {
+      debugPrint('[Download] startForeground non-fatal error: $e');
+    }
 
     try {
       // For episodes, itemId is a composite key like 'podcastId-episodeId'.
@@ -598,7 +600,11 @@ class DownloadService extends ChangeNotifier {
         final pct = (overall * 50).round();
         if (pct != _lastNotifPercent) {
           _lastNotifPercent = pct;
-          notif.showProgress(title: title, author: author, progress: overall);
+          try {
+            notif.showProgress(title: title, author: author, progress: overall);
+          } catch (e) {
+            debugPrint('[Download] showProgress non-fatal error: $e');
+          }
         }
       }
 
@@ -687,7 +693,11 @@ class DownloadService extends ChangeNotifier {
       await _save();
 
       // Show completion notification
-      await notif.showComplete(title: title);
+      try {
+        await notif.showComplete(title: title);
+      } catch (e) {
+        debugPrint('[Download] showComplete non-fatal error: $e');
+      }
 
       // If this book is currently streaming, hot-swap to local files
       final player = AudioPlayerService();
@@ -714,7 +724,11 @@ class DownloadService extends ChangeNotifier {
           coverUrl: coverUrl,
         );
         // Show error notification
-        await notif.showError(title: title, message: 'Download failed: $title');
+        try {
+          await notif.showError(title: title, message: 'Download failed: $title');
+        } catch (notifErr) {
+          debugPrint('[Download] showError non-fatal error: $notifErr');
+        }
       }
     }
 
@@ -753,7 +767,11 @@ class DownloadService extends ChangeNotifier {
       _httpClient?.close();
       _httpClient = null;
       _activeDownloadId = null;
-      DownloadNotificationService().dismiss();
+      try {
+        DownloadNotificationService().dismiss();
+      } catch (e) {
+        debugPrint('[Download] dismiss non-fatal error: $e');
+      }
     }
     // Remove from queue if it was waiting
     _queue.removeWhere((q) => q.itemId == itemId);
