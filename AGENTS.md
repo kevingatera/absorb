@@ -28,6 +28,8 @@ Agent guidance for work in `/home/kevingatera/tmp-agents/absorb`.
 - Use local Android SDK at `/home/kevingatera/android-sdk` unless explicitly changed.
 - Build command baseline:
   - `JAVA_HOME=/home/kevingatera/jdks/jdk-21.0.10+7 ANDROID_HOME=/home/kevingatera/android-sdk ANDROID_SDK_ROOT=/home/kevingatera/android-sdk flutter build apk --release`
+- Homelab size-optimized build (recommended for GitHub releases):
+  - `JAVA_HOME=/home/kevingatera/jdks/jdk-21.0.10+7 ANDROID_HOME=/home/kevingatera/android-sdk ANDROID_SDK_ROOT=/home/kevingatera/android-sdk flutter build apk --release --target-platform android-arm64`
 - Signed release requires local `android/key.properties` plus a local keystore path.
 - Keep release output naming consistent with project conventions.
 - For homelab work, finish by creating a homelab release on the fork with a signed APK.
@@ -45,6 +47,8 @@ Agent guidance for work in `/home/kevingatera/tmp-agents/absorb`.
   - `grep -nE "\[Library\]|\[Absorbing\]|setNetworkOffline|setManualOffline|buildOfflineSections|loadPersonalizedView error|loadLibraries error" <app-log-path>`
 - Signed release build:
   - `JAVA_HOME=/home/kevingatera/jdks/jdk-21.0.10+7 PATH=$JAVA_HOME/bin:$PATH ANDROID_HOME=/home/kevingatera/android-sdk ANDROID_SDK_ROOT=/home/kevingatera/android-sdk flutter build apk --release`
+- Signed release build (size-optimized arm64):
+  - `JAVA_HOME=/home/kevingatera/jdks/jdk-21.0.10+7 PATH=$JAVA_HOME/bin:$PATH ANDROID_HOME=/home/kevingatera/android-sdk ANDROID_SDK_ROOT=/home/kevingatera/android-sdk flutter build apk --release --target-platform android-arm64`
 - Verify built APK identity/signature:
   - `"/home/kevingatera/android-sdk/build-tools/35.0.0/aapt" dump badging build/app/outputs/flutter-apk/app-release.apk | grep -E "^package:|application-label:"`
   - `"/home/kevingatera/android-sdk/build-tools/35.0.0/apksigner" verify --print-certs build/app/outputs/flutter-apk/app-release.apk`
