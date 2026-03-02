@@ -186,13 +186,6 @@ class LibraryProvider extends ChangeNotifier {
     );
   }
 
-  bool _isLikelyNetworkError(Object error) {
-    return error is SocketException ||
-        error is TimeoutException ||
-        error is HandshakeException ||
-        error is HttpException;
-  }
-
   /// Toggle manual offline mode.
   Future<void> setManualOffline(bool value) async {
     _logOfflineState('setManualOffline($value)');
@@ -1208,8 +1201,10 @@ class LibraryProvider extends ChangeNotifier {
     try {
       _lastPersonalizedFetchAt = DateTime.now();
       _lastPersonalizedFetchLibraryId = _selectedLibraryId;
-      _personalizedSections =
-          await _api!.getPersonalizedView(_selectedLibraryId!);
+      _personalizedSections = await _api!.getPersonalizedView(
+        _selectedLibraryId!,
+        include: const ['numEpisodesIncomplete'],
+      );
       await _updateAbsorbingCache();
 
       // For podcast libraries, defer RSS-heavy fields until after first paint.
