@@ -463,11 +463,6 @@ class DownloadService extends ChangeNotifier {
         coverUrl: coverUrl,
       );
       notifyListeners();
-      // Ensure queue processor is running
-      if (!_processingQueue) {
-        debugPrint('[Download] Starting queue processor');
-        unawaited(_processQueue());
-      }
       return null;
     }
 
@@ -510,6 +505,9 @@ class DownloadService extends ChangeNotifier {
   Future<void> _processQueue() async {
     _processingQueue = true;
     debugPrint('[Download] Queue processor start size=${_queue.length}');
+    while (_activeDownloadId != null) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
     while (_queue.isNotEmpty) {
       final next = _queue.removeAt(0);
       debugPrint('[Download] Dequeued item=${next.itemId} remaining=${_queue.length}');
@@ -641,7 +639,11 @@ class DownloadService extends ChangeNotifier {
         final pct = (overall * 50).round();
         if (pct != _lastNotifPercent) {
           _lastNotifPercent = pct;
-          unawaited(_showProgressSafe(notif, title, author, overall));
+          try {
+            notif.showProgress(title: title, author: author, progress: overall);
+          } catch (e) {
+            debugPrint('[Download] showProgress non-fatal error: $e');
+          }
         }
       }
 
@@ -735,7 +737,9 @@ class DownloadService extends ChangeNotifier {
       // Show completion notification
       try {
         await notif.showComplete(title: title);
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[Download] showComplete non-fatal error: $e');
+      }
 
       // If this book is currently streaming, hot-swap to local files
       try {
@@ -830,11 +834,11 @@ class DownloadService extends ChangeNotifier {
       _httpClient?.close();
       _httpClient = null;
       _activeDownloadId = null;
-      unawaited(
-        DownloadNotificationService().dismiss().catchError((Object e) {
-          debugPrint('[Download] dismiss non-fatal error: $e');
-        }),
-      );
+      try {
+        DownloadNotificationService().dismiss();
+      } catch (e) {
+        debugPrint('[Download] dismiss non-fatal error: $e');
+      }
     }
     // Remove from queue if it was waiting
     _queue.removeWhere((q) => q.itemId == itemId);
