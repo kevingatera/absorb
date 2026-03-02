@@ -29,6 +29,26 @@
   - `[Series] Queueing whole series...`
   - `[Download] Request/Queueing/Dequeued/Execute start/...`
 
+## Download stuck diagnosis (2026-03-01)
+
+- Reproduced with paired app/server logs and observed real download flow events.
+- Root cause from app logs:
+  - `PlatformException ... TypeToken must be created with a type argument ... When using code shrinkers ... preserve generic signatures`
+  - Stack traces originated from `flutter_local_notifications` cancel path.
+- Impact:
+  - Notification plugin exceptions were bubbling into download pipeline and marking downloads as failed/stuck.
+  - Queue processor could also start while another item was actively downloading, allowing overlapping execution.
+- Fixes applied:
+  - `lib/services/download_service.dart`
+    - Prevent queue processor from starting while an active download is running.
+    - Wait for active download to clear before processing queued items.
+    - Treat notification failures as non-fatal (start/progress/complete/error/dismiss guarded).
+  - `lib/services/download_notification_service.dart`
+    - Guard notification cancel calls against plugin exceptions.
+  - `android/app/proguard-rules.pro`
+    - Preserve generic signatures for shrinked release builds (`-keepattributes Signature`).
+    - Add keep rules for `flutter_local_notifications`/Gson TypeToken patterns.
+
 ## Build status (2026-03-01)
 
 - `flutter analyze lib/widgets/series_books_sheet.dart`: passed.
