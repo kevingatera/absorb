@@ -360,7 +360,6 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
         title: title,
         author: author,
         coverUrl: api.getCoverUrl(bookId),
-        waitForCompletion: false,
       );
 
       if (error != null) {
@@ -896,7 +895,6 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                 );
               },
             ),
-          ),
           ),
       ],
     ));
