@@ -314,7 +314,14 @@ class AndroidAutoService {
       // ── Continue Listening (from default library) ──
       final defaultLibId = await getDefaultLibraryId();
       if (defaultLibId != null) {
-        final sections = await api.getPersonalizedView(defaultLibId);
+        // Keep Android Auto refresh targeted: continue shelves only.
+        // Avoid full personalized shelf rebuilds (especially Discover).
+        final sections = await api.getPersonalizedView(
+          defaultLibId,
+          include: const ['numEpisodesIncomplete'],
+          shelves: const ['continue-listening', 'continue-series'],
+          limit: 10,
+        );
         final continueEntries = <AutoBookEntry>[];
         final seenIds = <String>{};
 
