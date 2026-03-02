@@ -600,7 +600,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     
     if (player.currentItemId == widget.itemId) {
       if (!player.isPlaying) player.play();
-      rootNav.pop();
+      rootNav.popUntil((route) => route.isFirst);
       Future.delayed(const Duration(milliseconds: 100), () {
         AppShell.goToAbsorbingGlobal();
       });
@@ -611,16 +611,16 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
 
     // Start playback
     await player.playItem(api: api, itemId: widget.itemId, title: title, author: author, coverUrl: coverUrl, totalDuration: duration, chapters: chapters);
-    
+
     // Refresh library so the absorbing screen picks up the new book
     if (context.mounted) {
       final lib = context.read<LibraryProvider>();
       lib.refreshLocalProgress();
       lib.refresh();
     }
-    
-    // Close sheet and navigate
-    rootNav.pop();
+
+    // Close all sheets and navigate
+    rootNav.popUntil((route) => route.isFirst);
     Future.delayed(const Duration(milliseconds: 100), () {
       AppShell.goToAbsorbingGlobal();
     });

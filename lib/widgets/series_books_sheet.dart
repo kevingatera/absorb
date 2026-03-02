@@ -63,6 +63,7 @@ class SeriesBooksSheet extends StatefulWidget {
 class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
   List<Map<String, dynamic>> _books = [];
   bool _isLoading = true;
+  bool _isDownloadingAll = false;
 
   @override
   void initState() {
@@ -172,6 +173,35 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     if (mounted) setState(() => _isLoading = false);
   }
 
+  Future<void> _downloadAll() async {
+    final auth = context.read<AuthProvider>();
+    final api = auth.apiService;
+    if (api == null) return;
+
+    setState(() => _isDownloadingAll = true);
+
+    for (final book in _books) {
+      if (!mounted) break;
+      final bookId = book['id'] as String? ?? '';
+      if (DownloadService().isDownloaded(bookId) || DownloadService().isDownloading(bookId)) continue;
+
+      final media = book['media'] as Map<String, dynamic>? ?? {};
+      final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+      final title = metadata['title'] as String? ?? 'Unknown';
+      final author = metadata['authorName'] as String? ?? '';
+
+      await DownloadService().downloadItem(
+        api: api,
+        itemId: bookId,
+        title: title,
+        author: author,
+        coverUrl: api.getCoverUrl(bookId),
+      );
+    }
+
+    if (mounted) setState(() => _isDownloadingAll = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -243,6 +273,94 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
               ],
             ),
           ),
+        // Download All button (reactive)
+        if (_books.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+            child: ListenableBuilder(
+              listenable: DownloadService(),
+              builder: (_, __) {
+                final dl = DownloadService();
+                int downloaded = 0;
+                int downloading = 0;
+                double totalProgress = 0;
+                for (final book in _books) {
+                  final bookId = book['id'] as String? ?? '';
+                  if (dl.isDownloaded(bookId)) {
+                    downloaded++;
+                  } else if (dl.isDownloading(bookId)) {
+                    downloading++;
+                    totalProgress += dl.downloadProgress(bookId);
+                  }
+                }
+                final allDone = downloaded == _books.length;
+                final anyActive = _isDownloadingAll || downloading > 0;
+                final overallProgress = _books.isNotEmpty
+                    ? (downloaded + totalProgress) / _books.length
+                    : 0.0;
+                final green = Theme.of(context).brightness == Brightness.dark
+                    ? Colors.greenAccent : Colors.green.shade700;
+
+                if (allDone) {
+                  return Container(height: 44,
+                    decoration: BoxDecoration(
+                      color: green.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: green.withValues(alpha: 0.15)),
+                    ),
+                    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Icon(Icons.download_done_rounded, size: 16, color: green.withValues(alpha: 0.7)),
+                      const SizedBox(width: 6),
+                      Text('All Books Downloaded',
+                        style: TextStyle(color: green.withValues(alpha: 0.7), fontSize: 12, fontWeight: FontWeight.w500)),
+                    ]),
+                  );
+                }
+
+                return GestureDetector(
+                  onTap: anyActive ? null : _downloadAll,
+                  child: Container(height: 44,
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: cs.onSurface.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.1)),
+                    ),
+                    child: Stack(children: [
+                      if (anyActive)
+                        FractionallySizedBox(
+                          widthFactor: overallProgress.clamp(0.0, 1.0),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: cs.primary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(13),
+                            ),
+                          ),
+                        ),
+                      Center(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        if (anyActive)
+                          SizedBox(width: 14, height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary))
+                        else
+                          Icon(Icons.download_rounded, size: 16, color: cs.onSurfaceVariant),
+                        const SizedBox(width: 6),
+                        Text(
+                          anyActive
+                              ? 'Downloading ${downloaded + downloading}/${_books.length} · ${(overallProgress * 100).toStringAsFixed(0)}%'
+                              : downloaded > 0
+                                  ? 'Download Remaining (${_books.length - downloaded})'
+                                  : 'Download All Books',
+                          style: TextStyle(
+                            color: anyActive ? cs.primary : cs.onSurfaceVariant,
+                            fontSize: 12, fontWeight: FontWeight.w500)),
+                      ])),
+                    ]),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
         if (_isLoading && _books.isEmpty)
           const Expanded(
               child: Center(child: CircularProgressIndicator()))
@@ -256,7 +374,9 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
           )
         else
           Expanded(
-            child: ListView.builder(
+            child: ListenableBuilder(
+              listenable: DownloadService(),
+              builder: (context, _) => ListView.builder(
               controller: widget.scrollController,
               padding: EdgeInsets.fromLTRB(16, 0, 16, 24 + MediaQuery.of(context).viewPadding.bottom),
               itemCount: _books.length,
@@ -354,21 +474,6 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                                               fontWeight: FontWeight.w800)),
                                     ),
                                   ),
-                                // Downloaded badge (top-right)
-                                if (isDownloaded)
-                                  Positioned(
-                                    top: 4,
-                                    right: 4,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(3),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black54,
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Icon(Icons.download_done_rounded,
-                                          size: 12, color: cs.primary),
-                                    ),
-                                  ),
                                 // Progress bar at bottom
                                 if (progress > 0 && !isFinished)
                                   Positioned(
@@ -382,15 +487,15 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                                       valueColor: AlwaysStoppedAnimation(cs.primary),
                                     ),
                                   ),
-                                // Finished overlay
-                                if (isFinished)
+                                // Done / Downloaded banners
+                                if (isFinished || isDownloaded)
                                   Positioned(
                                     left: 0,
                                     right: 0,
                                     bottom: 0,
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(
-                                          horizontal: 4, vertical: 2),
+                                          horizontal: 6, vertical: 3),
                                       decoration: BoxDecoration(
                                         gradient: LinearGradient(
                                           begin: Alignment.bottomCenter,
@@ -401,18 +506,39 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                                           ],
                                         ),
                                       ),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
+                                      child: Column(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Icon(Icons.check_circle_rounded,
-                                              size: 10, color: Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400] : Colors.green.shade700),
-                                          const SizedBox(width: 3),
-                                          Text('Done',
-                                              style: TextStyle(
-                                                  fontSize: 9,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400] : Colors.green.shade700)),
+                                          if (isFinished)
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.check_circle_rounded,
+                                                    size: 10, color: Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400] : Colors.green.shade700),
+                                                const SizedBox(width: 3),
+                                                Text('Done',
+                                                    style: TextStyle(
+                                                        fontSize: 9,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400] : Colors.green.shade700)),
+                                              ],
+                                            ),
+                                          if (isDownloaded)
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.download_done_rounded,
+                                                    size: 10, color: cs.primary),
+                                                const SizedBox(width: 3),
+                                                Text('Saved',
+                                                    style: TextStyle(
+                                                        fontSize: 9,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: cs.primary)),
+                                              ],
+                                            ),
                                         ],
                                       ),
                                     ),
@@ -484,6 +610,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                 );
               },
             ),
+          ),
           ),
       ],
     );

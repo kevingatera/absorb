@@ -136,7 +136,7 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
         chapters: [],
         episodeId: episodeId,
       );
-      if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
       return;
     }
 
@@ -152,7 +152,7 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
       episodeId: episodeId,
       episodeTitle: episodeTitle,
     );
-    if (mounted) Navigator.pop(context);
+    if (mounted) Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
   }
 
   Future<void> _downloadEpisode(Map<String, dynamic> episode) async {
@@ -524,7 +524,7 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
         coverUrl: api.getCoverUrl(_itemId), totalDuration: _duration, chapters: [],
         episodeId: _episodeId,
       );
-      if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
       return;
     }
 
@@ -534,7 +534,7 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
       episodeId: _episodeId,
       episodeTitle: _episodeTitle,
     );
-    if (mounted) Navigator.pop(context);
+    if (mounted) Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
   }
 
   Future<void> _download() async {
