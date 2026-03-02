@@ -753,7 +753,8 @@ class ApiService {
           };
         }
       }
-    } catch (e) {
+    } catch (_) {
+      return null;
     }
     return null;
   }
