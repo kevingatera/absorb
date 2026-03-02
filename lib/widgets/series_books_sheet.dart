@@ -196,6 +196,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
         title: title,
         author: author,
         coverUrl: api.getCoverUrl(bookId),
+        waitForCompletion: false,
       );
     }
 
