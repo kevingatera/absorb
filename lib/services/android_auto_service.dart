@@ -231,7 +231,7 @@ class AndroidAutoService {
 
   /// Content provider authority for serving local cover images to Android Auto.
   /// Must match the authority registered in AndroidManifest.xml.
-  static const _coverAuthority = 'com.barnabas.absorb.covers';
+  static const _coverAuthority = 'com.barnabas.absorb.homelab.covers';
 
   /// Build a content:// URI for a locally cached cover image.
   /// Android Auto requires content:// URIs — file:// won't work.
