@@ -1324,7 +1324,7 @@ class AudioPlayerService extends ChangeNotifier {
         for (int i = 0; i < _chapters.length; i++) {
           final ch = _chapters[i] as Map<String, dynamic>;
           final start = (ch['start'] as num?)?.toDouble() ?? 0;
-          final end = (ch['end'] as num?)?.toDouble() ?? 0;
+          final end = (ch['end'] as num?)?.toDouble() ?? _totalDuration;
           if (posSec >= start && posSec < end) {
             chapterIdx = i;
             chapterTitle = ch['title'] as String?;
@@ -1654,7 +1654,7 @@ class AudioPlayerService extends ChangeNotifier {
     final pos = position.inMilliseconds / 1000.0; // absolute book position
     for (final ch in _chapters) {
       final start = (ch['start'] as num?)?.toDouble() ?? 0;
-      final end = (ch['end'] as num?)?.toDouble() ?? 0;
+      final end = (ch['end'] as num?)?.toDouble() ?? _totalDuration;
       if (pos >= start && pos < end) return ch as Map<String, dynamic>;
     }
     return null;
