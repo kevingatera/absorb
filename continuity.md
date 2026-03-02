@@ -39,6 +39,24 @@
   - label: `Absorb Homelab`
   - signer SHA-256: `142bbef4f332280ab7df20ec012bd1b4fb39ced8fe080c06b3acb923ffee5ccb`
 
+## APK size analysis (2026-03-01)
+
+- Large APK root cause:
+  - Fat APK packaging pulls multiple native runtime blobs (Flutter engine + app libs) across ABIs.
+  - Biggest entries were `libflutter.so` and `libapp.so` (x86_64, arm64, armeabi-v7a).
+  - Main Java/Kotlin dex footprint (`classes.dex`) is significant but secondary versus native libs.
+- Measured baseline (multi-ABI release command):
+  - Build time: ~97s
+  - APK size: ~62 MB
+- Measured size-optimized homelab command:
+  - `flutter build apk --release --target-platform android-arm64`
+  - Build time: ~85s (faster)
+  - APK size: ~24-25 MB (much smaller)
+- Quality/functionality impact:
+  - No media quality reduction or feature removal.
+  - Runtime behavior on arm64 phones remains unchanged.
+  - This is now the preferred homelab release build mode.
+
 ## Release/build process notes
 
 - Why no GitHub build was visible:
