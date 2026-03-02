@@ -39,13 +39,17 @@ class ApiService {
     var id = prefs.getString('absorb_device_id');
     if (id == null || id.isEmpty) {
       // Generate a unique ID for this install
-      id = 'absorb-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}-${(DateTime.now().microsecond * 31337).toRadixString(36)}';
+      id =
+          'absorb-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}-${(DateTime.now().microsecond * 31337).toRadixString(36)}';
       await prefs.setString('absorb_device_id', id);
     }
     deviceId = id;
   }
 
-  ApiService({required this.baseUrl, required this.token, this.customHeaders = const {}});
+  ApiService(
+      {required this.baseUrl,
+      required this.token,
+      this.customHeaders = const {}});
 
   Map<String, String> get _headers => {
         ...customHeaders,
@@ -60,8 +64,9 @@ class ApiService {
         'Authorization': 'Bearer $token',
       };
 
-  String get _cleanBaseUrl =>
-      baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+  String get _cleanBaseUrl => baseUrl.endsWith('/')
+      ? baseUrl.substring(0, baseUrl.length - 1)
+      : baseUrl;
 
   /// Login and return the full response JSON (contains user, token, etc.) and HTTP status code.
   static Future<(Map<String, dynamic>?, int)> login({
@@ -70,16 +75,17 @@ class ApiService {
     required String password,
     Map<String, String> customHeaders = const {},
   }) async {
-    final url = serverUrl.endsWith('/')
-        ? '${serverUrl}login'
-        : '$serverUrl/login';
+    final url =
+        serverUrl.endsWith('/') ? '${serverUrl}login' : '$serverUrl/login';
 
     try {
-      final response = await http.post(
-        Uri.parse(url),
-        headers: {...customHeaders, 'Content-Type': 'application/json'},
-        body: jsonEncode({'username': username, 'password': password}),
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .post(
+            Uri.parse(url),
+            headers: {...customHeaders, 'Content-Type': 'application/json'},
+            body: jsonEncode({'username': username, 'password': password}),
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         return (jsonDecode(response.body) as Map<String, dynamic>, 200);
@@ -91,12 +97,14 @@ class ApiService {
   }
 
   /// Ping the server to check connectivity.
-  static Future<bool> pingServer(String serverUrl, {Map<String, String> customHeaders = const {}}) async {
-    final url = serverUrl.endsWith('/')
-        ? '${serverUrl}ping'
-        : '$serverUrl/ping';
+  static Future<bool> pingServer(String serverUrl,
+      {Map<String, String> customHeaders = const {}}) async {
+    final url =
+        serverUrl.endsWith('/') ? '${serverUrl}ping' : '$serverUrl/ping';
     try {
-      final response = await http.get(Uri.parse(url), headers: customHeaders.isNotEmpty ? customHeaders : null)
+      final response = await http
+          .get(Uri.parse(url),
+              headers: customHeaders.isNotEmpty ? customHeaders : null)
           .timeout(const Duration(seconds: 10));
       return response.statusCode == 200;
     } catch (_) {
@@ -105,12 +113,14 @@ class ApiService {
   }
 
   /// Get the server version via the /status endpoint (no auth needed).
-  static Future<String?> getServerVersion(String serverUrl, {Map<String, String> customHeaders = const {}}) async {
-    final url = serverUrl.endsWith('/')
-        ? '${serverUrl}status'
-        : '$serverUrl/status';
+  static Future<String?> getServerVersion(String serverUrl,
+      {Map<String, String> customHeaders = const {}}) async {
+    final url =
+        serverUrl.endsWith('/') ? '${serverUrl}status' : '$serverUrl/status';
     try {
-      final response = await http.get(Uri.parse(url), headers: customHeaders.isNotEmpty ? customHeaders : null)
+      final response = await http
+          .get(Uri.parse(url),
+              headers: customHeaders.isNotEmpty ? customHeaders : null)
           .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -123,10 +133,12 @@ class ApiService {
   /// Get all libraries.
   Future<List<dynamic>> getLibraries() async {
     try {
-      final response = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/libraries'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/libraries'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -156,11 +168,13 @@ class ApiService {
       }
       if (limit != null) query['limit'] = '$limit';
 
-      final response = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/personalized')
-            .replace(queryParameters: query.isEmpty ? null : query),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/personalized')
+                .replace(queryParameters: query.isEmpty ? null : query),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -195,10 +209,12 @@ class ApiService {
       if (filter != null) url += '&filter=$filter';
       if (expanded) url += '&minified=0';
       if (collapseSeries) url += '&collapseseries=1';
-      final response = await http.get(
-        Uri.parse(url),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(url),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -211,7 +227,8 @@ class ApiService {
 
   /// Build a cover image URL for a library item.
   String getCoverUrl(String itemId, {int width = 400, int? updatedAt}) {
-    var url = '$_cleanBaseUrl/api/items/$itemId/cover?width=$width&token=$token';
+    var url =
+        '$_cleanBaseUrl/api/items/$itemId/cover?width=$width&token=$token';
     if (updatedAt != null) url += '&ts=$updatedAt';
     return url;
   }
@@ -219,10 +236,12 @@ class ApiService {
   /// Get current user info including all mediaProgress.
   Future<Map<String, dynamic>?> getMe() async {
     try {
-      final response = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/me'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/me'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -234,10 +253,12 @@ class ApiService {
   /// Get user's listening stats.
   Future<Map<String, dynamic>?> getListeningStats() async {
     try {
-      final response = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/me/listening-stats'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/me/listening-stats'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -247,12 +268,16 @@ class ApiService {
   }
 
   /// Get user's listening sessions (paginated).
-  Future<Map<String, dynamic>?> getListeningSessions({int page = 0, int itemsPerPage = 20}) async {
+  Future<Map<String, dynamic>?> getListeningSessions(
+      {int page = 0, int itemsPerPage = 20}) async {
     try {
-      final response = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/me/listening-sessions?itemsPerPage=$itemsPerPage&page=$page'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(
+            Uri.parse(
+                '$_cleanBaseUrl/api/me/listening-sessions?itemsPerPage=$itemsPerPage&page=$page'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -270,13 +295,15 @@ class ApiService {
     int desc = 1,
   }) async {
     try {
-      final response = await http.get(
-        Uri.parse(
-          '$_cleanBaseUrl/api/libraries/$libraryId/series'
-          '?page=$page&limit=$limit&sort=$sort&desc=$desc',
-        ),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(
+              '$_cleanBaseUrl/api/libraries/$libraryId/series'
+              '?page=$page&limit=$limit&sort=$sort&desc=$desc',
+            ),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -289,7 +316,8 @@ class ApiService {
 
   /// Build an author image URL.
   String getAuthorImageUrl(String authorId, {int width = 200, int? updatedAt}) {
-    var url = '$_cleanBaseUrl/api/authors/$authorId/image?width=$width&token=$token';
+    var url =
+        '$_cleanBaseUrl/api/authors/$authorId/image?width=$width&token=$token';
     if (updatedAt != null) url += '&ts=$updatedAt';
     return url;
   }
@@ -298,10 +326,13 @@ class ApiService {
   /// Used by Android Auto to build browse tree without fetching full items.
   Future<Map<String, dynamic>?> getLibraryFilterData(String libraryId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId?include=filterdata'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(
+                '$_cleanBaseUrl/api/libraries/$libraryId?include=filterdata'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -324,10 +355,12 @@ class ApiService {
       final filterValue = base64Encode(utf8.encode(authorId));
       final url = '$_cleanBaseUrl/api/libraries/$libraryId/items'
           '?filter=authors.$filterValue&sort=media.metadata.title&limit=$limit';
-      final response = await http.get(
-        Uri.parse(url),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(url),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -342,10 +375,12 @@ class ApiService {
   /// Get all authors for a library.
   Future<List<Map<String, dynamic>>> getLibraryAuthors(String libraryId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/authors'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/authors'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -359,14 +394,17 @@ class ApiService {
   }
 
   /// Get full author details including description/bio.
-  Future<Map<String, dynamic>?> getAuthorById(String authorId, {String? libraryId}) async {
+  Future<Map<String, dynamic>?> getAuthorById(String authorId,
+      {String? libraryId}) async {
     try {
       var url = '$_cleanBaseUrl/api/authors/$authorId?include=items';
       if (libraryId != null) url += '&library=$libraryId';
-      final response = await http.get(
-        Uri.parse(url),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(url),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -389,10 +427,12 @@ class ApiService {
       final url = '$_cleanBaseUrl/api/libraries/$libraryId/items'
           '?filter=series.$filterValue'
           '&sort=media.metadata.series.sequence&limit=$limit&collapseseries=0';
-      final response = await http.get(
-        Uri.parse(url),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(url),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -410,17 +450,24 @@ class ApiService {
   /// Start a playback session for a library item.
   /// POST /api/items/:id/play
   /// Returns the full session object including audioTracks with contentUrl.
-  Future<Map<String, dynamic>?> startPlaybackSession(String itemId, {String? episodeId, bool forceDirectPlay = false, bool forceTranscode = false, double? startOffset}) async {
+  Future<Map<String, dynamic>?> startPlaybackSession(String itemId,
+      {String? episodeId,
+      bool forceDirectPlay = false,
+      bool forceTranscode = false,
+      double? startOffset}) async {
     try {
       final epPath = episodeId != null ? '/$episodeId' : '';
       final url = '$_cleanBaseUrl/api/items/$itemId/play$epPath';
-      debugPrint('[ABS] Starting playback session: POST $url (forceDirectPlay: $forceDirectPlay, forceTranscode: $forceTranscode)');
+      debugPrint(
+          '[ABS] Starting playback session: POST $url (forceDirectPlay: $forceDirectPlay, forceTranscode: $forceTranscode)');
       final body = <String, dynamic>{
         'deviceInfo': {
           'clientName': 'Absorb',
           'clientVersion': appVersion,
           'deviceId': deviceId,
-          'deviceName': '${deviceManufacturer.isNotEmpty ? "$deviceManufacturer " : ""}$deviceModel'.trim(),
+          'deviceName':
+              '${deviceManufacturer.isNotEmpty ? "$deviceManufacturer " : ""}$deviceModel'
+                  .trim(),
           'manufacturer': deviceManufacturer,
           'model': deviceModel,
         },
@@ -435,12 +482,15 @@ class ApiService {
           'audio/aac',
         ],
       };
-      if (startOffset != null && startOffset > 0) body['startOffset'] = startOffset;
-      final response = await http.post(
-        Uri.parse(url),
-        headers: _headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 20));
+      if (startOffset != null && startOffset > 0)
+        body['startOffset'] = startOffset;
+      final response = await http
+          .post(
+            Uri.parse(url),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 20));
 
       debugPrint('[ABS] Play session response: ${response.statusCode}');
       if (response.statusCode == 200) {
@@ -450,7 +500,8 @@ class ApiService {
         debugPrint('[ABS] Audio tracks: ${tracks?.length ?? 0}');
         if (tracks != null && tracks.isNotEmpty) {
           final firstTrack = tracks.first as Map<String, dynamic>;
-          debugPrint('[ABS] First track contentUrl: ${firstTrack['contentUrl']}');
+          debugPrint(
+              '[ABS] First track contentUrl: ${firstTrack['contentUrl']}');
         }
         return data;
       } else {
@@ -479,15 +530,17 @@ class ApiService {
     int timeListened = 60,
   }) async {
     try {
-      await http.post(
-        Uri.parse('$_cleanBaseUrl/api/session/$sessionId/sync'),
-        headers: _headers,
-        body: jsonEncode({
-          'currentTime': currentTime,
-          'timeListened': timeListened,
-          'duration': duration,
-        }),
-      ).timeout(const Duration(seconds: 10));
+      await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/session/$sessionId/sync'),
+            headers: _headers,
+            body: jsonEncode({
+              'currentTime': currentTime,
+              'timeListened': timeListened,
+              'duration': duration,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
     } catch (_) {}
   }
 
@@ -495,10 +548,12 @@ class ApiService {
   /// POST /api/session/:id/close
   Future<void> closePlaybackSession(String sessionId) async {
     try {
-      await http.post(
-        Uri.parse('$_cleanBaseUrl/api/session/$sessionId/close'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/session/$sessionId/close'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
     } catch (_) {}
   }
 
@@ -511,10 +566,12 @@ class ApiService {
       final progressPath = itemId.length > 36
           ? '${itemId.substring(0, 36)}/${itemId.substring(37)}'
           : itemId;
-      final resp = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/me/progress/$progressPath'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/me/progress/$progressPath'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -542,12 +599,15 @@ class ApiService {
           : itemId;
       debugPrint('[API] updateProgress PATCH /api/me/progress/$progressPath');
       debugPrint('[API] updateProgress body: currentTime=$currentTime');
-      final resp = await http.patch(
-        Uri.parse('$_cleanBaseUrl/api/me/progress/$progressPath'),
-        headers: _headers,
-        body: body,
-      ).timeout(const Duration(seconds: 10));
-      debugPrint('[API] updateProgress response: ${resp.statusCode} ${resp.body}');
+      final resp = await http
+          .patch(
+            Uri.parse('$_cleanBaseUrl/api/me/progress/$progressPath'),
+            headers: _headers,
+            body: body,
+          )
+          .timeout(const Duration(seconds: 10));
+      debugPrint(
+          '[API] updateProgress response: ${resp.statusCode} ${resp.body}');
     } catch (e) {
       debugPrint('[API] updateProgress error: $e');
       rethrow;
@@ -565,7 +625,8 @@ class ApiService {
   }
 
   /// Mark a book as not finished (reset progress to a position).
-  Future<void> markNotFinished(String itemId, {
+  Future<void> markNotFinished(
+    String itemId, {
     required double currentTime,
     required double duration,
   }) async {
@@ -583,11 +644,14 @@ class ApiService {
       final progressPath = itemId.length > 36
           ? '${itemId.substring(0, 36)}/${itemId.substring(37)}'
           : itemId;
-      final resp = await http.delete(
-        Uri.parse('$_cleanBaseUrl/api/me/progress/$progressPath'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
-      debugPrint('[API] deleteProgress response: ${resp.statusCode} ${resp.body}');
+      final resp = await http
+          .delete(
+            Uri.parse('$_cleanBaseUrl/api/me/progress/$progressPath'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
+      debugPrint(
+          '[API] deleteProgress response: ${resp.statusCode} ${resp.body}');
       return resp.statusCode >= 200 && resp.statusCode < 300;
     } catch (e) {
       debugPrint('[API] deleteProgress error: $e');
@@ -606,33 +670,39 @@ class ApiService {
       final episodeId = isCompound ? itemId.substring(37) : null;
 
       // DELETE progress entry
-      await http.delete(
-        Uri.parse('$_cleanBaseUrl/api/me/progress/$progressPath'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      await http
+          .delete(
+            Uri.parse('$_cleanBaseUrl/api/me/progress/$progressPath'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
 
       // Start session at 0 and close — forces server to update position
-      final sessionData = await startPlaybackSession(apiItemId, episodeId: episodeId);
+      final sessionData =
+          await startPlaybackSession(apiItemId, episodeId: episodeId);
       if (sessionData != null) {
         final sessionId = sessionData['id'] as String?;
         if (sessionId != null) {
-          await syncPlaybackSession(sessionId, currentTime: 0, duration: duration);
+          await syncPlaybackSession(sessionId,
+              currentTime: 0, duration: duration);
           await closePlaybackSession(sessionId);
         }
       }
 
       // PATCH last to hide from continue listening (after session sync)
-      await http.patch(
-        Uri.parse('$_cleanBaseUrl/api/me/progress/$progressPath'),
-        headers: _headers,
-        body: jsonEncode({
-          'currentTime': 0,
-          'progress': 0,
-          'isFinished': false,
-          'hideFromContinueListening': true,
-          'lastUpdate': DateTime.now().millisecondsSinceEpoch,
-        }),
-      ).timeout(const Duration(seconds: 10));
+      await http
+          .patch(
+            Uri.parse('$_cleanBaseUrl/api/me/progress/$progressPath'),
+            headers: _headers,
+            body: jsonEncode({
+              'currentTime': 0,
+              'progress': 0,
+              'isFinished': false,
+              'hideFromContinueListening': true,
+              'lastUpdate': DateTime.now().millisecondsSinceEpoch,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
 
       return true;
     } catch (e) {
@@ -650,30 +720,34 @@ class ApiService {
     try {
       final url = '$_cleanBaseUrl/api/items/$itemId/play/$episodeId';
       debugPrint('[ABS] Starting episode session: POST $url');
-      final response = await http.post(
-        Uri.parse(url),
-        headers: _headers,
-        body: jsonEncode({
-          'deviceInfo': {
-            'clientName': 'Absorb',
-            'clientVersion': appVersion,
-            'deviceId': deviceId,
-            'deviceName': '${deviceManufacturer.isNotEmpty ? "$deviceManufacturer " : ""}$deviceModel'.trim(),
-            'manufacturer': deviceManufacturer,
-            'model': deviceModel,
-          },
-          'forceDirectPlay': true,
-          'forceTranscode': false,
-          'mediaPlayer': 'unknown',
-          'supportedMimeTypes': [
-            'audio/flac',
-            'audio/mpeg',
-            'audio/mp4',
-            'audio/ogg',
-            'audio/aac',
-          ],
-        }),
-      ).timeout(const Duration(seconds: 20));
+      final response = await http
+          .post(
+            Uri.parse(url),
+            headers: _headers,
+            body: jsonEncode({
+              'deviceInfo': {
+                'clientName': 'Absorb',
+                'clientVersion': appVersion,
+                'deviceId': deviceId,
+                'deviceName':
+                    '${deviceManufacturer.isNotEmpty ? "$deviceManufacturer " : ""}$deviceModel'
+                        .trim(),
+                'manufacturer': deviceManufacturer,
+                'model': deviceModel,
+              },
+              'forceDirectPlay': true,
+              'forceTranscode': false,
+              'mediaPlayer': 'unknown',
+              'supportedMimeTypes': [
+                'audio/flac',
+                'audio/mpeg',
+                'audio/mp4',
+                'audio/ogg',
+                'audio/aac',
+              ],
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
 
       debugPrint('[ABS] Episode session response: ${response.statusCode}');
       if (response.statusCode == 200) {
@@ -692,10 +766,12 @@ class ApiService {
   Future<Map<String, dynamic>?> getEpisodeProgress(
       String itemId, String episodeId) async {
     try {
-      final resp = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/me/progress/$itemId/$episodeId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/me/progress/$itemId/$episodeId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -713,16 +789,18 @@ class ApiService {
     bool isFinished = false,
   }) async {
     try {
-      await http.patch(
-        Uri.parse('$_cleanBaseUrl/api/me/progress/$itemId/$episodeId'),
-        headers: _headers,
-        body: jsonEncode({
-          'currentTime': currentTime,
-          'duration': duration,
-          'progress': duration > 0 ? currentTime / duration : 0,
-          'isFinished': isFinished,
-        }),
-      ).timeout(const Duration(seconds: 10));
+      await http
+          .patch(
+            Uri.parse('$_cleanBaseUrl/api/me/progress/$itemId/$episodeId'),
+            headers: _headers,
+            body: jsonEncode({
+              'currentTime': currentTime,
+              'duration': duration,
+              'progress': duration > 0 ? currentTime / duration : 0,
+              'isFinished': isFinished,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
     } catch (e) {
       debugPrint('[API] updateEpisodeProgress error: $e');
     }
@@ -731,10 +809,12 @@ class ApiService {
   /// DELETE /api/me/progress/:itemId/:episodeId
   Future<bool> deleteEpisodeProgress(String itemId, String episodeId) async {
     try {
-      final resp = await http.delete(
-        Uri.parse('$_cleanBaseUrl/api/me/progress/$itemId/$episodeId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .delete(
+            Uri.parse('$_cleanBaseUrl/api/me/progress/$itemId/$episodeId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       return resp.statusCode >= 200 && resp.statusCode < 300;
     } catch (e) {
       debugPrint('[API] deleteEpisodeProgress error: $e');
@@ -744,15 +824,20 @@ class ApiService {
 
   /// Get recent podcast episodes for a library.
   /// GET /api/libraries/:id/recent-episodes
-  Future<List<dynamic>> getRecentEpisodes(String libraryId, {int limit = 25}) async {
+  Future<List<dynamic>> getRecentEpisodes(String libraryId,
+      {int limit = 25}) async {
     try {
-      final resp = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/recent-episodes?limit=$limit'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final resp = await http
+          .get(
+            Uri.parse(
+                '$_cleanBaseUrl/api/libraries/$libraryId/recent-episodes?limit=$limit'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
-        if (data is Map && data['episodes'] is List) return data['episodes'] as List<dynamic>;
+        if (data is Map && data['episodes'] is List)
+          return data['episodes'] as List<dynamic>;
         if (data is List) return data;
       }
     } catch (e) {
@@ -764,10 +849,13 @@ class ApiService {
   /// Get a single library item with full detail (expanded=1 gives chapters, tracks, etc.)
   Future<Map<String, dynamic>?> getLibraryItem(String itemId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/items/$itemId?expanded=1&include=progress'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(
+                '$_cleanBaseUrl/api/items/$itemId?expanded=1&include=progress'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -779,30 +867,37 @@ class ApiService {
   }
 
   /// Get a single series with its books.
-  Future<Map<String, dynamic>?> getSeries(String seriesId, {String? libraryId}) async {
+  Future<Map<String, dynamic>?> getSeries(String seriesId,
+      {String? libraryId}) async {
     try {
       Map<String, dynamic>? seriesMeta;
-      
+
       // Get series metadata
       if (libraryId != null) {
-        final metaResp = await http.get(
-          Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/series/$seriesId'),
-          headers: _headers,
-        ).timeout(const Duration(seconds: 15));
+        final metaResp = await http
+            .get(
+              Uri.parse(
+                  '$_cleanBaseUrl/api/libraries/$libraryId/series/$seriesId'),
+              headers: _headers,
+            )
+            .timeout(const Duration(seconds: 15));
         if (metaResp.statusCode == 200) {
           seriesMeta = jsonDecode(metaResp.body) as Map<String, dynamic>;
         }
       }
-      
+
       // Get books in the series via library items filter
       // ABS filter format: series.<base64(seriesId)>
       if (libraryId != null) {
         final filterValue = base64Encode(utf8.encode(seriesId));
-        final url = '$_cleanBaseUrl/api/libraries/$libraryId/items?filter=series.$filterValue&sort=media.metadata.series.sequence&limit=100&collapseseries=0';
-        final itemsResp = await http.get(
-          Uri.parse(url),
-          headers: _headers,
-        ).timeout(const Duration(seconds: 15));
+        final url =
+            '$_cleanBaseUrl/api/libraries/$libraryId/items?filter=series.$filterValue&sort=media.metadata.series.sequence&limit=100&collapseseries=0';
+        final itemsResp = await http
+            .get(
+              Uri.parse(url),
+              headers: _headers,
+            )
+            .timeout(const Duration(seconds: 15));
         if (itemsResp.statusCode == 200) {
           final data = jsonDecode(itemsResp.body) as Map<String, dynamic>;
           final results = data['results'] as List<dynamic>? ?? [];
@@ -814,6 +909,7 @@ class ApiService {
         }
       }
     } catch (_) {
+      return null;
     }
     return null;
   }
@@ -826,12 +922,14 @@ class ApiService {
   }) async {
     try {
       final encoded = Uri.encodeQueryComponent(query);
-      final response = await http.get(
-        Uri.parse(
-          '$_cleanBaseUrl/api/libraries/$libraryId/search?q=$encoded&limit=$limit',
-        ),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(
+              '$_cleanBaseUrl/api/libraries/$libraryId/search?q=$encoded&limit=$limit',
+            ),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -862,12 +960,15 @@ class ApiService {
       final uri = Uri.parse('$_cleanBaseUrl/api/search/books')
           .replace(queryParameters: params);
       debugPrint('[API] searchBooks: $uri');
-      final response = await http.get(
-        uri,
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            uri,
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
 
-      debugPrint('[API] searchBooks status=${response.statusCode} bodyLen=${response.body.length}');
+      debugPrint(
+          '[API] searchBooks status=${response.statusCode} bodyLen=${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -880,7 +981,8 @@ class ApiService {
 
         // Some providers may return a Map with results nested under a key
         if (data is Map<String, dynamic>) {
-          debugPrint('[API] searchBooks: got Map with keys: ${data.keys.join(', ')}');
+          debugPrint(
+              '[API] searchBooks: got Map with keys: ${data.keys.join(', ')}');
           // Try common nesting patterns
           for (final key in ['results', 'items', 'books', 'matches']) {
             final nested = data[key];
@@ -894,7 +996,8 @@ class ApiService {
           }
         }
 
-        debugPrint('[API] searchBooks: unexpected response type: ${data.runtimeType}');
+        debugPrint(
+            '[API] searchBooks: unexpected response type: ${data.runtimeType}');
       }
     } catch (e) {
       debugPrint('[API] searchBooks error: $e');
@@ -906,9 +1009,12 @@ class ApiService {
   /// Returns { rating, asin } or null.
   static Future<Map<String, dynamic>?> getAudibleRating(String asin) async {
     try {
-      final response = await http.get(
-        Uri.parse('https://api.audnex.us/books/$asin?region=$_region&update=1'),
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(
+            Uri.parse(
+                'https://api.audnex.us/books/$asin?region=$_region&update=1'),
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -933,14 +1039,16 @@ class ApiService {
       String title, String? author) async {
     try {
       // Use the ABS server's search endpoint to query Audible for the book.
-      final response = await http.get(
-        Uri.parse(
-          '$_cleanBaseUrl/api/search/covers?title=${Uri.encodeQueryComponent(title)}'
-          '&author=${Uri.encodeQueryComponent(author ?? '')}'
-          '&provider=audible&region=$_region',
-        ),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(
+              '$_cleanBaseUrl/api/search/covers?title=${Uri.encodeQueryComponent(title)}'
+              '&author=${Uri.encodeQueryComponent(author ?? '')}'
+              '&provider=audible&region=$_region',
+            ),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final results = jsonDecode(response.body) as List<dynamic>? ?? [];
@@ -965,7 +1073,8 @@ class ApiService {
   /// Get all users (admin only)
   Future<List<dynamic>> getUsers() async {
     try {
-      final r = await http.get(Uri.parse('$_cleanBaseUrl/api/users'), headers: _headers)
+      final r = await http
+          .get(Uri.parse('$_cleanBaseUrl/api/users'), headers: _headers)
           .timeout(const Duration(seconds: 15));
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
@@ -979,106 +1088,139 @@ class ApiService {
           }
         }
       }
-    } catch (e) { debugPrint('getUsers error: $e'); }
+    } catch (e) {
+      debugPrint('getUsers error: $e');
+    }
     return [];
   }
 
   /// Get online users (admin only)
   Future<List<dynamic>> getOnlineUsers() async {
     try {
-      final r = await http.get(Uri.parse('$_cleanBaseUrl/api/users/online'), headers: _headers)
+      final r = await http
+          .get(Uri.parse('$_cleanBaseUrl/api/users/online'), headers: _headers)
           .timeout(const Duration(seconds: 15));
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
-        if (data is Map && data['usersOnline'] is List) return data['usersOnline'] as List<dynamic>;
-        if (data is Map && data['openSessions'] is List) return data['openSessions'] as List<dynamic>;
+        if (data is Map && data['usersOnline'] is List)
+          return data['usersOnline'] as List<dynamic>;
+        if (data is Map && data['openSessions'] is List)
+          return data['openSessions'] as List<dynamic>;
         if (data is List) return data;
       }
-    } catch (e) { debugPrint('getOnlineUsers error: $e'); }
+    } catch (e) {
+      debugPrint('getOnlineUsers error: $e');
+    }
     return [];
   }
 
   /// Get all listening sessions (admin only)
   Future<List<dynamic>> getAllSessions({int limit = 25}) async {
     try {
-      final r = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/sessions?itemsPerPage=$limit'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final r = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/sessions?itemsPerPage=$limit'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
         return (data['sessions'] as List<dynamic>?) ?? [];
       }
-    } catch (e) { debugPrint('getAllSessions error: $e'); }
+    } catch (e) {
+      debugPrint('getAllSessions error: $e');
+    }
     return [];
   }
 
   /// Get all backups (admin only)
   Future<List<dynamic>> getBackups() async {
     try {
-      final r = await http.get(Uri.parse('$_cleanBaseUrl/api/backups'), headers: _headers)
+      final r = await http
+          .get(Uri.parse('$_cleanBaseUrl/api/backups'), headers: _headers)
           .timeout(const Duration(seconds: 15));
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
         return (data['backups'] as List<dynamic>?) ?? [];
       }
-    } catch (e) { debugPrint('getBackups error: $e'); }
+    } catch (e) {
+      debugPrint('getBackups error: $e');
+    }
     return [];
   }
 
   /// Create a backup (admin only)
   Future<bool> createBackup() async {
     try {
-      final r = await http.post(Uri.parse('$_cleanBaseUrl/api/backups'), headers: _headers)
+      final r = await http
+          .post(Uri.parse('$_cleanBaseUrl/api/backups'), headers: _headers)
           .timeout(const Duration(seconds: 60));
       return r.statusCode == 200;
-    } catch (e) { debugPrint('createBackup error: $e'); }
+    } catch (e) {
+      debugPrint('createBackup error: $e');
+    }
     return false;
   }
 
   /// Scan a library's folders (admin only)
   Future<bool> scanLibrary(String libraryId) async {
     try {
-      final r = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/scan'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 30));
+      final r = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/scan'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 30));
       return r.statusCode == 200;
-    } catch (e) { debugPrint('scanLibrary error: $e'); }
+    } catch (e) {
+      debugPrint('scanLibrary error: $e');
+    }
     return false;
   }
 
   /// Match all items in a library (admin only)
   Future<bool> matchLibrary(String libraryId) async {
     try {
-      final r = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/match'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 30));
+      final r = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/match'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 30));
       return r.statusCode == 200;
-    } catch (e) { debugPrint('matchLibrary error: $e'); }
+    } catch (e) {
+      debugPrint('matchLibrary error: $e');
+    }
     return false;
   }
 
   /// Get library stats (admin only)
   Future<Map<String, dynamic>?> getLibraryStats(String libraryId) async {
     try {
-      final r = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/stats'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
-      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (e) { debugPrint('getLibraryStats error: $e'); }
+      final r = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/stats'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
+      if (r.statusCode == 200)
+        return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('getLibraryStats error: $e');
+    }
     return null;
   }
 
   /// Purge server cache (admin only)
   Future<bool> purgeCache() async {
     try {
-      final r = await http.post(Uri.parse('$_cleanBaseUrl/api/cache/purge'), headers: _headers)
+      final r = await http
+          .post(Uri.parse('$_cleanBaseUrl/api/cache/purge'), headers: _headers)
           .timeout(const Duration(seconds: 30));
       return r.statusCode == 200;
-    } catch (e) { debugPrint('purgeCache error: $e'); }
+    } catch (e) {
+      debugPrint('purgeCache error: $e');
+    }
     return false;
   }
 
@@ -1097,80 +1239,109 @@ class ApiService {
         'type': type,
       };
       if (permissions != null) body['permissions'] = permissions;
-      if (librariesAccessible != null) body['librariesAccessible'] = librariesAccessible;
-      final r = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/users'),
-        headers: _headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 15));
-      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (e) { debugPrint('createUser error: $e'); }
+      if (librariesAccessible != null)
+        body['librariesAccessible'] = librariesAccessible;
+      final r = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/users'),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 15));
+      if (r.statusCode == 200)
+        return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('createUser error: $e');
+    }
     return null;
   }
 
   /// Get a single user with full details including mediaProgress (admin only)
   Future<Map<String, dynamic>?> getUser(String userId) async {
     try {
-      final r = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/users/$userId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
-      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (e) { debugPrint('getUser error: $e'); }
+      final r = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/users/$userId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
+      if (r.statusCode == 200)
+        return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('getUser error: $e');
+    }
     return null;
   }
 
   /// Update a user (admin only)
   Future<bool> updateUser(String userId, Map<String, dynamic> updates) async {
     try {
-      final r = await http.patch(
-        Uri.parse('$_cleanBaseUrl/api/users/$userId'),
-        headers: _headers,
-        body: jsonEncode(updates),
-      ).timeout(const Duration(seconds: 15));
+      final r = await http
+          .patch(
+            Uri.parse('$_cleanBaseUrl/api/users/$userId'),
+            headers: _headers,
+            body: jsonEncode(updates),
+          )
+          .timeout(const Duration(seconds: 15));
       return r.statusCode == 200;
-    } catch (e) { debugPrint('updateUser error: $e'); }
+    } catch (e) {
+      debugPrint('updateUser error: $e');
+    }
     return false;
   }
 
   /// Delete a user (admin only)
   Future<bool> deleteUser(String userId) async {
     try {
-      final r = await http.delete(
-        Uri.parse('$_cleanBaseUrl/api/users/$userId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final r = await http
+          .delete(
+            Uri.parse('$_cleanBaseUrl/api/users/$userId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
       return r.statusCode == 200;
-    } catch (e) { debugPrint('deleteUser error: $e'); }
+    } catch (e) {
+      debugPrint('deleteUser error: $e');
+    }
     return false;
   }
 
   /// Update a library item's media metadata (admin/root only).
   /// Uses POST /api/items/:id/match which requires update permission.
-  Future<bool> updateItemMedia(String itemId, Map<String, dynamic> media) async {
+  Future<bool> updateItemMedia(
+      String itemId, Map<String, dynamic> media) async {
     try {
-      final r = await http.patch(
-        Uri.parse('$_cleanBaseUrl/api/items/$itemId/media'),
-        headers: _headers,
-        body: jsonEncode({'metadata': media}),
-      ).timeout(const Duration(seconds: 15));
+      final r = await http
+          .patch(
+            Uri.parse('$_cleanBaseUrl/api/items/$itemId/media'),
+            headers: _headers,
+            body: jsonEncode({'metadata': media}),
+          )
+          .timeout(const Duration(seconds: 15));
       debugPrint('[API] updateItemMedia $itemId -> ${r.statusCode}: ${r.body}');
       return r.statusCode == 200;
-    } catch (e) { debugPrint('updateItemMedia error: $e'); }
+    } catch (e) {
+      debugPrint('updateItemMedia error: $e');
+    }
     return false;
   }
 
   /// Upload a cover image URL for a library item (admin only)
   Future<bool> updateItemCoverUrl(String itemId, String url) async {
     try {
-      final r = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/items/$itemId/cover'),
-        headers: _headers,
-        body: jsonEncode({'url': url}),
-      ).timeout(const Duration(seconds: 30));
-      debugPrint('[API] updateItemCoverUrl $itemId -> ${r.statusCode}: ${r.body}');
+      final r = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/items/$itemId/cover'),
+            headers: _headers,
+            body: jsonEncode({'url': url}),
+          )
+          .timeout(const Duration(seconds: 30));
+      debugPrint(
+          '[API] updateItemCoverUrl $itemId -> ${r.statusCode}: ${r.body}');
       return r.statusCode == 200;
-    } catch (e) { debugPrint('updateItemCoverUrl error: $e'); }
+    } catch (e) {
+      debugPrint('updateItemCoverUrl error: $e');
+    }
     return false;
   }
 
@@ -1185,7 +1356,9 @@ class ApiService {
       req.files.add(await http.MultipartFile.fromPath('cover', filePath));
       final res = await req.send().timeout(const Duration(seconds: 60));
       return res.statusCode == 200;
-    } catch (e) { debugPrint('uploadItemCover error: $e'); }
+    } catch (e) {
+      debugPrint('uploadItemCover error: $e');
+    }
     return false;
   }
 
@@ -1194,21 +1367,27 @@ class ApiService {
   /// Search for podcasts (uses iTunes)
   Future<List<dynamic>> searchPodcasts(String query) async {
     try {
-      final r = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/search/podcast?term=${Uri.encodeComponent(query)}'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final r = await http
+          .get(
+            Uri.parse(
+                '$_cleanBaseUrl/api/search/podcast?term=${Uri.encodeComponent(query)}'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
         if (data is List) return data;
         if (data is Map) {
-          if (data['podcasts'] is List) return data['podcasts'] as List<dynamic>;
+          if (data['podcasts'] is List)
+            return data['podcasts'] as List<dynamic>;
           for (final key in data.keys) {
             if (data[key] is List) return data[key] as List<dynamic>;
           }
         }
       }
-    } catch (e) { debugPrint('searchPodcasts error: $e'); }
+    } catch (e) {
+      debugPrint('searchPodcasts error: $e');
+    }
     return [];
   }
 
@@ -1231,10 +1410,12 @@ class ApiService {
       String podcastPath = '';
       try {
         final libs = await getLibraries();
-        final lib = libs.firstWhere((l) => l['id'] == libraryId, orElse: () => <String, dynamic>{});
+        final lib = libs.firstWhere((l) => l['id'] == libraryId,
+            orElse: () => <String, dynamic>{});
         final folders = lib['folders'] as List?;
         if (folders != null && folders.isNotEmpty) {
-          final folder = folders.firstWhere((f) => f['id'] == folderId, orElse: () => folders.first);
+          final folder = folders.firstWhere((f) => f['id'] == folderId,
+              orElse: () => folders.first);
           final folderPath = folder['fullPath'] as String? ?? '';
           if (folderPath.isNotEmpty) {
             final cleanTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
@@ -1251,7 +1432,9 @@ class ApiService {
           'metadata': {
             'title': title,
             'author': podcastData['artistName'] ?? '',
-            'description': podcastData['description'] ?? podcastData['descriptionPlain'] ?? '',
+            'description': podcastData['description'] ??
+                podcastData['descriptionPlain'] ??
+                '',
             'releaseDate': podcastData['releaseDate'] ?? '',
             'genres': podcastData['genres'] ?? [],
             'feedUrl': feedUrl,
@@ -1267,13 +1450,18 @@ class ApiService {
         },
       };
       final bodyJson = jsonEncode(body);
-      final r = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/podcasts'),
-        headers: _headers,
-        body: bodyJson,
-      ).timeout(const Duration(seconds: 30));
-      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (e) { debugPrint('createPodcast error: $e'); }
+      final r = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/podcasts'),
+            headers: _headers,
+            body: bodyJson,
+          )
+          .timeout(const Duration(seconds: 30));
+      if (r.statusCode == 200)
+        return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('createPodcast error: $e');
+    }
     return null;
   }
 
@@ -1281,40 +1469,57 @@ class ApiService {
   /// POST /api/podcasts/feed  body: { "rssFeed": "https://..." }
   Future<Map<String, dynamic>?> getPodcastFeed(String rssFeedUrl) async {
     try {
-      final r = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/podcasts/feed'),
-        headers: _headers,
-        body: jsonEncode({'rssFeed': rssFeedUrl}),
-      ).timeout(const Duration(seconds: 20));
+      final r = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/podcasts/feed'),
+            headers: _headers,
+            body: jsonEncode({'rssFeed': rssFeedUrl}),
+          )
+          .timeout(const Duration(seconds: 20));
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
         if (data is Map<String, dynamic>) return data;
       }
-    } catch (e) { debugPrint('getPodcastFeed error: $e'); }
+    } catch (e) {
+      debugPrint('getPodcastFeed error: $e');
+    }
     return null;
   }
 
   /// Get podcast episode download queue for a library
   Future<Map<String, dynamic>?> getEpisodeDownloads(String libraryId) async {
     try {
-      final r = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/episode-downloads'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
-      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (e) { debugPrint('getEpisodeDownloads error: $e'); }
+      final r = await http
+          .get(
+            Uri.parse(
+                '$_cleanBaseUrl/api/libraries/$libraryId/episode-downloads'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
+      if (r.statusCode == 200)
+        return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('getEpisodeDownloads error: $e');
+    }
     return null;
   }
 
   /// Download specific podcast episodes
-  Future<bool> downloadPodcastEpisodes(String libraryItemId, List<Map<String, dynamic>> episodes) async {
+  Future<bool> downloadPodcastEpisodes(
+      String libraryItemId, List<Map<String, dynamic>> episodes) async {
     try {
-      final r = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/podcasts/$libraryItemId/download-episodes'),
-        headers: _headers,        body: jsonEncode(episodes),
-      ).timeout(const Duration(seconds: 30));
+      final r = await http
+          .post(
+            Uri.parse(
+                '$_cleanBaseUrl/api/podcasts/$libraryItemId/download-episodes'),
+            headers: _headers,
+            body: jsonEncode(episodes),
+          )
+          .timeout(const Duration(seconds: 30));
       return r.statusCode == 200;
-    } catch (e) { debugPrint('downloadPodcastEpisodes error: $e'); }
+    } catch (e) {
+      debugPrint('downloadPodcastEpisodes error: $e');
+    }
     return false;
   }
 
@@ -1334,15 +1539,19 @@ class ApiService {
         final id = libItem is Map ? libItem['id'] as String? : null;
         if (id == null) continue;
         try {
-          final r = await http.get(
-            Uri.parse('$_cleanBaseUrl/api/podcasts/$id/checknew'),
-            headers: _headers,
-          ).timeout(const Duration(seconds: 10));
+          final r = await http
+              .get(
+                Uri.parse('$_cleanBaseUrl/api/podcasts/$id/checknew'),
+                headers: _headers,
+              )
+              .timeout(const Duration(seconds: 10));
           if (r.statusCode == 200) success++;
         } catch (_) {}
       }
       return success > 0;
-    } catch (e) { debugPrint('checkNewEpisodes error: $e'); }
+    } catch (e) {
+      debugPrint('checkNewEpisodes error: $e');
+    }
     return false;
   }
 
@@ -1350,50 +1559,68 @@ class ApiService {
   /// GET /api/podcasts/:id/checknew
   Future<bool> checkNewPodcastEpisodes(String podcastId) async {
     try {
-      final r = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/podcasts/$podcastId/checknew'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final r = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/podcasts/$podcastId/checknew'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
       return r.statusCode == 200;
-    } catch (e) { debugPrint('checkNewPodcastEpisodes error: $e'); }
+    } catch (e) {
+      debugPrint('checkNewPodcastEpisodes error: $e');
+    }
     return false;
   }
 
   /// Update podcast media settings (auto-download, etc.)
   /// PATCH /api/items/:id/media  body: mediaUpdates at the media level
-  Future<bool> updatePodcastMedia(String itemId, Map<String, dynamic> mediaUpdates) async {
+  Future<bool> updatePodcastMedia(
+      String itemId, Map<String, dynamic> mediaUpdates) async {
     try {
-      final r = await http.patch(
-        Uri.parse('$_cleanBaseUrl/api/items/$itemId/media'),
-        headers: _headers,
-        body: jsonEncode(mediaUpdates),
-      ).timeout(const Duration(seconds: 15));
+      final r = await http
+          .patch(
+            Uri.parse('$_cleanBaseUrl/api/items/$itemId/media'),
+            headers: _headers,
+            body: jsonEncode(mediaUpdates),
+          )
+          .timeout(const Duration(seconds: 15));
       return r.statusCode == 200;
-    } catch (e) { debugPrint('updatePodcastMedia error: $e'); }
+    } catch (e) {
+      debugPrint('updatePodcastMedia error: $e');
+    }
     return false;
   }
 
   /// Delete a podcast episode
   Future<bool> deletePodcastEpisode(String podcastId, String episodeId) async {
     try {
-      final r = await http.delete(
-        Uri.parse('$_cleanBaseUrl/api/podcasts/$podcastId/episode/$episodeId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final r = await http
+          .delete(
+            Uri.parse(
+                '$_cleanBaseUrl/api/podcasts/$podcastId/episode/$episodeId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
       return r.statusCode == 200;
-    } catch (e) { debugPrint('deletePodcastEpisode error: $e'); }
+    } catch (e) {
+      debugPrint('deletePodcastEpisode error: $e');
+    }
     return false;
   }
 
   /// Delete a library item (e.g. remove a podcast show)
   Future<bool> deleteLibraryItem(String itemId) async {
     try {
-      final r = await http.delete(
-        Uri.parse('$_cleanBaseUrl/api/items/$itemId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final r = await http
+          .delete(
+            Uri.parse('$_cleanBaseUrl/api/items/$itemId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
       return r.statusCode == 200;
-    } catch (e) { debugPrint('deleteLibraryItem error: $e'); }
+    } catch (e) {
+      debugPrint('deleteLibraryItem error: $e');
+    }
     return false;
   }
 
@@ -1402,10 +1629,12 @@ class ApiService {
   /// GET /api/libraries/:libraryId/playlists
   Future<List<dynamic>> getLibraryPlaylists(String libraryId) async {
     try {
-      final resp = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/playlists'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final resp = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/playlists'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
         return (data['results'] as List<dynamic>?) ?? [];
@@ -1417,10 +1646,12 @@ class ApiService {
   /// GET /api/playlists/:id
   Future<Map<String, dynamic>?> getPlaylist(String playlistId) async {
     try {
-      final resp = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1435,15 +1666,17 @@ class ApiService {
     List<Map<String, dynamic>> items = const [],
   }) async {
     try {
-      final resp = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/playlists'),
-        headers: _headers,
-        body: jsonEncode({
-          'libraryId': libraryId,
-          'name': name,
-          'items': items,
-        }),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/playlists'),
+            headers: _headers,
+            body: jsonEncode({
+              'libraryId': libraryId,
+              'name': name,
+              'items': items,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1461,11 +1694,13 @@ class ApiService {
       final body = <String, dynamic>{};
       if (name != null) body['name'] = name;
       if (items != null) body['items'] = items;
-      final resp = await http.patch(
-        Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId'),
-        headers: _headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .patch(
+            Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId'),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1476,10 +1711,12 @@ class ApiService {
   /// DELETE /api/playlists/:id
   Future<bool> deletePlaylist(String playlistId) async {
     try {
-      final resp = await http.delete(
-        Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .delete(
+            Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       return resp.statusCode == 200;
     } catch (_) {}
     return false;
@@ -1494,11 +1731,13 @@ class ApiService {
     try {
       final body = <String, dynamic>{'libraryItemId': libraryItemId};
       if (episodeId != null) body['episodeId'] = episodeId;
-      final resp = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId/item'),
-        headers: _headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId/item'),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1515,10 +1754,12 @@ class ApiService {
     try {
       var path = '$_cleanBaseUrl/api/playlists/$playlistId/item/$libraryItemId';
       if (episodeId != null) path += '/$episodeId';
-      final resp = await http.delete(
-        Uri.parse(path),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .delete(
+            Uri.parse(path),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1531,10 +1772,12 @@ class ApiService {
   /// GET /api/libraries/:libraryId/collections
   Future<List<dynamic>> getLibraryCollections(String libraryId) async {
     try {
-      final resp = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/collections'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final resp = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/collections'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
         return (data['results'] as List<dynamic>?) ?? [];
@@ -1546,10 +1789,12 @@ class ApiService {
   /// GET /api/collections/:id
   Future<Map<String, dynamic>?> getCollection(String collectionId) async {
     try {
-      final resp = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/collections/$collectionId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/collections/$collectionId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1571,11 +1816,13 @@ class ApiService {
         'books': books,
       };
       if (description != null) body['description'] = description;
-      final resp = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/collections'),
-        headers: _headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/collections'),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1595,11 +1842,13 @@ class ApiService {
       if (name != null) body['name'] = name;
       if (description != null) body['description'] = description;
       if (books != null) body['books'] = books;
-      final resp = await http.patch(
-        Uri.parse('$_cleanBaseUrl/api/collections/$collectionId'),
-        headers: _headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .patch(
+            Uri.parse('$_cleanBaseUrl/api/collections/$collectionId'),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1610,10 +1859,12 @@ class ApiService {
   /// DELETE /api/collections/:id
   Future<bool> deleteCollection(String collectionId) async {
     try {
-      final resp = await http.delete(
-        Uri.parse('$_cleanBaseUrl/api/collections/$collectionId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .delete(
+            Uri.parse('$_cleanBaseUrl/api/collections/$collectionId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       return resp.statusCode == 200;
     } catch (_) {}
     return false;
@@ -1625,11 +1876,13 @@ class ApiService {
     String libraryItemId,
   ) async {
     try {
-      final resp = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/collections/$collectionId/book'),
-        headers: _headers,
-        body: jsonEncode({'id': libraryItemId}),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/collections/$collectionId/book'),
+            headers: _headers,
+            body: jsonEncode({'id': libraryItemId}),
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1643,10 +1896,13 @@ class ApiService {
     String libraryItemId,
   ) async {
     try {
-      final resp = await http.delete(
-        Uri.parse('$_cleanBaseUrl/api/collections/$collectionId/book/$libraryItemId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .delete(
+            Uri.parse(
+                '$_cleanBaseUrl/api/collections/$collectionId/book/$libraryItemId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
