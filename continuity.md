@@ -77,6 +77,28 @@
   - First paint uses lighter payload.
   - RSS data is still available when needed, but not on every foreground refresh.
 
+## 3-hour server log investigation (2026-03-02)
+
+- From `.108` docker logs, long loads still occur intermittently on personalized rebuild windows:
+  - `Loaded 7 personalized shelves in 14.27s`, `15.35s`, `23.51s`, `13.17s`
+  - `Discover` often dominates (9-13s in slow windows)
+- Pattern observed:
+  - Slow runs are cache misses on `/personalized?...include=numEpisodesIncomplete`
+  - These often appear in duplicate bursts (two close misses) indicating multiple callers.
+- Additional client fix applied:
+  - `lib/services/android_auto_service.dart` now requests only targeted personalized shelves for Android Auto:
+    - `shelves=continue-listening,continue-series`
+    - `include=numEpisodesIncomplete`
+    - `limit=10`
+  - This avoids Android Auto accidentally triggering expensive full-home shelf recomputation.
+
+## Startup/inactivity latency follow-up (2026-03-02)
+
+- User report: after long inactivity, opening app on Absorbing can feel slow before player/absorbing state is ready.
+- Additional reduction applied:
+  - `lib/main.dart`: Android Auto pre-population refresh is now backgrounded (`Future.microtask`) instead of running inline in startup init sequence.
+  - This prevents startup flow from waiting on Android Auto server work.
+
 ## Build status (2026-03-01)
 
 - `flutter analyze lib/widgets/series_books_sheet.dart`: passed.
