@@ -219,6 +219,7 @@
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.9` (download stall fixes)
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.10` (targeted tab refresh for latency)
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.11` (personalized include tuning + API cleanup)
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.22-homelab.20260301.12` (absorbing-first startup responsiveness)
 
 ## Side-by-side install changes
 
