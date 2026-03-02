@@ -14,7 +14,7 @@ import java.io.File
  *
  * Android Auto cannot load file:// URIs directly — it requires content:// URIs.
  * This provider maps:
- *   content://com.barnabas.absorb.covers/cover/<itemId>
+ *   content://com.barnabas.absorb.homelab.covers/cover/<itemId>
  * to the cover.jpg file in the item's download directory.
  *
  * Place this file at:
@@ -24,14 +24,14 @@ import java.io.File
  *
  *   <provider
  *       android:name=".CoverContentProvider"
- *       android:authorities="com.barnabas.absorb.covers"
+ *       android:authorities="${applicationId}.covers"
  *       android:exported="true"
  *       android:grantUriPermissions="true" />
  */
 class CoverContentProvider : ContentProvider() {
 
     companion object {
-        const val AUTHORITY = "com.barnabas.absorb.covers"
+        const val AUTHORITY = "com.barnabas.absorb.homelab.covers"
 
         fun buildCoverUri(itemId: String): Uri {
             return Uri.parse("content://$AUTHORITY/cover/$itemId")
