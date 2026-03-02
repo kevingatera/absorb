@@ -88,7 +88,7 @@ class LibraryProvider extends ChangeNotifier {
         // Going back online — flush pending syncs and refresh
         if (_api != null) {
           debugPrint('[Library] Manual offline off — flushing pending syncs');
-          ProgressSyncService().flushPendingSync(api: _api!);
+          ProgressSyncService().flushPendingSync(api: _api!, maxItems: 3);
         }
         if (_selectedLibraryId == null) {
           loadLibraries();
@@ -145,7 +145,7 @@ class LibraryProvider extends ChangeNotifier {
       _stopServerPingTimer();
       if (_api != null) {
         debugPrint('[Library] Back online — flushing pending syncs');
-        ProgressSyncService().flushPendingSync(api: _api!);
+        ProgressSyncService().flushPendingSync(api: _api!, maxItems: 3);
       }
       if (_selectedLibraryId == null) {
         loadLibraries();
@@ -423,7 +423,7 @@ class LibraryProvider extends ChangeNotifier {
 
         _buildProgressMap(auth);
         if (_api != null && !isOffline) {
-          ProgressSyncService().flushPendingSync(api: _api!);
+          ProgressSyncService().flushPendingSync(api: _api!, maxItems: 3);
           DownloadService().enrichMetadata(_api!);
         }
         debugPrint('[Library] Calling loadLibraries()');
@@ -767,7 +767,7 @@ class LibraryProvider extends ChangeNotifier {
     }
     // Flush local progress to server first, then pull fresh data
     if (_api != null) {
-      await ProgressSyncService().flushPendingSync(api: _api!);
+      unawaited(ProgressSyncService().flushPendingSync(api: _api!, maxItems: 3));
     }
     await _refreshProgress();
     await loadPersonalizedView(force: true);
@@ -798,7 +798,7 @@ class LibraryProvider extends ChangeNotifier {
   /// Avoids expensive personalized shelf rebuilds.
   Future<void> refreshProgressOnly() async {
     if (isOffline || _api == null) return;
-    await ProgressSyncService().flushPendingSync(api: _api!);
+    unawaited(ProgressSyncService().flushPendingSync(api: _api!, maxItems: 3));
     await _refreshProgress();
     _localProgressOverrides.clear();
     notifyListeners();
