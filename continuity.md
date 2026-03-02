@@ -99,6 +99,19 @@
   - `lib/main.dart`: Android Auto pre-population refresh is now backgrounded (`Future.microtask`) instead of running inline in startup init sequence.
   - This prevents startup flow from waiting on Android Auto server work.
 
+## Absorbing-first startup optimization (2026-03-02)
+
+- User-observed issue: app opens on Absorbing, but startup can still feel slow after long inactivity.
+- Root cause in UI shell:
+  - `AppShell` used `IndexedStack` with all tab pages pre-built, which initialized Home/Library work even when user only opened Absorbing.
+- Fixes applied:
+  - `lib/screens/app_shell.dart`
+    - Tabs are now lazily built; only current tab is instantiated at startup.
+    - Home/Library/Stats/Settings are created on first visit.
+  - `lib/screens/absorbing_screen.dart`
+    - Loading spinner is now shown only for truly blocking startup state (no books, no active playback/cast, no sections yet).
+    - Prevents unnecessary full-screen blocking loader when player state is already available.
+
 ## Build status (2026-03-01)
 
 - `flutter analyze lib/widgets/series_books_sheet.dart`: passed.
