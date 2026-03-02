@@ -29,8 +29,12 @@ class LibraryProvider extends ChangeNotifier {
   Future<void>? _personalizedInFlight;
   DateTime? _lastPersonalizedFetchAt;
   String? _lastPersonalizedFetchLibraryId;
+  bool _rssHydrationInFlight = false;
+  DateTime? _lastRssHydrationAt;
+  String? _lastRssHydrationLibraryId;
 
   static const Duration _personalizedFetchCooldown = Duration(seconds: 5);
+  static const Duration _rssHydrationCooldown = Duration(minutes: 10);
 
   // Cache of item updatedAt timestamps for cover cache-busting
   final Map<String, int> _itemUpdatedAt = {};
@@ -376,6 +380,9 @@ class LibraryProvider extends ChangeNotifier {
         _personalizedInFlight = null;
         _lastPersonalizedFetchAt = null;
         _lastPersonalizedFetchLibraryId = null;
+        _rssHydrationInFlight = false;
+        _lastRssHydrationAt = null;
+        _lastRssHydrationLibraryId = null;
         _isLoading = true;
         notifyListeners(); // Immediately clear old user's data from UI
       }
@@ -428,6 +435,9 @@ class LibraryProvider extends ChangeNotifier {
       _personalizedInFlight = null;
       _lastPersonalizedFetchAt = null;
       _lastPersonalizedFetchLibraryId = null;
+      _rssHydrationInFlight = false;
+      _lastRssHydrationAt = null;
+      _lastRssHydrationLibraryId = null;
       notifyListeners();
     }
   }
@@ -641,9 +651,16 @@ class LibraryProvider extends ChangeNotifier {
     try {
       _lastPersonalizedFetchAt = DateTime.now();
       _lastPersonalizedFetchLibraryId = _selectedLibraryId;
-      _personalizedSections =
-          await _api!.getPersonalizedView(_selectedLibraryId!);
+      _personalizedSections = await _api!.getPersonalizedView(
+        _selectedLibraryId!,
+        include: const ['numEpisodesIncomplete'],
+      );
       await _updateAbsorbingCache();
+
+      // For podcast libraries, defer RSS-heavy fields until after first paint.
+      if (isPodcastLibrary) {
+        _hydrateRssFeedFieldsDeferred();
+      }
     } catch (e) {
       debugPrint('[Library] loadPersonalizedView error: $e');
       if (_isLikelyNetworkError(e)) {
@@ -657,6 +674,42 @@ class LibraryProvider extends ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
+  }
+
+  void _hydrateRssFeedFieldsDeferred() {
+    final api = _api;
+    final libraryId = _selectedLibraryId;
+    if (api == null || libraryId == null || isOffline) return;
+    if (_rssHydrationInFlight) return;
+
+    final now = DateTime.now();
+    if (_lastRssHydrationLibraryId == libraryId &&
+        _lastRssHydrationAt != null &&
+        now.difference(_lastRssHydrationAt!) < _rssHydrationCooldown) {
+      return;
+    }
+
+    _rssHydrationInFlight = true;
+    unawaited(() async {
+      try {
+        final sections = await api.getPersonalizedView(
+          libraryId,
+          include: const ['numEpisodesIncomplete', 'rssfeed'],
+        );
+        _lastRssHydrationAt = DateTime.now();
+        _lastRssHydrationLibraryId = libraryId;
+
+        if (_selectedLibraryId == libraryId && sections.isNotEmpty) {
+          _personalizedSections = sections;
+          await _updateAbsorbingCache();
+          notifyListeners();
+        }
+      } catch (_) {
+        // Non-critical; keep fast lightweight sections.
+      } finally {
+        _rssHydrationInFlight = false;
+      }
+    }());
   }
 
   Future<void> _refreshProgress() async {

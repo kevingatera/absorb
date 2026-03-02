@@ -64,6 +64,19 @@
   - `lib/providers/library_provider.dart`
     - Added `refreshProgressOnly()` for targeted `/me` progress sync without personalized shelf rebuild.
 
+## Personalized include tuning (2026-03-01)
+
+- Goal: avoid loading RSS feed fields on every personalized request.
+- Changes:
+  - `lib/services/api_service.dart`
+    - `getPersonalizedView` defaults `include` to `numEpisodesIncomplete` (drops `rssfeed` from default fast path).
+  - `lib/providers/library_provider.dart`
+    - Main personalized fetch now requests only `numEpisodesIncomplete` for faster baseline response.
+    - For podcast libraries, RSS feed fields are hydrated in a deferred background pass with cooldown.
+- Result:
+  - First paint uses lighter payload.
+  - RSS data is still available when needed, but not on every foreground refresh.
+
 ## Build status (2026-03-01)
 
 - `flutter analyze lib/widgets/series_books_sheet.dart`: passed.
