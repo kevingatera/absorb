@@ -1250,7 +1250,7 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Lightweight refresh for views that only need up-to-date progress.
+  /// Lightweight refresh for views that only need fresh progress state.
   /// Avoids expensive personalized shelf rebuilds.
   Future<void> refreshProgressOnly() async {
     if (isOffline || _api == null) return;
