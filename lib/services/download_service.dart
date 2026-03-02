@@ -585,7 +585,8 @@ class DownloadService extends ChangeNotifier {
 
         final request = http.Request('GET', Uri.parse(fullUrl));
         api.mediaHeaders.forEach((key, value) => request.headers[key] = value);
-        final response = await _httpClient!.send(request);
+        final response = await _httpClient!.send(request)
+            .timeout(const Duration(seconds: 30));
 
         if (response.statusCode != 200) {
           throw Exception('HTTP ${response.statusCode} for track ${i + 1}');
@@ -595,7 +596,7 @@ class DownloadService extends ChangeNotifier {
         int receivedBytes = 0;
         final sink = file.openWrite();
 
-        await for (final chunk in response.stream) {
+        await for (final chunk in response.stream.timeout(const Duration(seconds: 60))) {
           sink.add(chunk);
           receivedBytes += chunk.length;
           trackProgress[i] = totalBytes > 0 ? receivedBytes / totalBytes : 0.5;
@@ -646,15 +647,20 @@ class DownloadService extends ChangeNotifier {
         localCoverPath: localCoverPath,
       );
       await _save();
+      notifyListeners();
 
       // Show completion notification
-      await notif.showComplete(title: title);
+      try {
+        await notif.showComplete(title: title);
+      } catch (_) {}
 
       // If this book is currently streaming, hot-swap to local files
-      final player = AudioPlayerService();
-      if (player.currentItemId == itemId && player.hasBook) {
-        await player.switchToLocal(itemId);
-      }
+      try {
+        final player = AudioPlayerService();
+        if (player.currentItemId == itemId && player.hasBook) {
+          await player.switchToLocal(itemId);
+        }
+      } catch (_) {}
 
       debugPrint('[Download] Complete: $title (${completedPaths.length} files)');
     } catch (e) {
