@@ -109,6 +109,12 @@
     - non-blocking pending-sync flush calls in hot paths
     - smaller default flush batches (`maxItems: 3`)
 
+## Rebase + release (2026-03-03)
+
+- Homelab branch was rebased onto latest `upstream/main`.
+- Published release:
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.23-homelab.20260302.4`
+
 ## Absorbing-first startup optimization (2026-03-02)
 
 - User-observed issue: app opens on Absorbing, but startup can still feel slow after long inactivity.
