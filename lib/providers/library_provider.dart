@@ -844,6 +844,16 @@ class LibraryProvider extends ChangeNotifier {
   Set<String> get manualAbsorbRemoves => _manualAbsorbRemoves;
   List<String> get absorbingBookIds => _absorbingBookIds;
 
+  /// Move an existing absorbing key to the front and persist.
+  /// No-op if the key isn't in the list or is already first.
+  void moveAbsorbingToFront(String key) {
+    if (!_absorbingBookIds.contains(key)) return;
+    if (_absorbingBookIds.first == key) return;
+    _absorbingBookIds.remove(key);
+    _absorbingBookIds.insert(0, key);
+    _saveManualAbsorbing();
+  }
+
   /// Add a key to _absorbingBookIds if not already present.
   /// If [afterKey] is provided and exists, insert right after it —
   /// and reposition the key if it's already in the list elsewhere.

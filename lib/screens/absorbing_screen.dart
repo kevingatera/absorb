@@ -105,6 +105,10 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             ? (_pageController.page ?? 0).round()
             : 0;
         _suppressReorder = currentPage > 0;
+        if (!_suppressReorder) {
+          // No animation needed — persist the move-to-front immediately.
+          lib.moveAbsorbingToFront(playingKey);
+        }
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToActiveCard());
       } else if (wasPlayingId != null && !_isSyncing) {
         // Playback stopped — keep this item at the front of the list.
@@ -175,6 +179,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             .then((_) {
           if (!mounted) return;
           _suppressReorder = false;
+          // Persist the played item at front so subsequent plays
+          // maintain the correct order instead of reverting.
+          if (playingKey != null) {
+            context.read<LibraryProvider>().moveAbsorbingToFront(playingKey);
+          }
           setState(() {});
         });
       } else {
