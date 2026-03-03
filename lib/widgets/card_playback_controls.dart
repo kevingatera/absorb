@@ -109,7 +109,9 @@ class _CardPlaybackControlsState extends State<CardPlaybackControls> with Single
       _playPauseController.reverse();
     }
 
-    return Row(
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         GestureDetector(
@@ -164,7 +166,7 @@ class _CardPlaybackControlsState extends State<CardPlaybackControls> with Single
           )),
         ),
       ],
-    );
+    ));
   }
 
   /// Original local player controls
@@ -182,7 +184,9 @@ class _CardPlaybackControlsState extends State<CardPlaybackControls> with Single
           _playPauseController.reverse();
         }
 
-        return Row(
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             GestureDetector(
@@ -239,7 +243,7 @@ class _CardPlaybackControlsState extends State<CardPlaybackControls> with Single
               )),
             ),
           ],
-        );
+        ));
       },
     );
   }
