@@ -194,8 +194,8 @@ class _HomeScreenState extends State<HomeScreen> {
     'continue-series',
     'episodes-recently-added',
     'recently-added',
-    'listen-again',
     'discover',
+    'listen-again',
   ];
 
   static const _hiddenSections = {'newest-authors', 'recent-series'};
