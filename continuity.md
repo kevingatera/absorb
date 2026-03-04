@@ -115,6 +115,12 @@
 - Published release:
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.23-homelab.20260302.4`
 
+## Rebase + release follow-up (2026-03-04)
+
+- Rebases refreshed again to latest `upstream/main` updates.
+- Published release:
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.23-homelab.20260302.5`
+
 ## Absorbing-first startup optimization (2026-03-02)
 
 - User-observed issue: app opens on Absorbing, but startup can still feel slow after long inactivity.
