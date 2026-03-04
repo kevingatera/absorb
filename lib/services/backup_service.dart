@@ -39,6 +39,8 @@ class BackupService {
       'fullScreenPlayer': await PlayerSettings.getFullScreenPlayer(),
       'themeMode': await PlayerSettings.getThemeMode(),
       'cardButtonOrder': await PlayerSettings.getCardButtonOrder(),
+      'rollingDownloadCount': await PlayerSettings.getRollingDownloadCount(),
+      'rollingDownloadDeleteFinished': await PlayerSettings.getRollingDownloadDeleteFinished(),
     };
 
     // AutoRewind
@@ -96,6 +98,9 @@ class BackupService {
       }
     }
 
+    // Rolling download series (per-account, like bookmarks)
+    final rollingDownloadSeries = await ScopedPrefs.getStringList('rolling_download_series');
+
     // Accounts & custom headers (optional — contain auth data)
     List<Map<String, dynamic>>? accounts;
     Map<String, String>? customHeaders;
@@ -123,6 +128,7 @@ class BackupService {
       'bookSpeeds': bookSpeeds,
       'offlineMode': offlineMode,
       'bookmarks': bookmarks,
+      'rollingDownloadSeries': rollingDownloadSeries,
       'accounts': accounts,
       'customHeaders': customHeaders,
     };
@@ -161,6 +167,8 @@ class BackupService {
         (s['cardButtonOrder'] as List<dynamic>).cast<String>(),
       );
     }
+    if (s['rollingDownloadCount'] != null) PlayerSettings.setRollingDownloadCount(s['rollingDownloadCount'] as int);
+    if (s['rollingDownloadDeleteFinished'] != null) PlayerSettings.setRollingDownloadDeleteFinished(s['rollingDownloadDeleteFinished'] as bool);
 
     // AutoRewind
     final r = data['autoRewind'] as Map<String, dynamic>?;
@@ -219,6 +227,15 @@ class BackupService {
         final list = (entry.value as List<dynamic>).cast<String>();
         await ScopedPrefs.setStringList('bookmarks_${entry.key}', list);
       }
+    }
+
+    // Rolling download series (per-account)
+    final rollingDownloadSeries = data['rollingDownloadSeries'] as List<dynamic>?;
+    if (rollingDownloadSeries != null && rollingDownloadSeries.isNotEmpty) {
+      await ScopedPrefs.setStringList(
+        'rolling_download_series',
+        rollingDownloadSeries.cast<String>(),
+      );
     }
 
     // Accounts
