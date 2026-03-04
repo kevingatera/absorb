@@ -121,6 +121,17 @@
 - Published release:
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.23-homelab.20260302.5`
 
+## UI + stats follow-up (2026-03-04)
+
+- Finished-book primary action now shows `Absorb Again` (book card/detail flow).
+- Stats screen initial load now stages requests:
+  - render core stats first
+  - load recent sessions in background
+  - remove heavy `/api/me` dependency from stats load path.
+- Home section order updated so `Discover` appears before `Listen Again`.
+- Published release:
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.23-homelab.20260302.6`
+
 ## Absorbing-first startup optimization (2026-03-02)
 
 - User-observed issue: app opens on Absorbing, but startup can still feel slow after long inactivity.
@@ -245,6 +256,9 @@
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.23-homelab.20260302.1`
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.23-homelab.20260302.2`
   - `https://github.com/kevingatera/absorb/releases/tag/v1.7.23-homelab.20260302.3` (pending sync burst mitigation)
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.23-homelab.20260302.4`
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.23-homelab.20260302.5`
+  - `https://github.com/kevingatera/absorb/releases/tag/v1.7.23-homelab.20260302.6` (CTA + stats + home order updates)
 
 ## Side-by-side install changes
 
