@@ -37,34 +37,32 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
 
   Future<void> _loadStats() async {
     final api = context.read<AuthProvider>().apiService;
-    if (api == null) return;
-    final statsFuture = api.getListeningStats();
-    final sessionsFuture = api.getListeningSessions(itemsPerPage: 25);
-    final meFuture = api.getMe();
-    final stats = await statsFuture;
-    final sessionsData = await sessionsFuture;
-    final meData = await meFuture;
-    
-    // Count finished from mediaProgress
-    int finished = 0;
-    if (meData != null) {
-      final progress = meData['mediaProgress'] as List<dynamic>? ?? [];
-      for (final p in progress) {
-        if (p is Map<String, dynamic> && p['isFinished'] == true) {
-          finished++;
-        }
-      }
+    final lib = context.read<LibraryProvider>();
+    if (api == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
     }
+
+    // Phase 1: load core stats quickly so page can render fast.
+    final stats = await api.getListeningStats();
+    final finished = lib.finishedCount;
 
     if (mounted) {
       setState(() {
         _stats = stats;
-        _sessions = sessionsData?['sessions'] as List<dynamic>? ?? [];
         _booksFinished = finished;
         _isLoading = false;
       });
       _animController.reset();
       _animController.forward();
+    }
+
+    // Phase 2: load heavier sessions list in background.
+    final sessionsData = await api.getListeningSessions(itemsPerPage: 15);
+    if (mounted) {
+      setState(() {
+        _sessions = sessionsData?['sessions'] as List<dynamic>? ?? [];
+      });
     }
   }
 
