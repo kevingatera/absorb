@@ -1,12 +1,13 @@
-import 'dart:convert';
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
+import '../services/api_service.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/absorb_wave_icon.dart';
+import '../widgets/status_message_view.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -16,10 +17,12 @@ class StatsScreen extends StatefulWidget {
 
 class _StatsScreenState extends State<StatsScreen>
     with SingleTickerProviderStateMixin {
+  static const _logTag = '[Stats]';
   Map<String, dynamic>? _stats;
   List<dynamic> _sessions = [];
   bool _isLoading = true;
   int _booksFinished = 0;
+  int _loadGeneration = 0;
   late AnimationController _animController;
   late Animation<double> _animValue;
 
@@ -39,73 +42,74 @@ class _StatsScreenState extends State<StatsScreen>
     super.dispose();
   }
 
-  static const _kStats = 'cached_stats';
-  static const _kSessions = 'cached_sessions';
-
   Future<void> _loadStats() async {
+    final loadId = ++_loadGeneration;
+    final stopwatch = Stopwatch()..start();
     final api = context.read<AuthProvider>().apiService;
     final lib = context.read<LibraryProvider>();
-    final prefs = await SharedPreferences.getInstance();
-
-    // Load cached data first so the page renders immediately even offline.
-    if (_isLoading) {
-      final cachedStats = prefs.getString(_kStats);
-      final cachedSessions = prefs.getString(_kSessions);
-      if (cachedStats != null) {
-        final stats = jsonDecode(cachedStats) as Map<String, dynamic>;
-        final sessions = cachedSessions != null
-            ? (jsonDecode(cachedSessions) as List<dynamic>)
-            : <dynamic>[];
-        if (mounted) {
-          setState(() {
-            _stats = stats;
-            _sessions = sessions;
-            _booksFinished = lib.finishedCount;
-            _isLoading = false;
-          });
-          _animController.reset();
-          _animController.forward();
-        }
-      }
-    }
-
+    debugPrint('$_logTag load[$loadId] start');
     if (api == null) {
+      debugPrint('$_logTag load[$loadId] aborted: api unavailable');
       if (mounted) setState(() => _isLoading = false);
       return;
     }
 
-    // Phase 1: load core stats from network and cache them.
+    // Phase 1: load core stats quickly so page can render fast.
+    final statsWatch = Stopwatch()..start();
     final stats = await api.getListeningStats();
+    statsWatch.stop();
     final finished = lib.finishedCount;
+    debugPrint(
+        '$_logTag load[$loadId] core stats finished in ${statsWatch.elapsedMilliseconds}ms '
+        '(hasStats=${stats != null}, finishedCount=$finished)');
 
-    if (stats != null) {
-      prefs.setString(_kStats, jsonEncode(stats));
+    if (loadId != _loadGeneration) {
+      debugPrint('$_logTag load[$loadId] ignored after newer request');
+      return;
     }
 
     if (mounted) {
       setState(() {
-        _stats = stats ?? _stats; // keep cached if network failed
+        _stats = stats;
         _booksFinished = finished;
         _isLoading = false;
       });
-      if (_animController.status != AnimationStatus.forward &&
-          _animController.status != AnimationStatus.completed) {
-        _animController.reset();
-        _animController.forward();
-      }
-    }
-
-    // Phase 2: load heavier sessions list in background and cache.
-    final sessionsData = await api.getListeningSessions(itemsPerPage: 15);
-    final sessions = sessionsData?['sessions'] as List<dynamic>? ?? [];
-    if (sessions.isNotEmpty) {
-      prefs.setString(_kSessions, jsonEncode(sessions));
-    }
-    if (mounted) {
-      setState(() {
-        if (sessions.isNotEmpty) _sessions = sessions;
+      _animController.reset();
+      _animController.forward();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || loadId != _loadGeneration) return;
+        debugPrint(
+            '$_logTag load[$loadId] first paint after ${stopwatch.elapsedMilliseconds}ms');
       });
     }
+
+    // Phase 2: load heavier sessions list in background.
+    unawaited(_loadRecentSessions(loadId, api, stopwatch));
+  }
+
+  Future<void> _loadRecentSessions(
+      int loadId, ApiService api, Stopwatch parentWatch) async {
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted || loadId != _loadGeneration) return;
+
+    final sessionsWatch = Stopwatch()..start();
+    final sessionsData = await api.getListeningSessions(itemsPerPage: 15);
+    sessionsWatch.stop();
+    final sessions = sessionsData?['sessions'] as List<dynamic>? ?? [];
+    debugPrint(
+        '$_logTag load[$loadId] sessions finished in ${sessionsWatch.elapsedMilliseconds}ms '
+        '(count=${sessions.length})');
+
+    if (!mounted || loadId != _loadGeneration) {
+      debugPrint('$_logTag load[$loadId] sessions ignored after newer request');
+      return;
+    }
+
+    setState(() {
+      _sessions = sessions;
+    });
+    debugPrint(
+        '$_logTag load[$loadId] complete in ${parentWatch.elapsedMilliseconds}ms');
   }
 
   @override
@@ -155,22 +159,23 @@ class _StatsScreenState extends State<StatsScreen>
   }
 
   Widget _errorState(TextTheme tt, ColorScheme cs) {
-    return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.signal_wifi_off_rounded,
-          size: 48, color: cs.onSurface.withValues(alpha: 0.15)),
-      const SizedBox(height: 12),
-      Text('Couldn\'t load stats',
-          style: tt.bodyMedium
-              ?.copyWith(color: cs.onSurface.withValues(alpha: 0.38))),
-      const SizedBox(height: 8),
-      TextButton(
-          onPressed: () {
-            setState(() => _isLoading = true);
-            _loadStats();
-          },
-          child: const Text('Retry')),
-    ]));
+    final lib = context.read<LibraryProvider>();
+    return StatusMessageView(
+      icon: lib.isOffline
+          ? Icons.signal_wifi_off_rounded
+          : Icons.bar_chart_rounded,
+      title: lib.isOffline
+          ? 'Stats are unavailable offline'
+          : 'Listening stats did not load',
+      message: lib.isOffline
+          ? 'Stats come from your Audiobookshelf listening history. Reconnect to your server, then open Stats again.'
+          : 'Absorb could not fetch your latest listening stats from Audiobookshelf. Try again in a moment.',
+      actionLabel: 'Retry',
+      onAction: () {
+        setState(() => _isLoading = true);
+        _loadStats();
+      },
+    );
   }
 
   Widget _buildContent(ColorScheme cs, TextTheme tt) {
