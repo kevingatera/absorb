@@ -689,7 +689,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                                             borderRadius: BorderRadius.circular(11),
                                                             border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
                                                           ),
-                                                          child: const Text('Listen Again',
+                                                          child: const Text('Absorb Again',
                                                             textAlign: TextAlign.center,
                                                             style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
                                                         ),
