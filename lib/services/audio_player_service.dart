@@ -1069,6 +1069,19 @@ class AudioPlayerService extends ChangeNotifier {
     }
     notifyListeners();
 
+    // Cancel old sync/completion listeners before switching sources.
+    // Without this, stale position or processingState events from the
+    // previous book can fire during setAudioSource() and trigger
+    // _onPlaybackComplete(), killing the new playback before it starts.
+    _syncSub?.cancel();
+    _syncSub = null;
+    _completionSub?.cancel();
+    _completionSub = null;
+    _indexSub?.cancel();
+    _indexSub = null;
+    _lastKnownPositionSec = 0;
+    _isCompletingBook = false;
+
     // Check if downloaded — play locally
     final bool result;
     if (_downloadService.isDownloaded(progressKey)) {
