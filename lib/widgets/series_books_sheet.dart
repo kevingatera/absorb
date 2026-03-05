@@ -396,7 +396,8 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
         Padding(
           padding: EdgeInsets.fromLTRB(24, 0, 24, seriesProgress > 0 ? 4 : 12),
           child: Text(
-            '${_books.length} book${_books.length != 1 ? 's' : ''} in this series',
+            '${_books.length} book${_books.length != 1 ? 's' : ''} in this series'
+            '${totalDuration > 0 ? ' · ${_formatDuration(totalDuration)}' : ''}',
             style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           ),
         ),
