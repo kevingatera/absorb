@@ -637,16 +637,23 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       return;
     }
 
+    // Detect podcast episodes via compound key (showId-episodeId, length > 36)
+    final isEpisode = absId.length > 36;
+    final showId = isEpisode ? absId.substring(0, 36) : null;
+    final episodeId = isEpisode ? absId.substring(37) : null;
+    // For API calls, use the show ID (not compound key) for podcast episodes
+    final apiItemId = showId ?? absId;
+
     // Try to find in cached entries first
     var entry = _autoService.findEntry(absId);
 
     // If not in AA cache, check if the item is downloaded locally.
     // This handles cold-start scenarios where the AA browse tree hasn't
-    // been populated yet but the user taps a downloaded book.
+    // been populated yet but the user taps a downloaded item.
     if (entry == null) {
       final ds = DownloadService();
       if (ds.isDownloaded(absId)) {
-        debugPrint('[Handler] Book not in AA cache but downloaded locally: $absId');
+        debugPrint('[Handler] Item not in AA cache but downloaded locally: $absId');
         final dl = ds.getInfo(absId);
         double duration = 0;
         List<dynamic> chapters = [];
@@ -662,28 +669,52 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
           title: dl.title ?? 'Unknown',
           author: dl.author ?? '',
           duration: duration,
-          coverUrl: AndroidAutoService.localCoverUri(absId),
+          coverUrl: AndroidAutoService.localCoverUri(apiItemId),
           chapters: chapters,
+          episodeId: episodeId,
+          showId: showId,
         );
       }
     }
 
     // If still not found, fetch the item details from server
     if (entry == null) {
-      debugPrint('[Handler] Book not cached, fetching from server: $absId');
+      debugPrint('[Handler] Item not cached, fetching from server: $apiItemId');
       try {
-        final response = await api.getLibraryItem(absId);
+        final response = await api.getLibraryItem(apiItemId);
         if (response != null) {
           final media = response['media'] as Map<String, dynamic>?;
           final metadata = media?['metadata'] as Map<String, dynamic>? ?? {};
-          entry = AutoBookEntry(
-            id: absId,
-            title: metadata['title'] as String? ?? 'Unknown',
-            author: metadata['authorName'] as String? ?? '',
-            duration: (media?['duration'] as num?)?.toDouble() ?? 0,
-            coverUrl: AndroidAutoService.localCoverUri(absId),
-            chapters: media?['chapters'] as List<dynamic>? ?? [],
-          );
+
+          if (isEpisode) {
+            // Find the specific episode in the show's episode list
+            final episodes = media?['episodes'] as List<dynamic>? ?? [];
+            final ep = episodes.cast<Map<String, dynamic>?>().firstWhere(
+              (e) => e?['id'] == episodeId,
+              orElse: () => null,
+            );
+            if (ep != null) {
+              entry = AutoBookEntry(
+                id: absId,
+                title: ep['title'] as String? ?? 'Episode',
+                author: metadata['title'] as String? ?? '', // show name
+                duration: (ep['duration'] as num?)?.toDouble() ?? 0,
+                coverUrl: AndroidAutoService.localCoverUri(apiItemId),
+                chapters: ep['chapters'] as List<dynamic>? ?? [],
+                episodeId: episodeId,
+                showId: showId,
+              );
+            }
+          } else {
+            entry = AutoBookEntry(
+              id: absId,
+              title: metadata['title'] as String? ?? 'Unknown',
+              author: metadata['authorName'] as String? ?? '',
+              duration: (media?['duration'] as num?)?.toDouble() ?? 0,
+              coverUrl: AndroidAutoService.localCoverUri(absId),
+              chapters: media?['chapters'] as List<dynamic>? ?? [],
+            );
+          }
         }
       } catch (e) {
         debugPrint('[Handler] Error fetching item: $e');
@@ -691,7 +722,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     }
 
     if (entry == null) {
-      debugPrint('[Handler] Book not found: $absId');
+      debugPrint('[Handler] Item not found: $absId');
       return;
     }
 
@@ -700,17 +731,19 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     // Always generate a fresh HTTP cover URL for Now Playing — api is
     // available here, so use it directly rather than relying on the cached
     // entry.coverUrl (which may be a content:// URI when offline).
-    final nowPlayingCoverUrl = api.getCoverUrl(absId, width: 400);
+    final nowPlayingCoverUrl = api.getCoverUrl(apiItemId, width: 400);
 
     await _service!.playItem(
       api: api,
-      itemId: entry.id,
+      itemId: apiItemId,
       title: entry.title,
       author: entry.author,
       coverUrl: nowPlayingCoverUrl,
       totalDuration: entry.duration,
       chapters: entry.chapters,
       startTime: entry.currentTime ?? 0,
+      episodeId: entry.episodeId,
+      episodeTitle: entry.episodeId != null ? entry.title : null,
     );
   }
 }
@@ -953,6 +986,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   /// MUST be called after Activity is ready.
   static Future<void> init() async {
+    if (_handler != null) return; // Already initialized
     // Reset for hot restart — previous completer may already be completed
     // while _handler was reset to null by the Dart VM restart.
     if (_initCompleter.isCompleted) {

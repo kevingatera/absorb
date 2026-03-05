@@ -42,6 +42,14 @@ ThemeMode parseThemeMode(String value) {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Register the audio handler FIRST — Android Auto's MediaBrowserService
+  // blocks until the handler exists.  On cold start (app force-closed,
+  // AA launches it), every millisecond of delay here is time the user
+  // stares at a loading spinner.  Downloads must be loaded before the
+  // handler so getChildren() can serve the browse tree immediately.
+  await DownloadService().init();
+  await AudioPlayerService.init();
+
   // Lock to portrait — no landscape support
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -292,8 +300,8 @@ class _AuthGateState extends State<AuthGate> {
       context.read<AuthProvider>().tryRestoreSession();
     }
 
-    // Register the audio handler FIRST so Android Auto's MediaBrowserService
-    // can connect immediately on cold start (app force-closed → AA launches it).
+    // Audio handler already initialized in main() — this is a no-op
+    // but kept for safety in case main() init failed.
     try {
       await AudioPlayerService.init();
     } catch (e) {
