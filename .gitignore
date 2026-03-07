@@ -46,3 +46,8 @@ app.*.map.json
 
 android/key.properties
 *.jks
+
+# Local homelab notes/workflow docs
+AGENTS.md
+continuity.md
+release-artifacts/
