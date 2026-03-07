@@ -250,6 +250,16 @@ class DownloadService extends ChangeNotifier {
           .where((d) => d.status == DownloadStatus.downloaded)
           .toList();
 
+  /// Get actively downloading items (in progress right now).
+  List<DownloadInfo> get activeDownloads =>
+      _downloads.values
+          .where((d) => d.status == DownloadStatus.downloading && _activeDownloadIds.contains(d.itemId))
+          .toList();
+
+  /// Get queued items (waiting for a download slot).
+  List<DownloadInfo> get queuedDownloads =>
+      _queue.map((q) => _downloads[q.itemId]).whereType<DownloadInfo>().toList();
+
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     _customDownloadPath = prefs.getString('custom_download_path');

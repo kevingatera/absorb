@@ -13,7 +13,7 @@ class BackupService {
     final prefs = await SharedPreferences.getInstance();
     final pkgInfo = await PackageInfo.fromPlatform();
 
-    // PlayerSettings
+    // PlayerSettings (all scoped per-user now)
     final settings = <String, dynamic>{
       'defaultSpeed': await PlayerSettings.getDefaultSpeed(),
       'wifiOnlyDownloads': await PlayerSettings.getWifiOnlyDownloads(),
@@ -48,7 +48,7 @@ class BackupService {
       'maxConcurrentDownloads': await PlayerSettings.getMaxConcurrentDownloads(),
     };
 
-    // AutoRewind
+    // AutoRewind (scoped)
     final rewind = await AutoRewindSettings.load();
     final autoRewind = <String, dynamic>{
       'enabled': rewind.enabled,
@@ -57,7 +57,7 @@ class BackupService {
       'delay': rewind.activationDelay,
     };
 
-    // AutoSleep
+    // AutoSleep (scoped)
     final sleep = await AutoSleepSettings.load();
     final autoSleep = <String, dynamic>{
       'enabled': sleep.enabled,
@@ -68,32 +68,33 @@ class BackupService {
       'durationMinutes': sleep.durationMinutes,
     };
 
-    // Equalizer
+    // Equalizer (scoped)
     final equalizer = <String, dynamic>{
-      'enabled': prefs.getBool('eq_enabled') ?? false,
-      'preset': prefs.getString('eq_preset') ?? 'flat',
-      'bassBoost': prefs.getDouble('eq_bassBoost') ?? 0.0,
-      'virtualizer': prefs.getDouble('eq_virtualizer') ?? 0.0,
-      'loudnessGain': prefs.getDouble('eq_loudnessGain') ?? 0.0,
-      'bands': prefs.getString('eq_bands'),
+      'enabled': await ScopedPrefs.getBool('eq_enabled') ?? false,
+      'preset': await ScopedPrefs.getString('eq_preset') ?? 'flat',
+      'bassBoost': await ScopedPrefs.getDouble('eq_bassBoost') ?? 0.0,
+      'virtualizer': await ScopedPrefs.getDouble('eq_virtualizer') ?? 0.0,
+      'loudnessGain': await ScopedPrefs.getDouble('eq_loudnessGain') ?? 0.0,
+      'bands': await ScopedPrefs.getString('eq_bands'),
     };
 
-    // Per-book speeds
+    // Per-book speeds (scoped - scan scoped keys)
     final bookSpeeds = <String, double>{};
+    final scope = UserAccountService().activeScopeKey;
+    final speedPrefix = scope.isNotEmpty ? '$scope:bookSpeed_' : 'bookSpeed_';
     for (final key in prefs.getKeys()) {
-      if (key.startsWith('bookSpeed_')) {
-        final itemId = key.substring('bookSpeed_'.length);
+      if (key.startsWith(speedPrefix)) {
+        final itemId = key.substring(speedPrefix.length);
         final speed = prefs.getDouble(key);
         if (speed != null) bookSpeeds[itemId] = speed;
       }
     }
 
-    // Offline mode
+    // Offline mode (global)
     final offlineMode = prefs.getBool('manual_offline_mode') ?? false;
 
-    // Bookmarks for current account (always included — not sensitive)
+    // Bookmarks for current account (scoped)
     final bookmarks = <String, List<String>>{};
-    final scope = UserAccountService().activeScopeKey;
     final bmPrefix = scope.isNotEmpty ? '$scope:bookmarks_' : 'bookmarks_';
     for (final key in prefs.getKeys()) {
       if (key.startsWith(bmPrefix)) {
@@ -103,10 +104,13 @@ class BackupService {
       }
     }
 
-    // Rolling download series (per-account, like bookmarks)
+    // Saved ebooks (scoped)
+    final savedEbooks = await ScopedPrefs.getStringList('saved_ebooks');
+
+    // Rolling download series (scoped)
     final rollingDownloadSeries = await ScopedPrefs.getStringList('rolling_download_series');
 
-    // Accounts & custom headers (optional — contain auth data)
+    // Accounts & custom headers (optional - contain auth data)
     List<Map<String, dynamic>>? accounts;
     Map<String, String>? customHeaders;
     if (includeAccounts) {
@@ -123,7 +127,7 @@ class BackupService {
     }
 
     return {
-      'version': 1,
+      'version': 2,
       'createdAt': DateTime.now().toIso8601String(),
       'appVersion': pkgInfo.version,
       'settings': settings,
@@ -133,6 +137,7 @@ class BackupService {
       'bookSpeeds': bookSpeeds,
       'offlineMode': offlineMode,
       'bookmarks': bookmarks,
+      'savedEbooks': savedEbooks,
       'rollingDownloadSeries': rollingDownloadSeries,
       'accounts': accounts,
       'customHeaders': customHeaders,
@@ -142,14 +147,14 @@ class BackupService {
   static Future<void> importSettings(Map<String, dynamic> data) async {
     final prefs = await SharedPreferences.getInstance();
 
-    // PlayerSettings
+    // PlayerSettings (all go through scoped setters now)
     final s = data['settings'] as Map<String, dynamic>? ?? {};
     if (s['defaultSpeed'] != null) PlayerSettings.setDefaultSpeed((s['defaultSpeed'] as num).toDouble());
     if (s['wifiOnlyDownloads'] != null) PlayerSettings.setWifiOnlyDownloads(s['wifiOnlyDownloads'] as bool);
     if (s['queueMode'] != null) {
       PlayerSettings.setQueueMode(s['queueMode'] as String);
     } else {
-      // Legacy backup — migrate the old booleans
+      // Legacy backup - migrate the old booleans
       final autoBook = s['autoPlayNextBook'] as bool? ?? false;
       final autoPod = s['autoPlayNextPodcast'] as bool? ?? false;
       PlayerSettings.setQueueMode((autoBook || autoPod) ? 'auto_next' : 'off');
@@ -184,7 +189,7 @@ class BackupService {
     if (s['mergeAbsorbingLibraries'] != null) PlayerSettings.setMergeAbsorbingLibraries(s['mergeAbsorbingLibraries'] as bool);
     if (s['maxConcurrentDownloads'] != null) PlayerSettings.setMaxConcurrentDownloads(s['maxConcurrentDownloads'] as int);
 
-    // AutoRewind
+    // AutoRewind (scoped via save())
     final r = data['autoRewind'] as Map<String, dynamic>?;
     if (r != null) {
       await AutoRewindSettings(
@@ -195,7 +200,7 @@ class BackupService {
       ).save();
     }
 
-    // AutoSleep
+    // AutoSleep (scoped via save())
     final sl = data['autoSleep'] as Map<String, dynamic>?;
     if (sl != null) {
       await AutoSleepSettings(
@@ -208,20 +213,20 @@ class BackupService {
       ).save();
     }
 
-    // Equalizer
+    // Equalizer (scoped)
     final eq = data['equalizer'] as Map<String, dynamic>?;
     if (eq != null) {
-      await prefs.setBool('eq_enabled', eq['enabled'] as bool? ?? false);
-      await prefs.setString('eq_preset', eq['preset'] as String? ?? 'flat');
-      await prefs.setDouble('eq_bassBoost', (eq['bassBoost'] as num?)?.toDouble() ?? 0.0);
-      await prefs.setDouble('eq_virtualizer', (eq['virtualizer'] as num?)?.toDouble() ?? 0.0);
-      await prefs.setDouble('eq_loudnessGain', (eq['loudnessGain'] as num?)?.toDouble() ?? 0.0);
+      await ScopedPrefs.setBool('eq_enabled', eq['enabled'] as bool? ?? false);
+      await ScopedPrefs.setString('eq_preset', eq['preset'] as String? ?? 'flat');
+      await ScopedPrefs.setDouble('eq_bassBoost', (eq['bassBoost'] as num?)?.toDouble() ?? 0.0);
+      await ScopedPrefs.setDouble('eq_virtualizer', (eq['virtualizer'] as num?)?.toDouble() ?? 0.0);
+      await ScopedPrefs.setDouble('eq_loudnessGain', (eq['loudnessGain'] as num?)?.toDouble() ?? 0.0);
       if (eq['bands'] != null) {
-        await prefs.setString('eq_bands', eq['bands'] as String);
+        await ScopedPrefs.setString('eq_bands', eq['bands'] as String);
       }
     }
 
-    // Per-book speeds
+    // Per-book speeds (scoped)
     final bookSpeeds = data['bookSpeeds'] as Map<String, dynamic>?;
     if (bookSpeeds != null) {
       for (final entry in bookSpeeds.entries) {
@@ -229,12 +234,12 @@ class BackupService {
       }
     }
 
-    // Offline mode
+    // Offline mode (global)
     if (data['offlineMode'] != null) {
       await prefs.setBool('manual_offline_mode', data['offlineMode'] as bool);
     }
 
-    // Bookmarks (import into current account scope)
+    // Bookmarks (scoped)
     final bookmarks = data['bookmarks'] as Map<String, dynamic>?;
     if (bookmarks != null) {
       for (final entry in bookmarks.entries) {
@@ -243,7 +248,13 @@ class BackupService {
       }
     }
 
-    // Rolling download series (per-account)
+    // Saved ebooks (scoped)
+    final savedEbooks = data['savedEbooks'] as List<dynamic>?;
+    if (savedEbooks != null && savedEbooks.isNotEmpty) {
+      await ScopedPrefs.setStringList('saved_ebooks', savedEbooks.cast<String>());
+    }
+
+    // Rolling download series (scoped)
     final rollingDownloadSeries = data['rollingDownloadSeries'] as List<dynamic>?;
     if (rollingDownloadSeries != null && rollingDownloadSeries.isNotEmpty) {
       await ScopedPrefs.setStringList(

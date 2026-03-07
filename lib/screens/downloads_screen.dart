@@ -195,60 +195,104 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                   const SizedBox(height: 12),
 
                   // Content
-                  if (_items.isEmpty)
-                    Expanded(
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.download_done_rounded,
-                                size: 48,
-                                color: cs.onSurfaceVariant
-                                    .withValues(alpha: 0.4)),
-                            const SizedBox(height: 12),
-                            Text('No downloads',
-                                style: tt.bodyLarge?.copyWith(
-                                    color: cs.onSurfaceVariant)),
-                          ],
-                        ),
-                      ),
-                    )
-                  else
-                    Expanded(
-                      child: ListenableBuilder(
-                        listenable: DownloadService(),
-                        builder: (ctx, _) {
-                          final items = DownloadService().downloadedItems;
-                          return ListView.builder(
-                            padding:
-                                const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                            itemCount: items.length,
-                            itemBuilder: (ctx, index) {
-                              final info = items[index];
-                              return _DownloadCard(
-                                info: info,
-                                fileSize:
-                                    _fileSizes[info.itemId] ?? 0,
-                                cs: cs,
-                                tt: tt,
-                                selecting: _selecting,
-                                isSelected:
-                                    _selected.contains(info.itemId),
-                                onToggle: () =>
-                                    _toggleSelect(info.itemId),
-                                onLongPress: () =>
-                                    _enterSelection(info.itemId),
-                                onDelete: () => _deleteSingle(info),
-                                formatBytes: _formatBytes,
-                                mediaHeaders: context
-                                    .read<LibraryProvider>()
-                                    .mediaHeaders,
-                              );
-                            },
+                  Expanded(
+                    child: ListenableBuilder(
+                      listenable: DownloadService(),
+                      builder: (ctx, _) {
+                        final ds = DownloadService();
+                        final active = ds.activeDownloads;
+                        final queued = ds.queuedDownloads;
+                        final completed = ds.downloadedItems;
+                        final hasAny = active.isNotEmpty || queued.isNotEmpty || completed.isNotEmpty;
+
+                        if (!hasAny) {
+                          return Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.download_done_rounded,
+                                    size: 48,
+                                    color: cs.onSurfaceVariant
+                                        .withValues(alpha: 0.4)),
+                                const SizedBox(height: 12),
+                                Text('No downloads',
+                                    style: tt.bodyLarge?.copyWith(
+                                        color: cs.onSurfaceVariant)),
+                              ],
+                            ),
                           );
-                        },
-                      ),
+                        }
+
+                        return ListView(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                          children: [
+                            // Active downloads
+                            if (active.isNotEmpty) ...[
+                              Padding(
+                                padding: const EdgeInsets.only(left: 4, bottom: 8),
+                                child: Text('Downloading',
+                                    style: tt.labelMedium?.copyWith(
+                                        color: cs.primary,
+                                        fontWeight: FontWeight.w600)),
+                              ),
+                              for (final info in active)
+                                _ActiveDownloadCard(
+                                  info: info,
+                                  cs: cs,
+                                  tt: tt,
+                                  onCancel: () => ds.cancelDownload(info.itemId),
+                                  mediaHeaders: context.read<LibraryProvider>().mediaHeaders,
+                                ),
+                            ],
+                            // Queued downloads
+                            if (queued.isNotEmpty) ...[
+                              Padding(
+                                padding: const EdgeInsets.only(left: 4, top: 4, bottom: 8),
+                                child: Text('Queued',
+                                    style: tt.labelMedium?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                        fontWeight: FontWeight.w600)),
+                              ),
+                              for (final info in queued)
+                                _ActiveDownloadCard(
+                                  info: info,
+                                  cs: cs,
+                                  tt: tt,
+                                  isQueued: true,
+                                  onCancel: () => ds.cancelDownload(info.itemId),
+                                  mediaHeaders: context.read<LibraryProvider>().mediaHeaders,
+                                ),
+                            ],
+                            // Completed downloads
+                            if (completed.isNotEmpty) ...[
+                              if (active.isNotEmpty || queued.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 4, top: 4, bottom: 8),
+                                  child: Text('Completed',
+                                      style: tt.labelMedium?.copyWith(
+                                          color: cs.onSurfaceVariant,
+                                          fontWeight: FontWeight.w600)),
+                                ),
+                              for (final info in completed)
+                                _DownloadCard(
+                                  info: info,
+                                  fileSize: _fileSizes[info.itemId] ?? 0,
+                                  cs: cs,
+                                  tt: tt,
+                                  selecting: _selecting,
+                                  isSelected: _selected.contains(info.itemId),
+                                  onToggle: () => _toggleSelect(info.itemId),
+                                  onLongPress: () => _enterSelection(info.itemId),
+                                  onDelete: () => _deleteSingle(info),
+                                  formatBytes: _formatBytes,
+                                  mediaHeaders: context.read<LibraryProvider>().mediaHeaders,
+                                ),
+                            ],
+                          ],
+                        );
+                      },
                     ),
+                  ),
 
                   // Bottom delete bar
                   if (_selecting && _selected.isNotEmpty)
@@ -443,6 +487,136 @@ class _DownloadCard extends StatelessWidget {
       );
     }
 
+    return _coverPlaceholder();
+  }
+
+  Widget _coverPlaceholder() {
+    return Container(
+      color: cs.surfaceContainerHighest,
+      child: Center(
+        child: Icon(Icons.headphones_rounded,
+            size: 24, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+      ),
+    );
+  }
+}
+
+class _ActiveDownloadCard extends StatelessWidget {
+  final DownloadInfo info;
+  final ColorScheme cs;
+  final TextTheme tt;
+  final bool isQueued;
+  final VoidCallback onCancel;
+  final Map<String, String> mediaHeaders;
+
+  const _ActiveDownloadCard({
+    required this.info,
+    required this.cs,
+    required this.tt,
+    this.isQueued = false,
+    required this.onCancel,
+    required this.mediaHeaders,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = info.progress;
+    final pct = (progress * 100).round();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Card(
+        elevation: 0,
+        color: cs.surfaceContainerHigh,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              // Cover art
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: _buildCover(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Title, status, progress
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      info.title ?? 'Unknown',
+                      style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    if (isQueued)
+                      Text('Waiting...',
+                          style: tt.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant))
+                    else ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: progress,
+                                minHeight: 6,
+                                backgroundColor: cs.surfaceContainerHighest,
+                                valueColor: AlwaysStoppedAnimation(cs.primary),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text('$pct%',
+                              style: tt.labelSmall?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: Icon(Icons.close_rounded,
+                    color: cs.onSurfaceVariant, size: 20),
+                tooltip: 'Cancel',
+                onPressed: onCancel,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCover() {
+    if (info.coverUrl != null && info.coverUrl!.isNotEmpty) {
+      if (info.coverUrl!.startsWith('/')) {
+        final file = File(info.coverUrl!);
+        if (file.existsSync()) {
+          return Image.file(file,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _coverPlaceholder());
+        }
+        return _coverPlaceholder();
+      }
+      return CachedNetworkImage(
+        imageUrl: info.coverUrl!,
+        fit: BoxFit.cover,
+        httpHeaders: mediaHeaders,
+        placeholder: (_, __) => _coverPlaceholder(),
+        errorWidget: (_, __, ___) => _coverPlaceholder(),
+      );
+    }
     return _coverPlaceholder();
   }
 

@@ -14,6 +14,7 @@ import 'sleep_timer_service.dart';
 import 'equalizer_service.dart';
 import 'android_auto_service.dart';
 import 'chromecast_service.dart';
+import 'scoped_prefs.dart';
 
 // ─── Auto-rewind settings ───
 
@@ -31,21 +32,19 @@ class AutoRewindSettings {
   });
 
   static Future<AutoRewindSettings> load() async {
-    final prefs = await SharedPreferences.getInstance();
     return AutoRewindSettings(
-      enabled: prefs.getBool('autoRewind_enabled') ?? true,
-      minRewind: prefs.getDouble('autoRewind_min') ?? 1.0,
-      maxRewind: prefs.getDouble('autoRewind_max') ?? 30.0,
-      activationDelay: prefs.getDouble('autoRewind_delay') ?? 0.0,
+      enabled: await ScopedPrefs.getBool('autoRewind_enabled') ?? true,
+      minRewind: await ScopedPrefs.getDouble('autoRewind_min') ?? 1.0,
+      maxRewind: await ScopedPrefs.getDouble('autoRewind_max') ?? 30.0,
+      activationDelay: await ScopedPrefs.getDouble('autoRewind_delay') ?? 0.0,
     );
   }
 
   Future<void> save() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('autoRewind_enabled', enabled);
-    await prefs.setDouble('autoRewind_min', minRewind);
-    await prefs.setDouble('autoRewind_max', maxRewind);
-    await prefs.setDouble('autoRewind_delay', activationDelay);
+    await ScopedPrefs.setBool('autoRewind_enabled', enabled);
+    await ScopedPrefs.setDouble('autoRewind_min', minRewind);
+    await ScopedPrefs.setDouble('autoRewind_max', maxRewind);
+    await ScopedPrefs.setDouble('autoRewind_delay', activationDelay);
   }
 }
 
@@ -61,22 +60,29 @@ class PlayerSettings {
   // ── Private helpers to eliminate boilerplate ──
 
   static Future<T> _get<T>(String key, T defaultValue) async {
-    final prefs = await SharedPreferences.getInstance();
-    final value = prefs.get(key);
+    Object? value;
+    if (defaultValue is bool) {
+      value = await ScopedPrefs.getBool(key);
+    } else if (defaultValue is int) {
+      value = await ScopedPrefs.getInt(key);
+    } else if (defaultValue is double) {
+      value = await ScopedPrefs.getDouble(key);
+    } else if (defaultValue is String) {
+      value = await ScopedPrefs.getString(key);
+    }
     if (value is T) return value;
     return defaultValue;
   }
 
   static Future<void> _set<T>(String key, T value, {bool notify = false}) async {
-    final prefs = await SharedPreferences.getInstance();
     if (value is bool) {
-      await prefs.setBool(key, value);
+      await ScopedPrefs.setBool(key, value);
     } else if (value is int) {
-      await prefs.setInt(key, value);
+      await ScopedPrefs.setInt(key, value);
     } else if (value is double) {
-      await prefs.setDouble(key, value);
+      await ScopedPrefs.setDouble(key, value);
     } else if (value is String) {
-      await prefs.setString(key, value);
+      await ScopedPrefs.setString(key, value);
     }
     if (notify) _notify();
   }
@@ -111,11 +117,10 @@ class PlayerSettings {
 
   /// One-time migration from the old boolean auto-play settings to queueMode.
   static Future<void> migrateQueueMode() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.containsKey('queueMode')) return;
-    final autoBook = prefs.getBool('autoPlayNextBook') ?? false;
-    final autoPod = prefs.getBool('autoPlayNextPodcast') ?? false;
-    await prefs.setString('queueMode', (autoBook || autoPod) ? 'auto_next' : 'off');
+    if (await ScopedPrefs.containsKey('queueMode')) return;
+    final autoBook = await ScopedPrefs.getBool('autoPlayNextBook') ?? false;
+    final autoPod = await ScopedPrefs.getBool('autoPlayNextPodcast') ?? false;
+    await ScopedPrefs.setString('queueMode', (autoBook || autoPod) ? 'auto_next' : 'off');
   }
 
   // Legacy getters kept for backup service compatibility
@@ -182,8 +187,14 @@ class PlayerSettings {
   static Future<bool> getShowGoodreadsButton() => _get('showGoodreadsButton', false);
   static Future<void> setShowGoodreadsButton(bool value) => _set('showGoodreadsButton', value);
 
-  static Future<bool> getLoggingEnabled() => _get('loggingEnabled', false);
-  static Future<void> setLoggingEnabled(bool value) => _set('loggingEnabled', value);
+  static Future<bool> getLoggingEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('loggingEnabled') ?? false;
+  }
+  static Future<void> setLoggingEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('loggingEnabled', value);
+  }
 
   static Future<bool> getFullScreenPlayer() => _get('fullScreenPlayer', false);
   static Future<void> setFullScreenPlayer(bool value) => _set('fullScreenPlayer', value);
@@ -193,15 +204,13 @@ class PlayerSettings {
   static const defaultButtonOrder = ['chapters', 'speed', 'sleep', 'bookmarks', 'details', 'equalizer', 'cast', 'history', 'remove'];
 
   static Future<List<String>> getCardButtonOrder() async {
-    final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getStringList('card_button_order');
-    if (stored != null && stored.length == defaultButtonOrder.length) return stored;
+    final stored = await ScopedPrefs.getStringList('card_button_order');
+    if (stored.isNotEmpty && stored.length == defaultButtonOrder.length) return stored;
     return List.from(defaultButtonOrder);
   }
 
   static Future<void> setCardButtonOrder(List<String> order) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('card_button_order', order);
+    await ScopedPrefs.setStringList('card_button_order', order);
     _notify();
   }
 
@@ -231,10 +240,8 @@ class PlayerSettings {
 
   // ── Per-book speed persistence ──
 
-  static Future<double?> getBookSpeed(String itemId) async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getDouble('bookSpeed_$itemId');
-  }
+  static Future<double?> getBookSpeed(String itemId) =>
+      ScopedPrefs.getDouble('bookSpeed_$itemId');
 
   static Future<void> setBookSpeed(String itemId, double speed) =>
       _set('bookSpeed_$itemId', speed);

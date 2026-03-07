@@ -8,7 +8,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
@@ -18,6 +17,7 @@ import '../services/api_service.dart';
 import '../services/download_service.dart';
 import '../services/progress_sync_service.dart';
 import '../services/metadata_override_service.dart';
+import '../services/scoped_prefs.dart';
 import '../screens/app_shell.dart';
 import 'series_books_sheet.dart';
 import 'absorbing_shared.dart';
@@ -58,8 +58,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     super.initState();
     _loadItem();
     PlayerSettings.getShowGoodreadsButton().then((v) { if (mounted) setState(() => _showGoodreads = v); });
-    SharedPreferences.getInstance().then((p) {
-      if (mounted && (p.getStringList('saved_ebooks') ?? []).contains(widget.itemId)) {
+    ScopedPrefs.getStringList('saved_ebooks').then((list) {
+      if (mounted && list.contains(widget.itemId)) {
         setState(() => _ebookSaved = true);
       }
     });
@@ -655,11 +655,10 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       if (savedPath == null) return; // user cancelled
 
       // Track that this ebook has been saved
-      final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getStringList('saved_ebooks') ?? [];
+      final saved = await ScopedPrefs.getStringList('saved_ebooks');
       if (!saved.contains(widget.itemId)) {
         saved.add(widget.itemId);
-        await prefs.setStringList('saved_ebooks', saved);
+        await ScopedPrefs.setStringList('saved_ebooks', saved);
       }
       if (mounted) setState(() => _ebookSaved = true);
 

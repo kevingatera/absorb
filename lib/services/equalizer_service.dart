@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'scoped_prefs.dart';
 
 /// Android AudioEffect equalizer bands and presets via platform channels.
 /// Falls back gracefully on unsupported devices.
@@ -225,14 +225,13 @@ class EqualizerService extends ChangeNotifier {
   // ── Persistence ──
 
   Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    _enabled = prefs.getBool('eq_enabled') ?? false;
-    _activePreset = prefs.getString('eq_preset') ?? 'flat';
-    _bassBoost = prefs.getDouble('eq_bassBoost') ?? 0.0;
-    _virtualizer = prefs.getDouble('eq_virtualizer') ?? 0.0;
-    _loudnessGain = prefs.getDouble('eq_loudnessGain') ?? 0.0;
+    _enabled = await ScopedPrefs.getBool('eq_enabled') ?? false;
+    _activePreset = await ScopedPrefs.getString('eq_preset') ?? 'flat';
+    _bassBoost = await ScopedPrefs.getDouble('eq_bassBoost') ?? 0.0;
+    _virtualizer = await ScopedPrefs.getDouble('eq_virtualizer') ?? 0.0;
+    _loudnessGain = await ScopedPrefs.getDouble('eq_loudnessGain') ?? 0.0;
 
-    final bandStr = prefs.getString('eq_bands');
+    final bandStr = await ScopedPrefs.getString('eq_bands');
     if (bandStr != null) {
       _bandLevels = bandStr.split(',')
           .map((s) => double.tryParse(s) ?? 0.0)
@@ -241,13 +240,12 @@ class EqualizerService extends ChangeNotifier {
   }
 
   Future<void> _saveSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('eq_enabled', _enabled);
-    await prefs.setString('eq_preset', _activePreset);
-    await prefs.setDouble('eq_bassBoost', _bassBoost);
-    await prefs.setDouble('eq_virtualizer', _virtualizer);
-    await prefs.setDouble('eq_loudnessGain', _loudnessGain);
-    await prefs.setString('eq_bands', _bandLevels.map((l) => l.toStringAsFixed(1)).join(','));
+    await ScopedPrefs.setBool('eq_enabled', _enabled);
+    await ScopedPrefs.setString('eq_preset', _activePreset);
+    await ScopedPrefs.setDouble('eq_bassBoost', _bassBoost);
+    await ScopedPrefs.setDouble('eq_virtualizer', _virtualizer);
+    await ScopedPrefs.setDouble('eq_loudnessGain', _loudnessGain);
+    await ScopedPrefs.setString('eq_bands', _bandLevels.map((l) => l.toStringAsFixed(1)).join(','));
   }
 
   /// Formatted frequency label.

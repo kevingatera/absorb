@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:sensors_plus/sensors_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'scoped_prefs.dart';
 import 'audio_player_service.dart';
 import 'chromecast_service.dart';
 
@@ -53,25 +53,23 @@ class AutoSleepSettings {
   }
 
   static Future<AutoSleepSettings> load() async {
-    final prefs = await SharedPreferences.getInstance();
     return AutoSleepSettings(
-      enabled: prefs.getBool('autoSleep_enabled') ?? false,
-      startHour: prefs.getInt('autoSleep_startHour') ?? 22,
-      startMinute: prefs.getInt('autoSleep_startMinute') ?? 0,
-      endHour: prefs.getInt('autoSleep_endHour') ?? 6,
-      endMinute: prefs.getInt('autoSleep_endMinute') ?? 0,
-      durationMinutes: prefs.getInt('autoSleep_duration') ?? 30,
+      enabled: await ScopedPrefs.getBool('autoSleep_enabled') ?? false,
+      startHour: await ScopedPrefs.getInt('autoSleep_startHour') ?? 22,
+      startMinute: await ScopedPrefs.getInt('autoSleep_startMinute') ?? 0,
+      endHour: await ScopedPrefs.getInt('autoSleep_endHour') ?? 6,
+      endMinute: await ScopedPrefs.getInt('autoSleep_endMinute') ?? 0,
+      durationMinutes: await ScopedPrefs.getInt('autoSleep_duration') ?? 30,
     );
   }
 
   Future<void> save() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('autoSleep_enabled', enabled);
-    await prefs.setInt('autoSleep_startHour', startHour);
-    await prefs.setInt('autoSleep_startMinute', startMinute);
-    await prefs.setInt('autoSleep_endHour', endHour);
-    await prefs.setInt('autoSleep_endMinute', endMinute);
-    await prefs.setInt('autoSleep_duration', durationMinutes);
+    await ScopedPrefs.setBool('autoSleep_enabled', enabled);
+    await ScopedPrefs.setInt('autoSleep_startHour', startHour);
+    await ScopedPrefs.setInt('autoSleep_startMinute', startMinute);
+    await ScopedPrefs.setInt('autoSleep_endHour', endHour);
+    await ScopedPrefs.setInt('autoSleep_endMinute', endMinute);
+    await ScopedPrefs.setInt('autoSleep_duration', durationMinutes);
   }
 }
 
