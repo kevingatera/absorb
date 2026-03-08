@@ -9,6 +9,8 @@ import '../services/download_service.dart';
 import '../widgets/home_section.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/shimmer.dart';
+import '../widgets/book_card.dart';
+import '../widgets/status_message_view.dart';
 import '../widgets/book_detail_sheet.dart';
 import '../widgets/card_buttons.dart';
 import '../widgets/episode_list_sheet.dart';
@@ -281,19 +283,21 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       body: Container(
-        decoration: oledNotifier.value ? null : BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            stops: const [0.0, 0.22, 0.72, 1.0],
-            colors: [
-              cs.primary.withValues(alpha: 0.06),
-              cs.surface,
-              lowerFade,
-              scaffoldBg,
-            ],
-          ),
-        ),
+        decoration: oledNotifier.value
+            ? null
+            : BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: const [0.0, 0.22, 0.72, 1.0],
+                  colors: [
+                    cs.primary.withValues(alpha: 0.06),
+                    cs.surface,
+                    lowerFade,
+                    scaffoldBg,
+                  ],
+                ),
+              ),
         child: SafeArea(
           child: RefreshIndicator(
             onRefresh: () async {
@@ -326,7 +330,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 300),
                           curve: Curves.easeOutCubic,
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
                           decoration: BoxDecoration(
                             color: lib.isOffline
                                 ? Colors.orange.withValues(alpha: 0.15)
@@ -346,13 +351,17 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ? Icons.airplanemode_active_rounded
                                     : Icons.airplanemode_inactive_rounded,
                                 size: 14,
-                                color: lib.isOffline ? Colors.orange : cs.onSurfaceVariant,
+                                color: lib.isOffline
+                                    ? Colors.orange
+                                    : cs.onSurfaceVariant,
                               ),
                               const SizedBox(width: 4),
                               Text(
                                 lib.isOffline ? 'Offline' : 'Online',
                                 style: TextStyle(
-                                  color: lib.isOffline ? Colors.orange : cs.onSurfaceVariant,
+                                  color: lib.isOffline
+                                      ? Colors.orange
+                                      : cs.onSurfaceVariant,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -361,7 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       ),
-                      if (allLibraries.length > 1)
+                      if (!lib.isOffline && allLibraries.length > 1)
                         Material(
                           color: cs.onSurface.withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(20),
@@ -412,13 +421,16 @@ class _HomeScreenState extends State<HomeScreen> {
                         GestureDetector(
                           onTap: () => HomeCustomizeSheet.show(context),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 5),
                             decoration: BoxDecoration(
                               color: cs.onSurface.withValues(alpha: 0.06),
                               borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+                              border: Border.all(
+                                  color: cs.onSurface.withValues(alpha: 0.08)),
                             ),
-                            child: Icon(Icons.tune_rounded, size: 14, color: cs.onSurfaceVariant),
+                            child: Icon(Icons.tune_rounded,
+                                size: 14, color: cs.onSurfaceVariant),
                           ),
                         ),
                     ],
@@ -442,21 +454,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     lib.errorMessage != null &&
                     lib.personalizedSections.isEmpty)
                   SliverFillRemaining(
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.cloud_off_rounded,
-                              size: 48, color: cs.error),
-                          const SizedBox(height: 12),
-                          Text(lib.errorMessage!,
-                              style: tt.bodyLarge?.copyWith(color: cs.error)),
-                          const SizedBox(height: 16),
-                          FilledButton.tonal(
-                              onPressed: lib.refresh,
-                              child: const Text('Retry')),
-                        ],
-                      ),
+                    child: StatusMessageView(
+                      icon: Icons.cloud_off_rounded,
+                      accentColor: cs.error,
+                      title: lib.errorMessage == 'Failed to load libraries'
+                          ? 'Your libraries did not load'
+                          : 'Home could not refresh',
+                      message: lib.errorMessage == 'Failed to load libraries'
+                          ? 'Absorb could not fetch your libraries from Audiobookshelf. Check the server connection, then try again.'
+                          : 'Absorb could not fetch your latest Home shelves from Audiobookshelf. Pull to refresh or try again in a moment.',
+                      actionLabel: 'Retry',
+                      onAction: lib.refresh,
                     ),
                   ),
 
@@ -466,38 +474,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     lib.personalizedSections.isEmpty &&
                     (lib.libraries.isNotEmpty || lib.isOffline))
                   SliverFillRemaining(
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            lib.isOffline
-                                ? Icons.download_for_offline_outlined
-                                : Icons.library_music_outlined,
-                            size: 48,
-                            color: cs.onSurfaceVariant,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            lib.isOffline
-                                ? 'No downloaded books'
-                                : 'Your library is empty',
-                            style: tt.bodyLarge?.copyWith(
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                          if (lib.isOffline) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              'Download books while online to listen offline',
-                              style: tt.bodySmall?.copyWith(
-                                color:
-                                    cs.onSurfaceVariant.withValues(alpha: 0.6),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
+                    child: StatusMessageView(
+                      icon: lib.isOffline
+                          ? Icons.download_for_offline_outlined
+                          : Icons.library_music_outlined,
+                      title: lib.isOffline
+                          ? 'No offline library yet'
+                          : 'Nothing is ready for Home yet',
+                      message: lib.isOffline
+                          ? 'This device does not have any downloaded ${lib.isPodcastLibrary ? 'episodes' : 'books'} yet. Download something while online and it will show up here for offline listening.'
+                          : 'The selected library does not have any ${lib.isPodcastLibrary ? 'shows or episodes' : 'books'} to show yet. Add content in Audiobookshelf or pull to refresh if something was just added.',
                     ),
                   ),
 
@@ -509,7 +495,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     final isCollection = id.startsWith('collection:');
 
                     // Playlists/collections are server-only; hide when offline
-                    if ((isPlaylist || isCollection) && lib.isOffline) return <Widget>[];
+                    if ((isPlaylist || isCollection) && lib.isOffline)
+                      return <Widget>[];
 
                     // Continue Listening gets its own compact card layout
                     if (id == 'continue-listening') {
@@ -521,7 +508,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
                             child: Row(children: [
                               Icon(Icons.play_circle_outline_rounded,
-                                  size: 16, color: cs.primary.withValues(alpha: 0.7)),
+                                  size: 16,
+                                  color: cs.primary.withValues(alpha: 0.7)),
                               const SizedBox(width: 8),
                               Text('Continue Listening',
                                   style: tt.titleSmall?.copyWith(
@@ -530,8 +518,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                     letterSpacing: 0.3,
                                   )),
                               const SizedBox(width: 12),
-                              Expanded(child: Container(height: 0.5,
-                                  color: cs.outlineVariant.withValues(alpha: 0.2))),
+                              Expanded(
+                                  child: Container(
+                                      height: 0.5,
+                                      color: cs.outlineVariant
+                                          .withValues(alpha: 0.2))),
                             ]),
                           ),
                         ),
@@ -542,14 +533,19 @@ class _HomeScreenState extends State<HomeScreen> {
                               height: 92,
                               child: ListView.separated(
                                 scrollDirection: Axis.horizontal,
-                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 20),
                                 physics: const BouncingScrollPhysics(),
                                 itemCount: clItems.length,
-                                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(width: 10),
                                 itemBuilder: (context, i) {
-                                  final item = clItems[i] as Map<String, dynamic>;
+                                  final item =
+                                      clItems[i] as Map<String, dynamic>;
                                   return _ContinueListeningCard(
-                                    item: item, lib: lib, player: _player,
+                                    item: item,
+                                    lib: lib,
+                                    player: _player,
                                   );
                                 },
                               ),
@@ -564,10 +560,24 @@ class _HomeScreenState extends State<HomeScreen> {
                         _titleCase(id);
                     final entities = _filterEbookOnly(
                         (section['entities'] as List<dynamic>?) ?? []);
-                    final type = isPlaylist ? 'playlist'
-                        : isCollection ? 'collection'
-                        : (section['type'] ?? 'book');
+                    final type = isPlaylist
+                        ? 'playlist'
+                        : isCollection
+                            ? 'collection'
+                            : (section['type'] ?? 'book');
                     if (entities.isEmpty) return <Widget>[];
+
+                    if (lib.isOffline && id == 'downloaded-books') {
+                      return <Widget>[
+                        SliverToBoxAdapter(
+                          child: _OfflineDownloadsSection(
+                            title: label,
+                            icon: _sectionIcons[id] ?? Icons.album_outlined,
+                            entities: entities,
+                          ),
+                        ),
+                      ];
+                    }
 
                     VoidCallback? titleTap;
                     IconData sectionIcon;
@@ -602,6 +612,85 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _OfflineDownloadsSection extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final List<dynamic> entities;
+
+  const _OfflineDownloadsSection({
+    required this.title,
+    required this.icon,
+    required this.entities,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final items = entities.whereType<Map<String, dynamic>>().toList();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: cs.primary.withValues(alpha: 0.7)),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: tt.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: cs.onSurface.withValues(alpha: 0.8),
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Container(
+                    height: 0.5,
+                    color: cs.outlineVariant.withValues(alpha: 0.2),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth;
+                final crossAxisCount =
+                    width >= 720 ? 4 : (width >= 520 ? 3 : 2);
+                final totalSpacing = 12.0 * (crossAxisCount - 1);
+                final cellWidth = (width - totalSpacing) / crossAxisCount;
+                final cellHeight = cellWidth + 52;
+
+                return GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: items.length,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: crossAxisCount,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 12,
+                    mainAxisExtent: cellHeight,
+                  ),
+                  itemBuilder: (context, index) => BookCard(item: items[index]),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
