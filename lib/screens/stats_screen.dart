@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
+import '../services/api_service.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/absorb_wave_icon.dart';
 
@@ -14,10 +16,12 @@ class StatsScreen extends StatefulWidget {
 
 class _StatsScreenState extends State<StatsScreen>
     with SingleTickerProviderStateMixin {
+  static const _logTag = '[Stats]';
   Map<String, dynamic>? _stats;
   List<dynamic> _sessions = [];
   bool _isLoading = true;
   int _booksFinished = 0;
+  int _loadGeneration = 0;
   late AnimationController _animController;
   late Animation<double> _animValue;
 
@@ -38,16 +42,30 @@ class _StatsScreenState extends State<StatsScreen>
   }
 
   Future<void> _loadStats() async {
+    final loadId = ++_loadGeneration;
+    final stopwatch = Stopwatch()..start();
     final api = context.read<AuthProvider>().apiService;
     final lib = context.read<LibraryProvider>();
+    debugPrint('$_logTag load[$loadId] start');
     if (api == null) {
+      debugPrint('$_logTag load[$loadId] aborted: api unavailable');
       if (mounted) setState(() => _isLoading = false);
       return;
     }
 
     // Phase 1: load core stats quickly so page can render fast.
+    final statsWatch = Stopwatch()..start();
     final stats = await api.getListeningStats();
+    statsWatch.stop();
     final finished = lib.finishedCount;
+    debugPrint(
+        '$_logTag load[$loadId] core stats finished in ${statsWatch.elapsedMilliseconds}ms '
+        '(hasStats=${stats != null}, finishedCount=$finished)');
+
+    if (loadId != _loadGeneration) {
+      debugPrint('$_logTag load[$loadId] ignored after newer request');
+      return;
+    }
 
     if (mounted) {
       setState(() {
@@ -57,15 +75,40 @@ class _StatsScreenState extends State<StatsScreen>
       });
       _animController.reset();
       _animController.forward();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || loadId != _loadGeneration) return;
+        debugPrint(
+            '$_logTag load[$loadId] first paint after ${stopwatch.elapsedMilliseconds}ms');
+      });
     }
 
     // Phase 2: load heavier sessions list in background.
+    unawaited(_loadRecentSessions(loadId, api, stopwatch));
+  }
+
+  Future<void> _loadRecentSessions(
+      int loadId, ApiService api, Stopwatch parentWatch) async {
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted || loadId != _loadGeneration) return;
+
+    final sessionsWatch = Stopwatch()..start();
     final sessionsData = await api.getListeningSessions(itemsPerPage: 15);
-    if (mounted) {
-      setState(() {
-        _sessions = sessionsData?['sessions'] as List<dynamic>? ?? [];
-      });
+    sessionsWatch.stop();
+    final sessions = sessionsData?['sessions'] as List<dynamic>? ?? [];
+    debugPrint(
+        '$_logTag load[$loadId] sessions finished in ${sessionsWatch.elapsedMilliseconds}ms '
+        '(count=${sessions.length})');
+
+    if (!mounted || loadId != _loadGeneration) {
+      debugPrint('$_logTag load[$loadId] sessions ignored after newer request');
+      return;
     }
+
+    setState(() {
+      _sessions = sessions;
+    });
+    debugPrint(
+        '$_logTag load[$loadId] complete in ${parentWatch.elapsedMilliseconds}ms');
   }
 
   @override
