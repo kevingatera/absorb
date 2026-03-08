@@ -252,24 +252,33 @@ class ApiService {
 
   /// Get user's listening stats.
   Future<Map<String, dynamic>?> getListeningStats() async {
+    final stopwatch = Stopwatch()..start();
     try {
       final response = await http
           .get(
-            Uri.parse('$_cleanBaseUrl/api/me/listening-stats'),
+            Uri.parse('$_cleanBaseUrl/api/me/listening-stats?minified=1'),
             headers: _headers,
           )
           .timeout(const Duration(seconds: 10));
 
+      stopwatch.stop();
+      debugPrint(
+          '[StatsApi] /api/me/listening-stats ${response.statusCode} in ${stopwatch.elapsedMilliseconds}ms (${response.bodyBytes.length} bytes)');
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
-    } catch (_) {}
+    } catch (e) {
+      stopwatch.stop();
+      debugPrint(
+          '[StatsApi] /api/me/listening-stats failed after ${stopwatch.elapsedMilliseconds}ms: $e');
+    }
     return null;
   }
 
   /// Get user's listening sessions (paginated).
   Future<Map<String, dynamic>?> getListeningSessions(
       {int page = 0, int itemsPerPage = 20}) async {
+    final stopwatch = Stopwatch()..start();
     try {
       final response = await http
           .get(
@@ -279,10 +288,17 @@ class ApiService {
           )
           .timeout(const Duration(seconds: 10));
 
+      stopwatch.stop();
+      debugPrint(
+          '[StatsApi] /api/me/listening-sessions?page=$page&itemsPerPage=$itemsPerPage ${response.statusCode} in ${stopwatch.elapsedMilliseconds}ms (${response.bodyBytes.length} bytes)');
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
-    } catch (_) {}
+    } catch (e) {
+      stopwatch.stop();
+      debugPrint(
+          '[StatsApi] /api/me/listening-sessions?page=$page&itemsPerPage=$itemsPerPage failed after ${stopwatch.elapsedMilliseconds}ms: $e');
+    }
     return null;
   }
 
