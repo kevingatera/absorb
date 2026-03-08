@@ -62,8 +62,13 @@ android {
 
     applicationVariants.all {
         outputs.all {
-            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl)
-                .outputFileName = "absorb-homelab-${versionName}.apk"
+            val output =
+                this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            val abi = output.filters
+                .find { it.filterType.toString() == "ABI" }
+                ?.identifier
+            val suffix = if (abi.isNullOrBlank()) "" else "-$abi"
+            output.outputFileName = "absorb-homelab-${versionName}${suffix}.apk"
         }
     }
 }
