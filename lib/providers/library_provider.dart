@@ -257,8 +257,9 @@ class LibraryProvider extends ChangeNotifier {
     }
 
     // Build fake entities from download metadata.
-    // Split in-progress downloads into a continue-listening section so Home
-    // can show them as compact cards, while the rest go to downloaded-books.
+    // Split in-progress downloads into an offline continue-listening section so
+    // Absorbing stays focused on what is actively being listened to, while Home
+    // can use the remaining space for the rest of the downloaded library.
     final continueEntities = <Map<String, dynamic>>[];
     final downloadedEntities = <Map<String, dynamic>>[];
     for (final dl in downloads) {
@@ -559,6 +560,7 @@ class LibraryProvider extends ChangeNotifier {
       restoreOfflineMode().then((_) async {
         debugPrint(
             '[Library] restoreOfflineMode done, serverReachable=${auth.serverReachable} api=${_api != null} offline=$isOffline');
+
         _startConnectivityMonitoring();
         _loadManualAbsorbing();
         await _loadRollingDownloadSeries();
@@ -784,15 +786,6 @@ class LibraryProvider extends ChangeNotifier {
     // Don't let a stale socket event overwrite a local mark-finished.
     // The server will confirm isFinished on the next full refresh.
     if (_locallyFinishedItems.contains(key) && mp['isFinished'] != true) return;
-    // Don't let socket echoes overwrite local progress for the currently
-    // playing item. The player is the source of truth while active.
-    // This prevents rollbacks when the network drops and reconnects with
-    // stale server progress.
-    final player = AudioPlayerService();
-    final playingKey = player.currentEpisodeId != null
-        ? '${player.currentItemId}-${player.currentEpisodeId}'
-        : player.currentItemId;
-    if (key == playingKey && player.hasBook) return;
     _progressMap[key] = mp;
     _localProgressOverrides.remove(key);
     _resetItems.remove(key);
@@ -834,21 +827,12 @@ class LibraryProvider extends ChangeNotifier {
     // Rebuild progress map from updated user data
     final progressList = data['mediaProgress'] as List<dynamic>?;
     if (progressList != null) {
-      final player = AudioPlayerService();
-      final playingKey = player.currentEpisodeId != null
-          ? '${player.currentItemId}-${player.currentEpisodeId}'
-          : player.currentItemId;
       for (final mp in progressList) {
         if (mp is Map<String, dynamic>) {
           final itemId = mp['libraryItemId'] as String?;
           final episodeId = mp['episodeId'] as String?;
           if (itemId != null) {
             final key = episodeId != null ? '$itemId-$episodeId' : itemId;
-            // Don't let stale server data overwrite a local mark-finished
-            if (_locallyFinishedItems.contains(key) && mp['isFinished'] != true)
-              continue;
-            // Don't overwrite progress for the currently playing item
-            if (key == playingKey && player.hasBook) continue;
             _progressMap[key] = mp;
             _localProgressOverrides.remove(key);
           }
@@ -1222,7 +1206,8 @@ class LibraryProvider extends ChangeNotifier {
     }
     // Flush local progress to server first, then pull fresh data
     if (_api != null) {
-      unawaited(ProgressSyncService().flushPendingSync(api: _api!, maxItems: 3));
+      unawaited(
+          ProgressSyncService().flushPendingSync(api: _api!, maxItems: 3));
     }
     // Clear local finished state before refresh so server data is authoritative.
     _lastFinishedItemId = null;
@@ -1705,6 +1690,17 @@ class LibraryProvider extends ChangeNotifier {
   Set<String> get manualAbsorbRemoves => _manualAbsorbRemoves;
   List<String> get absorbingBookIds => _absorbingBookIds;
 
+  bool _dedupeAbsorbingIds() {
+    final seen = <String>{};
+    final deduped = <String>[];
+    for (final key in _absorbingBookIds) {
+      if (seen.add(key)) deduped.add(key);
+    }
+    if (deduped.length == _absorbingBookIds.length) return false;
+    _absorbingBookIds = deduped;
+    return true;
+  }
+
   /// Move an existing absorbing key to the front and persist.
   /// No-op if the key isn't in the list or is already first.
   void moveAbsorbingToFront(String key) {
@@ -1725,15 +1721,22 @@ class LibraryProvider extends ChangeNotifier {
   /// [afterKey] — insert right after this key (e.g. next-in-series after
   ///             the finished book). Repositions even if already in list.
   void _absorbingIdsAdd(String key, {String? afterKey, bool atFront = true}) {
+    if (_absorbingBookIds.contains(key) && afterKey == null) return;
+
     if (afterKey != null) {
+      _absorbingBookIds.remove(key);
       final afterIdx = _absorbingBookIds.indexOf(afterKey);
       if (afterIdx >= 0) {
-        _absorbingBookIds.remove(key);
         _absorbingBookIds.insert(afterIdx + 1, key);
         return;
       }
     }
-    _absorbingBookIds.add(key);
+    if (_absorbingBookIds.contains(key)) return;
+    if (atFront) {
+      _absorbingBookIds.insert(0, key);
+    } else {
+      _absorbingBookIds.add(key);
+    }
   }
 
   Map<String, Map<String, dynamic>> get absorbingItemCache =>
@@ -1758,9 +1761,13 @@ class LibraryProvider extends ChangeNotifier {
         if (key != null) _absorbingItemCache[key] = m;
       } catch (_) {}
     }
+    if (_dedupeAbsorbingIds()) {
+      await _saveManualAbsorbing();
+    }
   }
 
   Future<void> _saveManualAbsorbing() async {
+    _dedupeAbsorbingIds();
     await ScopedPrefs.setStringList(
         'absorbing_manual_adds', _manualAbsorbAdds.toList());
     await ScopedPrefs.setStringList(
@@ -1792,9 +1799,7 @@ class LibraryProvider extends ChangeNotifier {
 
     for (final section in _personalizedSections) {
       final id = section['id'] as String? ?? '';
-      if (id == 'continue-listening' ||
-          id == 'continue-series' ||
-          id == 'downloaded-books') {
+      if (id == 'continue-listening' || id == 'continue-series') {
         final isContinueSeries = id == 'continue-series';
         for (final e in (section['entities'] as List<dynamic>? ?? [])) {
           if (e is Map<String, dynamic>) {
@@ -2067,6 +2072,7 @@ class LibraryProvider extends ChangeNotifier {
   /// Replace the absorbing card order with a new order and persist.
   Future<void> reorderAbsorbing(List<String> newOrder) async {
     _absorbingBookIds = newOrder;
+    _dedupeAbsorbingIds();
     await _saveManualAbsorbing();
     notifyListeners();
     _catchUpQueueAutoDownloads();
@@ -2184,7 +2190,8 @@ class LibraryProvider extends ChangeNotifier {
           ? PlayerSettings.getPodcastQueueMode()
           : PlayerSettings.getBookQueueMode();
       modeFuture.then((mode) {
-        debugPrint('[AutoAdvance] queueMode=$mode (${isPodcast ? 'podcast' : 'book'}) for finished item $itemId');
+        debugPrint(
+            '[AutoAdvance] queueMode=$mode (${isPodcast ? 'podcast' : 'book'}) for finished item $itemId');
         if (mode == 'manual') {
           _manualQueueAdvance(itemId);
         } else if (mode == 'auto_next') {
@@ -2224,7 +2231,9 @@ class LibraryProvider extends ChangeNotifier {
     if (DownloadService().isDownloaded(itemId)) {
       final isPodcastItem = itemId.length > 36;
       Future.wait([
-        isPodcastItem ? PlayerSettings.getPodcastQueueMode() : PlayerSettings.getBookQueueMode(),
+        isPodcastItem
+            ? PlayerSettings.getPodcastQueueMode()
+            : PlayerSettings.getBookQueueMode(),
         PlayerSettings.getQueueAutoDownload(),
         PlayerSettings.getRollingDownloadDeleteFinished(),
       ]).then((results) {
@@ -2323,13 +2332,16 @@ class LibraryProvider extends ChangeNotifier {
       // Check per-show advance direction
       final prefs = await SharedPreferences.getInstance();
       final advanceNewestFirst =
-          (prefs.getString('podcast_advance_dir_$showId') ?? 'oldest_first') == 'newest_first';
+          (prefs.getString('podcast_advance_dir_$showId') ?? 'oldest_first') ==
+              'newest_first';
 
       // Sort by publishedAt; direction determines which episode comes "next"
       episodes.sort((a, b) {
         final aTime = (a['publishedAt'] as num?)?.toInt() ?? 0;
         final bTime = (b['publishedAt'] as num?)?.toInt() ?? 0;
-        return advanceNewestFirst ? bTime.compareTo(aTime) : aTime.compareTo(bTime);
+        return advanceNewestFirst
+            ? bTime.compareTo(aTime)
+            : aTime.compareTo(bTime);
       });
 
       final currentIdx = episodes.indexWhere(
@@ -2350,7 +2362,8 @@ class LibraryProvider extends ChangeNotifier {
         final candidateId = candidate['id'] as String?;
         if (candidateId == null) continue;
         final candidateKey = '$showId-$candidateId';
-        final cachedFinished = _progressMap[candidateKey]?['isFinished'] == true;
+        final cachedFinished =
+            _progressMap[candidateKey]?['isFinished'] == true;
         if (cachedFinished) {
           if (trustCache) continue;
           // _progressMap can be stale; verify with server before skipping.
@@ -2429,10 +2442,7 @@ class LibraryProvider extends ChangeNotifier {
   /// Manual queue auto-advance: scan absorbing list from after the finished
   /// item, find the first non-finished card, and play it.
   void _manualQueueAdvance(String finishedKey) async {
-    if (AudioPlayerService.wasNoisyPause) {
-      debugPrint('[AutoAdvance] Skipping manual advance - noisy pause active');
-      return;
-    }
+    if (AudioPlayerService.wasNoisyPause) return;
 
     final merged = await PlayerSettings.getMergeAbsorbingLibraries();
 
@@ -2492,20 +2502,15 @@ class LibraryProvider extends ChangeNotifier {
           chapters: chapters,
         );
       }
-      debugPrint('[AutoAdvance] Manual queue: starting next item $key');
       return; // started the next item
     }
-    debugPrint(
-        '[AutoAdvance] Manual queue: no next item found after $finishedKey');
+    // All remaining cards are finished — playback stops naturally.
   }
 
   /// Offline auto-advance: find the next downloaded book in series or next
   /// downloaded podcast episode and auto-play it without any server calls.
   void _autoAdvanceOffline(String finishedKey) {
-    if (AudioPlayerService.wasNoisyPause) {
-      debugPrint('[AutoAdvance] Skipping auto advance - noisy pause active');
-      return;
-    }
+    if (AudioPlayerService.wasNoisyPause) return;
 
     final isCompound = finishedKey.length > 36;
     if (isCompound) {
@@ -2624,7 +2629,8 @@ class LibraryProvider extends ChangeNotifier {
       // Check per-show advance direction
       final prefs = await SharedPreferences.getInstance();
       final advanceNewestFirst =
-          (prefs.getString('podcast_advance_dir_$showId') ?? 'oldest_first') == 'newest_first';
+          (prefs.getString('podcast_advance_dir_$showId') ?? 'oldest_first') ==
+              'newest_first';
 
       // Find all downloaded episodes for this show from the cache
       final dl = DownloadService();
