@@ -317,8 +317,9 @@ class LibraryProvider extends ChangeNotifier {
     }
 
     // Build fake entities from download metadata.
-    // Split in-progress downloads into a continue-listening section so Home
-    // can show them as compact cards, while the rest go to downloaded-books.
+    // Split in-progress downloads into an offline continue-listening section so
+    // Absorbing stays focused on what is actively being listened to, while Home
+    // can use the remaining space for the rest of the downloaded library.
     final continueEntities = <Map<String, dynamic>>[];
     final downloadedEntities = <Map<String, dynamic>>[];
     for (final dl in downloads) {
@@ -630,6 +631,7 @@ class LibraryProvider extends ChangeNotifier {
       restoreOfflineMode().then((_) async {
         debugPrint(
             '[Library] restoreOfflineMode done, serverReachable=${auth.serverReachable} api=${_api != null} offline=$isOffline');
+
         _startConnectivityMonitoring();
         _loadManualAbsorbing();
         await _loadRollingDownloadSeries();
@@ -1031,21 +1033,12 @@ class LibraryProvider extends ChangeNotifier {
     // Rebuild progress map from updated user data
     final progressList = data['mediaProgress'] as List<dynamic>?;
     if (progressList != null) {
-      final player = AudioPlayerService();
-      final playingKey = player.currentEpisodeId != null
-          ? '${player.currentItemId}-${player.currentEpisodeId}'
-          : player.currentItemId;
       for (final mp in progressList) {
         if (mp is Map<String, dynamic>) {
           final itemId = mp['libraryItemId'] as String?;
           final episodeId = mp['episodeId'] as String?;
           if (itemId != null) {
             final key = episodeId != null ? '$itemId-$episodeId' : itemId;
-            // Don't let stale server data overwrite a local mark-finished
-            if (_locallyFinishedItems.contains(key) && mp['isFinished'] != true)
-              continue;
-            // Don't overwrite progress for the currently playing item
-            if (key == playingKey && player.hasBook) continue;
             _progressMap[key] = mp;
             _localProgressOverrides.remove(key);
           }
@@ -1945,7 +1938,12 @@ class LibraryProvider extends ChangeNotifier {
         return;
       }
     }
-    _absorbingBookIds.add(key);
+    if (_absorbingBookIds.contains(key)) return;
+    if (atFront) {
+      _absorbingBookIds.insert(0, key);
+    } else {
+      _absorbingBookIds.add(key);
+    }
   }
 
   Map<String, Map<String, dynamic>> get absorbingItemCache =>
@@ -2008,9 +2006,7 @@ class LibraryProvider extends ChangeNotifier {
 
     for (final section in _personalizedSections) {
       final id = section['id'] as String? ?? '';
-      if (id == 'continue-listening' ||
-          id == 'continue-series' ||
-          id == 'downloaded-books') {
+      if (id == 'continue-listening' || id == 'continue-series') {
         final isContinueSeries = id == 'continue-series';
         for (final e in (section['entities'] as List<dynamic>? ?? [])) {
           if (e is Map<String, dynamic>) {
@@ -2287,6 +2283,7 @@ class LibraryProvider extends ChangeNotifier {
   /// Replace the absorbing card order with a new order and persist.
   Future<void> reorderAbsorbing(List<String> newOrder) async {
     _absorbingBookIds = newOrder;
+    _dedupeAbsorbingIds();
     await _saveManualAbsorbing();
     notifyListeners();
     _catchUpQueueAutoDownloads();
@@ -2423,8 +2420,57 @@ class LibraryProvider extends ChangeNotifier {
     if (DownloadService().isDownloaded(itemId)) {
       PlayerSettings.getRollingDownloadDeleteFinished().then((delete) {
         if (!delete) return;
-        DownloadService().deleteDownload(itemId, skipStopCheck: true);
-        _showRollingSnackBar('Deleted finished download');
+        bool optedIn = false;
+        if (itemId.length > 36) {
+          optedIn = _rollingDownloadSeries.contains(itemId.substring(0, 36));
+        } else {
+          final data = _itemDataWithSeries(itemId);
+          if (data != null) {
+            final (seriesId, _) = _extractSeries(data);
+            optedIn =
+                seriesId != null && _rollingDownloadSeries.contains(seriesId);
+          }
+        }
+        if (optedIn) {
+          DownloadService().deleteDownload(itemId, skipStopCheck: true);
+          _showRollingSnackBar('Deleted finished download');
+        }
+      });
+    }
+
+    // Auto-delete for queue-based downloads (manual queue + queueAutoDownload)
+    if (DownloadService().isDownloaded(itemId)) {
+      final isPodcastItem = itemId.length > 36;
+      Future.wait([
+        isPodcastItem
+            ? PlayerSettings.getPodcastQueueMode()
+            : PlayerSettings.getBookQueueMode(),
+        PlayerSettings.getQueueAutoDownload(),
+        PlayerSettings.getRollingDownloadDeleteFinished(),
+      ]).then((results) {
+        final qMode = results[0] as String;
+        final qAutoDl = results[1] as bool;
+        final deleteFin = results[2] as bool;
+        if (qMode != 'manual' || !qAutoDl || !deleteFin) return;
+        // Skip if already handled by series-based block above
+        bool handledBySeries = false;
+        if (_rollingDownloadSeries.isNotEmpty) {
+          if (itemId.length > 36) {
+            handledBySeries =
+                _rollingDownloadSeries.contains(itemId.substring(0, 36));
+          } else {
+            final data = _itemDataWithSeries(itemId);
+            if (data != null) {
+              final (seriesId, _) = _extractSeries(data);
+              handledBySeries =
+                  seriesId != null && _rollingDownloadSeries.contains(seriesId);
+            }
+          }
+        }
+        if (!handledBySeries) {
+          DownloadService().deleteDownload(itemId, skipStopCheck: true);
+          _showRollingSnackBar('Deleted finished download');
+        }
       });
     }
 
@@ -2607,10 +2653,7 @@ class LibraryProvider extends ChangeNotifier {
   /// Manual queue auto-advance: scan absorbing list from after the finished
   /// item, find the first non-finished card, and play it.
   void _manualQueueAdvance(String finishedKey) async {
-    if (AudioPlayerService.wasNoisyPause) {
-      debugPrint('[AutoAdvance] Skipping manual advance - noisy pause active');
-      return;
-    }
+    if (AudioPlayerService.wasNoisyPause) return;
 
     final merged = await PlayerSettings.getMergeAbsorbingLibraries();
 
@@ -2670,20 +2713,15 @@ class LibraryProvider extends ChangeNotifier {
           chapters: chapters,
         );
       }
-      debugPrint('[AutoAdvance] Manual queue: starting next item $key');
       return; // started the next item
     }
-    debugPrint(
-        '[AutoAdvance] Manual queue: no next item found after $finishedKey');
+    // All remaining cards are finished — playback stops naturally.
   }
 
   /// Offline auto-advance: find the next downloaded book in series or next
   /// downloaded podcast episode and auto-play it without any server calls.
   void _autoAdvanceOffline(String finishedKey) {
-    if (AudioPlayerService.wasNoisyPause) {
-      debugPrint('[AutoAdvance] Skipping auto advance - noisy pause active');
-      return;
-    }
+    if (AudioPlayerService.wasNoisyPause) return;
 
     final isCompound = finishedKey.length > 36;
     if (isCompound) {
