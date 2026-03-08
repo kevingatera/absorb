@@ -263,6 +263,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
+    final lowerFade = Color.lerp(cs.surface, scaffoldBg, 0.55) ?? scaffoldBg;
     final lib = context.watch<LibraryProvider>();
     final allLibraries = lib.libraries;
     final libraryName = lib.selectedLibrary?['name'] as String? ?? 'Library';
@@ -277,16 +279,18 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return Scaffold(
+      backgroundColor: scaffoldBg,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            stops: const [0.0, 0.3, 1.0],
+            stops: const [0.0, 0.22, 0.72, 1.0],
             colors: [
               cs.primary.withValues(alpha: 0.06),
               cs.surface,
-              cs.surface,
+              lowerFade,
+              scaffoldBg,
             ],
           ),
         ),
