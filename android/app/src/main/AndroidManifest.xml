@@ -26,7 +26,6 @@
                 <action android:name="com.ryanheise.audioservice.NOTIFICATION_CLICK"/>
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
-            
         </activity>
 
         <!-- OIDC callback via Chrome Custom Tab (flutter_web_auth_2) -->
@@ -96,6 +95,32 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Now Playing homescreen widget (4x2) -->
+        <receiver
+            android:name=".NowPlayingWidget"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/now_playing_widget_info" />
+        </receiver>
+
+        <!-- Now Playing compact widget (4x1) -->
+        <receiver
+            android:name=".NowPlayingWidgetCompact"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/now_playing_widget_compact_info" />
+        </receiver>
+
+
 
     </application>
 

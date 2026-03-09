@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import '../services/android_auto_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/user_account_service.dart';
 
@@ -51,22 +52,29 @@ class AuthProvider extends ChangeNotifier {
   /// Try to restore a saved session from SharedPreferences.
   /// If the server is unreachable, still restore credentials so offline mode works.
   Future<void> tryRestoreSession() async {
+    final sw = Stopwatch()..start();
+    debugPrint('[Auth] tryRestoreSession started');
     _isLoading = true;
     _serverReachable = true;
     notifyListeners();
 
     try {
+      debugPrint('[Auth] getting SharedPreferences...');
       final prefs = await SharedPreferences.getInstance();
+      debugPrint('[Auth] SharedPreferences loaded (${sw.elapsedMilliseconds}ms)');
       final savedUrl = prefs.getString('server_url');
       final savedToken = prefs.getString('token');
       final savedUsername = prefs.getString('username');
       final savedLibraryId = prefs.getString('default_library_id');
+
+      debugPrint('[Auth] saved credentials: url=${savedUrl != null}, token=${savedToken != null}');
 
       if (savedUrl != null && savedToken != null) {
         // Always restore credentials so we can at least go offline
         _serverUrl = savedUrl;
         _token = savedToken;
         _username = savedUsername;
+        _userId = prefs.getString('user_id');
         _defaultLibraryId = savedLibraryId;
 
         // Restore custom headers
@@ -78,26 +86,32 @@ class AuthProvider extends ChangeNotifier {
         }
 
         // Check if server is actually reachable
+        debugPrint('[Auth] pinging server... (${sw.elapsedMilliseconds}ms)');
         final reachable = await ApiService.pingServer(savedUrl, customHeaders: _customHeaders);
         _serverReachable = reachable;
+        debugPrint('[Auth] ping result: reachable=$reachable (${sw.elapsedMilliseconds}ms)');
 
         // Fetch full user info (needed for isAdmin, permissions, etc.)
         if (reachable) {
           try {
+            debugPrint('[Auth] fetching /me... (${sw.elapsedMilliseconds}ms)');
             final api = ApiService(baseUrl: savedUrl, token: savedToken, customHeaders: _customHeaders);
             final me = await api.getMe();
             if (me != null) {
               _userJson = me;
               _userId = me['id'] as String?;
             }
+            debugPrint('[Auth] /me done (${sw.elapsedMilliseconds}ms)');
           } catch (_) {}
         }
       }
-    } catch (_) {
+    } catch (e) {
       // Restore failed — but if we already set credentials, keep them
+      debugPrint('[Auth] tryRestoreSession error: $e (${sw.elapsedMilliseconds}ms)');
       _serverReachable = false;
     }
 
+    debugPrint('[Auth] tryRestoreSession done, isAuthenticated=$isAuthenticated (${sw.elapsedMilliseconds}ms)');
     _isLoading = false;
     notifyListeners();
   }
@@ -165,6 +179,7 @@ class AuthProvider extends ChangeNotifier {
       await prefs.setString('server_url', _serverUrl!);
       if (_token != null) await prefs.setString('token', _token!);
       if (_username != null) await prefs.setString('username', _username!);
+      if (_userId != null) await prefs.setString('user_id', _userId!);
       if (_defaultLibraryId != null) {
         await prefs.setString('default_library_id', _defaultLibraryId!);
       }
@@ -227,6 +242,7 @@ class AuthProvider extends ChangeNotifier {
       await prefs.setString('server_url', _serverUrl!);
       if (_token != null) await prefs.setString('token', _token!);
       if (_username != null) await prefs.setString('username', _username!);
+      if (_userId != null) await prefs.setString('user_id', _userId!);
       if (_defaultLibraryId != null) {
         await prefs.setString('default_library_id', _defaultLibraryId!);
       }
@@ -269,6 +285,9 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (_) {}
 
+    // Clear Android Auto browse tree cache so it doesn't show stale data
+    AndroidAutoService().clearCache();
+
     _token = null;
     _serverUrl = null;
     _username = null;
@@ -284,6 +303,7 @@ class AuthProvider extends ChangeNotifier {
       await prefs.remove('server_url');
       await prefs.remove('token');
       await prefs.remove('username');
+      await prefs.remove('user_id');
       await prefs.remove('default_library_id');
     } catch (_) {}
 
@@ -302,6 +322,9 @@ class AuthProvider extends ChangeNotifier {
         await player.stop();
       }
     } catch (_) {}
+
+    // Clear Android Auto browse tree cache so it refreshes for the new user
+    AndroidAutoService().clearCache();
 
     // Set the new account as active in the account service
     UserAccountService().switchTo(account.serverUrl, account.username);
@@ -324,6 +347,7 @@ class AuthProvider extends ChangeNotifier {
       await prefs.setString('server_url', _serverUrl!);
       if (_token != null) await prefs.setString('token', _token!);
       if (_username != null) await prefs.setString('username', _username!);
+      if (_userId != null) await prefs.setString('user_id', _userId!);
     } catch (_) {}
 
     // Restore custom headers for this session

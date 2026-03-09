@@ -1,9 +1,15 @@
 package com.barnabas.absorb
 
+import android.content.Context
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
+import android.os.Build
+import android.os.Environment
+import android.os.StatFs
 import android.util.Log
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -25,6 +31,13 @@ class MainActivity : AudioServiceActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "moveToBackground" -> {
+                        moveTaskToBack(true)
+                        result.success(true)
+                    }
+                    "isBluetoothAudioConnected" -> {
+                        result.success(isBluetoothAudioConnected())
+                    }
                     "init" -> handleInit(result)
                     "attachSession" -> {
                         val sessionId = call.argument<Int>("sessionId") ?: 0
@@ -55,6 +68,24 @@ class MainActivity : AudioServiceActivity() {
                 }
             }
         Log.d(TAG, "EQ method channel registered")
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.absorb.storage")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getDeviceStorage" -> {
+                        try {
+                            val stat = StatFs(Environment.getDataDirectory().path)
+                            result.success(mapOf(
+                                "totalBytes" to stat.totalBytes,
+                                "availableBytes" to stat.availableBytes
+                            ))
+                        } catch (e: Exception) {
+                            result.error("STORAGE_ERROR", e.message, null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     private fun handleInit(result: MethodChannel.Result) {
@@ -178,6 +209,19 @@ class MainActivity : AudioServiceActivity() {
         bassBoost = null
         virtualizer = null
         loudnessEnhancer = null
+    }
+
+    private fun isBluetoothAudioConnected(): Boolean {
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val devices = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            return devices.any {
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+            }
+        }
+        @Suppress("DEPRECATION")
+        return am.isBluetoothA2dpOn || am.isBluetoothScoOn
     }
 
     override fun onDestroy() {

@@ -5,8 +5,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
+import '../services/progress_sync_service.dart';
 import '../services/chromecast_service.dart';
 import '../providers/auth_provider.dart';
+import 'card_buttons.dart';
+import 'html_description.dart';
 
 /// Bottom sheet that shows a podcast's episode list.
 /// Mirrors the UX of [BookDetailSheet] but adapted for podcast shows.
@@ -49,8 +52,9 @@ class EpisodeListSheet extends StatefulWidget {
 class _EpisodeListSheetState extends State<EpisodeListSheet> {
   List<dynamic> _episodes = [];
   bool _isLoading = true;
-  bool _descriptionExpanded = false;
   bool _isDownloadingAll = false;
+  bool _autoDownloadEnabled = false;
+  bool _newestFirst = true;
 
   String get _itemId => widget.podcastItem['id'] as String? ?? '';
 
@@ -68,6 +72,15 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
   void initState() {
     super.initState();
     _loadEpisodes();
+    _loadAutoDownloadState();
+  }
+
+  void _loadAutoDownloadState() {
+    if (_itemId.isEmpty) return;
+    final lib = context.read<LibraryProvider>();
+    setState(() {
+      _autoDownloadEnabled = lib.isRollingDownloadEnabled(_itemId);
+    });
   }
 
   Future<void> _loadEpisodes() async {
@@ -102,15 +115,22 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
     }
   }
 
-  /// Sort episodes newest first by publishedAt.
+  /// Sort episodes by publishedAt according to current sort order.
   List<dynamic> _sortEpisodes(List<dynamic> episodes) {
     final sorted = List<dynamic>.from(episodes);
     sorted.sort((a, b) {
       final aTime = (a['publishedAt'] as num?)?.toInt() ?? 0;
       final bTime = (b['publishedAt'] as num?)?.toInt() ?? 0;
-      return bTime.compareTo(aTime); // newest first
+      return _newestFirst ? bTime.compareTo(aTime) : aTime.compareTo(bTime);
     });
     return sorted;
+  }
+
+  void _toggleSortOrder() {
+    setState(() {
+      _newestFirst = !_newestFirst;
+      _episodes = _sortEpisodes(_episodes);
+    });
   }
 
   Future<void> _playEpisode(Map<String, dynamic> episode) async {
@@ -123,6 +143,8 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
     final duration = (episode['duration'] as num?)?.toDouble() ?? 0;
     final coverUrl = api.getCoverUrl(_itemId);
 
+    final chapters = episode['chapters'] as List<dynamic>? ?? [];
+
     // Check if Chromecast is connected
     final cast = ChromecastService();
     if (cast.isConnected) {
@@ -133,7 +155,7 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
         author: _title,
         coverUrl: coverUrl,
         totalDuration: duration,
-        chapters: [],
+        chapters: chapters,
         episodeId: episodeId,
       );
       if (mounted) Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
@@ -141,18 +163,21 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
     }
 
     final player = AudioPlayerService();
-    await player.playItem(
+    final error = await player.playItem(
       api: api,
       itemId: _itemId,
       title: episodeTitle,
       author: _title,
       coverUrl: coverUrl,
       totalDuration: duration,
-      chapters: [],
+      chapters: chapters,
       episodeId: episodeId,
       episodeTitle: episodeTitle,
     );
-    if (mounted) Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
+    if (mounted) {
+      if (error != null) showErrorSnackBar(context, error);
+      Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
+    }
   }
 
   Future<void> _downloadEpisode(Map<String, dynamic> episode) async {
@@ -183,6 +208,26 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
     final api = auth.apiService;
     if (api == null) return;
 
+    // Offer to enable auto-download if not already on
+    if (_itemId.isNotEmpty && !_autoDownloadEnabled) {
+      final enable = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Auto-Download This Podcast?'),
+          content: const Text('Automatically download the next episodes as you listen.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No Thanks')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Enable')),
+          ],
+        ),
+      );
+      if (enable == true && mounted) {
+        final lib = context.read<LibraryProvider>();
+        await lib.enableRollingDownload(_itemId);
+        setState(() => _autoDownloadEnabled = true);
+      }
+    }
+
     setState(() => _isDownloadingAll = true);
 
     for (final ep in _episodes) {
@@ -202,6 +247,79 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
     }
 
     if (mounted) setState(() => _isDownloadingAll = false);
+  }
+
+  Widget _buildOverflowMenu(ColorScheme cs) {
+    final dl = DownloadService();
+    int downloaded = 0;
+    for (final ep in _episodes) {
+      final eid = ep['id'] as String? ?? '';
+      final key = '$_itemId-$eid';
+      if (dl.isDownloaded(key)) downloaded++;
+    }
+    final allDownloaded = downloaded == _episodes.length;
+
+    if (_isDownloadingAll) {
+      return Padding(
+        padding: const EdgeInsets.all(12),
+        child: SizedBox(
+          width: 18, height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
+        ),
+      );
+    }
+
+    return IconButton(
+      icon: Icon(Icons.more_vert_rounded, color: cs.onSurfaceVariant),
+      onPressed: () => _showPodcastMoreSheet(cs, allDownloaded, downloaded),
+    );
+  }
+
+  void _showPodcastMoreSheet(ColorScheme cs, bool allDownloaded, int downloaded) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+              if (!allDownloaded)
+                _podMoreItem(cs, Icons.download_rounded,
+                  downloaded > 0 ? 'Download Remaining (${_episodes.length - downloaded})' : 'Download All',
+                  onTap: () { Navigator.pop(ctx); _downloadAll(); }),
+              if (_itemId.isNotEmpty)
+                _podMoreItem(cs,
+                  _autoDownloadEnabled ? Icons.downloading_rounded : Icons.download_outlined,
+                  _autoDownloadEnabled ? 'Turn Auto-Download Off' : 'Turn Auto-Download On',
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final lib = context.read<LibraryProvider>();
+                    await lib.toggleRollingDownload(_itemId);
+                    setState(() => _autoDownloadEnabled = lib.isRollingDownloadEnabled(_itemId));
+                  }),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _podMoreItem(ColorScheme cs, IconData icon, String label, {required VoidCallback onTap}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: GestureDetector(onTap: onTap, child: Container(height: 44,
+        decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: cs.onSurface.withValues(alpha: 0.1))),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, size: 16, color: cs.onSurfaceVariant), const SizedBox(width: 8),
+          Text(label, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w500))]))),
+    );
   }
 
   String? get _coverUrl {
@@ -259,9 +377,21 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
             child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
             child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-              // Show title (centered)
-              Text(_title, textAlign: TextAlign.center,
-                style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
+              // Show title with 3-dot menu pinned right
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(width: 48),
+                  Expanded(
+                    child: Text(_title, textAlign: TextAlign.center,
+                      style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
+                  ),
+                  SizedBox(
+                    width: 48,
+                    child: _episodes.isNotEmpty ? _buildOverflowMenu(cs) : null,
+                  ),
+                ],
+              ),
               if (_author.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(_author, textAlign: TextAlign.center,
@@ -271,13 +401,11 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
               // Description
               if (_description.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                GestureDetector(
-                  onTap: () => setState(() => _descriptionExpanded = !_descriptionExpanded),
-                  child: Text(_description,
-                    maxLines: _descriptionExpanded ? 100 : 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant, height: 1.4)),
+                HtmlDescription(
+                  html: _description,
+                  maxLines: 2,
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant, height: 1.4),
+                  linkColor: cs.primary,
                 ),
               ],
 
@@ -285,101 +413,29 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
               const SizedBox(height: 12),
               Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
                 if (!_isLoading) _chip(Icons.podcasts_rounded, '${_episodes.length} episode${_episodes.length == 1 ? '' : 's'}'),
+                if (_autoDownloadEnabled) _chip(Icons.downloading_rounded, 'Auto-Download'),
               ]),
-
-              // Download All button (reactive)
-              if (_episodes.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                ListenableBuilder(
-                  listenable: DownloadService(),
-                  builder: (_, __) {
-                    final dl = DownloadService();
-                    int downloaded = 0;
-                    int downloading = 0;
-                    double totalProgress = 0;
-                    for (final ep in _episodes) {
-                      final eid = ep['id'] as String? ?? '';
-                      final key = '$_itemId-$eid';
-                      if (dl.isDownloaded(key)) {
-                        downloaded++;
-                      } else if (dl.isDownloading(key)) {
-                        downloading++;
-                        totalProgress += dl.downloadProgress(key);
-                      }
-                    }
-                    final allDone = downloaded == _episodes.length;
-                    final anyActive = _isDownloadingAll || downloading > 0;
-                    final overallProgress = _episodes.isNotEmpty
-                        ? (downloaded + totalProgress) / _episodes.length
-                        : 0.0;
-
-                    if (allDone) {
-                      return GestureDetector(
-                        child: Container(height: 44,
-                          decoration: BoxDecoration(
-                            color: (Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent : Colors.green.shade700).withValues(alpha: 0.06),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: (Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent : Colors.green.shade700).withValues(alpha: 0.15)),
-                          ),
-                          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                            Icon(Icons.download_done_rounded, size: 16, color: (Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent : Colors.green.shade700).withValues(alpha: 0.7)),
-                            const SizedBox(width: 6),
-                            Text('All Episodes Downloaded',
-                              style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent : Colors.green.shade700).withValues(alpha: 0.7), fontSize: 12, fontWeight: FontWeight.w500)),
-                          ])),
-                      );
-                    }
-
-                    return GestureDetector(
-                      onTap: anyActive ? null : _downloadAll,
-                      child: Container(height: 44,
-                        clipBehavior: Clip.antiAlias,
-                        decoration: BoxDecoration(
-                          color: cs.onSurface.withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: cs.onSurface.withValues(alpha: 0.1)),
-                        ),
-                        child: Stack(children: [
-                          if (anyActive)
-                            FractionallySizedBox(
-                              widthFactor: overallProgress.clamp(0.0, 1.0),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(13),
-                                ),
-                              ),
-                            ),
-                          Center(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                            if (anyActive)
-                              SizedBox(width: 14, height: 14,
-                                child: CircularProgressIndicator(strokeWidth: 2,
-                                  color: Theme.of(context).colorScheme.primary))
-                            else
-                              Icon(Icons.download_rounded, size: 16, color: cs.onSurfaceVariant),
-                            const SizedBox(width: 6),
-                            Text(
-                              anyActive
-                                  ? 'Downloading ${downloaded + downloading}/${_episodes.length} · ${(overallProgress * 100).toStringAsFixed(0)}%'
-                                  : downloaded > 0
-                                      ? 'Download Remaining (${_episodes.length - downloaded})'
-                                      : 'Download All Episodes',
-                              style: TextStyle(
-                                color: anyActive ? Theme.of(context).colorScheme.primary : cs.onSurfaceVariant,
-                                fontSize: 12, fontWeight: FontWeight.w500)),
-                          ])),
-                        ]),
-                      ),
-                    );
-                  },
-                ),
-              ],
 
               // Episodes section header
               const SizedBox(height: 16),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Episodes', style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+              Row(
+                children: [
+                  Text('Episodes', style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: _toggleSortOrder,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_newestFirst ? 'Newest' : 'Oldest',
+                          style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
+                        const SizedBox(width: 2),
+                        Icon(_newestFirst ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                          size: 14, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 4),
             ])),
@@ -478,7 +534,7 @@ class EpisodeDetailSheet extends StatefulWidget {
 }
 
 class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
-  bool _descriptionExpanded = false;
+  bool _chaptersExpanded = false;
 
   String get _itemId => widget.podcastItem['id'] as String? ?? '';
 
@@ -500,17 +556,9 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
   int get _publishedAt => (widget.episode['publishedAt'] as num?)?.toInt() ?? 0;
   String? get _episodeNumber => widget.episode['episode'] as String?;
   String? get _season => widget.episode['season'] as String?;
+  List<dynamic> get _chapters => widget.episode['chapters'] as List<dynamic>? ?? [];
 
-  String get _cleanDescription {
-    final desc = widget.episode['description'] as String? ?? '';
-    return desc
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .trim();
-  }
+  String get _rawDescription => widget.episode['description'] as String? ?? '';
 
   Future<void> _play() async {
     final auth = context.read<AuthProvider>();
@@ -521,20 +569,23 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
     if (cast.isConnected) {
       await cast.castItem(
         api: api, itemId: _itemId, title: _episodeTitle, author: _showTitle,
-        coverUrl: api.getCoverUrl(_itemId), totalDuration: _duration, chapters: [],
+        coverUrl: api.getCoverUrl(_itemId), totalDuration: _duration, chapters: _chapters,
         episodeId: _episodeId,
       );
       if (mounted) Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
       return;
     }
 
-    await AudioPlayerService().playItem(
+    final error = await AudioPlayerService().playItem(
       api: api, itemId: _itemId, title: _episodeTitle, author: _showTitle,
-      coverUrl: api.getCoverUrl(_itemId), totalDuration: _duration, chapters: [],
+      coverUrl: api.getCoverUrl(_itemId), totalDuration: _duration, chapters: _chapters,
       episodeId: _episodeId,
       episodeTitle: _episodeTitle,
     );
-    if (mounted) Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
+    if (mounted) {
+      if (error != null) showErrorSnackBar(context, error);
+      Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
+    }
   }
 
   Future<void> _download() async {
@@ -591,7 +642,7 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
           duration: _duration,
           isFinished: true,
         );
-        lib.markFinishedLocally(key);
+        lib.markFinishedLocally(key, skipAutoAdvance: true);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: const Text('Marked as finished — nice!'),
@@ -787,7 +838,7 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
                   );
                 },
               )),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(child: GestureDetector(
                 onTap: _toggleFinished,
                 child: Container(
@@ -814,6 +865,19 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
                   ]),
                 ),
               )),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => _showMoreSheet(context, lib, dlKey, progress, isFinished),
+                child: Container(
+                  height: 36, width: 44,
+                  decoration: BoxDecoration(
+                    color: cs.onSurface.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: cs.onSurface.withValues(alpha: 0.1)),
+                  ),
+                  child: Icon(Icons.more_horiz_rounded, size: 18, color: cs.onSurfaceVariant),
+                ),
+              ),
             ]),
 
             // Metadata chips
@@ -829,8 +893,9 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
             const SizedBox(height: 16),
             GestureDetector(
               onTap: () {
-                Navigator.pop(context);
-                EpisodeListSheet.show(context, widget.podcastItem);
+                final nav = Navigator.of(context);
+                nav.pop();
+                EpisodeListSheet.show(nav.context, widget.podcastItem);
               },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -849,34 +914,152 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
               ),
             ),
 
+            // Chapters
+            if (_chapters.isNotEmpty) ...[const SizedBox(height: 16),
+              GestureDetector(onTap: () => setState(() => _chaptersExpanded = !_chaptersExpanded),
+                child: Row(children: [
+                  Text('Chapters (${_chapters.length})', style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                  const Spacer(), Icon(_chaptersExpanded ? Icons.expand_less : Icons.expand_more, color: cs.onSurface.withValues(alpha: 0.3), size: 20)])),
+              if (_chaptersExpanded) ...[const SizedBox(height: 8),
+                ..._chapters.asMap().entries.map((e) {
+                  final ch = e.value as Map<String, dynamic>;
+                  return Padding(padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(children: [
+                      SizedBox(width: 28, child: Text('${e.key + 1}', style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.3)))),
+                      Expanded(child: Text(ch['title'] as String? ?? 'Chapter ${e.key + 1}', maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.6)))),
+                      Text(_fmtDur(((ch['end'] as num?)?.toDouble() ?? 0) - ((ch['start'] as num?)?.toDouble() ?? 0)), style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.3))),
+                    ]));
+                })]],
+
             // Description
-            if (_cleanDescription.isNotEmpty) ...[
+            if (_rawDescription.isNotEmpty) ...[
               const SizedBox(height: 16),
               Text('About This Episode', style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
               const SizedBox(height: 6),
-              GestureDetector(
-                onTap: () => setState(() => _descriptionExpanded = !_descriptionExpanded),
-                child: Text(_cleanDescription,
-                  maxLines: _descriptionExpanded ? 200 : 4,
-                  overflow: TextOverflow.ellipsis,
-                  style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.7), height: 1.5)),
+              HtmlDescription(
+                html: _rawDescription,
+                maxLines: 4,
+                style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.7), height: 1.5),
+                linkColor: cs.primary,
               ),
-              if (_cleanDescription.length > 200)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: GestureDetector(
-                    onTap: () => setState(() => _descriptionExpanded = !_descriptionExpanded),
-                    child: Text(
-                      _descriptionExpanded ? 'Show less' : 'Show more',
-                      style: TextStyle(fontSize: 12, color: cs.primary, fontWeight: FontWeight.w500),
-                    ),
-                  ),
-                ),
             ],
           ],
         ),
       ]),
     );
+  }
+
+  void _showMoreSheet(BuildContext context, LibraryProvider lib, String dlKey, double progress, bool isFinished) {
+    final cs = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+              _moreItem(cs, lib.isOnAbsorbingList(_itemId)
+                  ? Icons.remove_circle_outline_rounded : Icons.add_circle_outline_rounded,
+                lib.isOnAbsorbingList(_itemId) ? 'Remove from Absorbing' : 'Add to Absorbing',
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  if (lib.isOnAbsorbingList(_itemId)) {
+                    await lib.removeFromAbsorbing(_itemId);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        duration: const Duration(seconds: 3),
+                        content: const Text('Removed from Absorbing'),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+                    }
+                  } else {
+                    await lib.addToAbsorbingQueue(_itemId);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        duration: const Duration(seconds: 3),
+                        content: const Text('Added to Absorbing'),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+                    }
+                  }
+                }),
+              if (progress > 0 || isFinished)
+                _moreItem(cs, Icons.restart_alt_rounded, 'Reset Progress',
+                  onTap: () { Navigator.pop(ctx); _resetProgress(context); }),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _moreItem(ColorScheme cs, IconData icon, String label, {required VoidCallback onTap}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: GestureDetector(onTap: onTap, child: Container(height: 44,
+        decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: cs.onSurface.withValues(alpha: 0.1))),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, size: 16, color: cs.onSurfaceVariant), const SizedBox(width: 8),
+          Text(label, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w500))]))),
+    );
+  }
+
+  String _fmtDur(double s) {
+    final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor();
+    if (h > 0) return '${h}h ${m}m';
+    return '${m}m';
+  }
+
+  Future<void> _resetProgress(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset Progress?'),
+        content: const Text('This will erase all progress for this episode and set it back to the beginning. This can\'t be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
+            child: const Text('Reset')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final auth = context.read<AuthProvider>();
+    final api = auth.apiService;
+    if (api == null) return;
+    final player = AudioPlayerService();
+
+    if (player.currentItemId == _itemId && player.currentEpisodeId == _episodeId) {
+      await player.stopWithoutSaving();
+    }
+
+    final compoundKey = '$_itemId-$_episodeId';
+    await ProgressSyncService().deleteLocal(compoundKey);
+    final ok = await api.deleteEpisodeProgress(_itemId, _episodeId);
+    // Mark as unfinished with zero progress on the server
+    await api.updateEpisodeProgress(
+      _itemId, _episodeId,
+      currentTime: 0,
+      duration: _duration,
+      isFinished: false,
+    );
+
+    if (context.mounted) {
+      context.read<LibraryProvider>().resetProgressFor(compoundKey);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 3),
+        content: Text(ok ? 'Progress reset — fresh start!' : 'Reset may not have synced — check your server'),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+    }
   }
 
   Widget _chip(IconData icon, String text) {
@@ -927,6 +1110,8 @@ class _EpisodeRowState extends State<_EpisodeRow> {
     final episodeId = ep['id'] as String? ?? '';
     final duration = (ep['duration'] as num?)?.toDouble() ?? 0;
     final publishedAt = (ep['publishedAt'] as num?)?.toInt() ?? 0;
+    final episodeNumber = ep['episode'] as String?;
+    final season = ep['season'] as String?;
 
     // Progress
     final progress = lib.getEpisodeProgress(widget.itemId, episodeId);
@@ -970,7 +1155,12 @@ class _EpisodeRowState extends State<_EpisodeRow> {
     }
 
     return InkWell(
-      onTap: () => EpisodeDetailSheet.show(context, widget.podcastItem, ep),
+      onTap: () {
+        // Close episode list before opening detail to prevent infinite stacking
+        final nav = Navigator.of(context);
+        nav.pop();
+        EpisodeDetailSheet.show(nav.context, widget.podcastItem, ep);
+      },
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 10, 12, 10),
         child: Column(
@@ -1014,6 +1204,16 @@ class _EpisodeRowState extends State<_EpisodeRow> {
                         ),
                         maxLines: 2, overflow: TextOverflow.ellipsis,
                       ),
+                      if (episodeNumber != null || season != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          [
+                            if (season != null) 'S$season',
+                            if (episodeNumber != null) 'E$episodeNumber',
+                          ].join(' '),
+                          style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                        ),
+                      ],
                       const SizedBox(height: 4),
                       Row(
                         children: [
@@ -1077,7 +1277,7 @@ class _EpisodeRowState extends State<_EpisodeRow> {
                                 CircularProgressIndicator(
                                   value: dlProgress > 0 ? dlProgress : null,
                                   strokeWidth: 2, color: cs.primary),
-                                Text('${(dlProgress * 100).toStringAsFixed(0)}',
+                                Text((dlProgress * 100).toStringAsFixed(0),
                                   style: TextStyle(fontSize: 7, color: cs.primary, fontWeight: FontWeight.w600)),
                               ])),
                           );

@@ -64,6 +64,10 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
   List<Map<String, dynamic>> _books = [];
   bool _isLoading = true;
   bool _isDownloadingAll = false;
+  bool _isMarkingAll = false;
+  bool _autoDownloadEnabled = false;
+
+  bool _didAutoScroll = false;
 
   @override
   void initState() {
@@ -71,9 +75,52 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     // Use passed books as initial data
     _books = _unwrapBooks(widget.books);
     _sortBooks();
-    if (_books.isNotEmpty) _isLoading = false;
+    if (_books.isNotEmpty) {
+      _isLoading = false;
+      _scrollToUpNext();
+    }
     // Fetch full data from API for proper sequence info
     _fetchFromApi();
+    _loadAutoDownloadState();
+  }
+
+  void _scrollToUpNext() {
+    if (_didAutoScroll || _books.isEmpty) return;
+    _didAutoScroll = true;
+    final lib = context.read<LibraryProvider>();
+    int firstUnfinished = -1;
+    for (int i = 0; i < _books.length; i++) {
+      final bookId = _books[i]['id'] as String? ?? '';
+      if (lib.getProgressData(bookId)?['isFinished'] != true) {
+        firstUnfinished = i;
+        break;
+      }
+    }
+    // If all finished, scroll to bottom; if first is unfinished, stay at top
+    final targetIndex = firstUnfinished == -1 ? _books.length - 1 : firstUnfinished;
+    if (targetIndex <= 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.scrollController.hasClients) return;
+      // Each book card is ~88px (80 height + 8 bottom padding)
+      final offset = (targetIndex * 88.0).clamp(
+        0.0,
+        widget.scrollController.position.maxScrollExtent,
+      );
+      widget.scrollController.animateTo(
+        offset,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  void _loadAutoDownloadState() {
+    final seriesId = widget.seriesId;
+    if (seriesId == null || seriesId.isEmpty) return;
+    final lib = context.read<LibraryProvider>();
+    setState(() {
+      _autoDownloadEnabled = lib.isRollingDownloadEnabled(seriesId);
+    });
   }
 
   /// Unwrap ABS format: { libraryItem: {...}, sequence: "1" }
@@ -167,16 +214,207 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
           _sortBooks();
           _isLoading = false;
         });
+        _scrollToUpNext();
         return;
       }
     }
     if (mounted) setState(() => _isLoading = false);
   }
 
+  bool get _allFinished {
+    final lib = context.read<LibraryProvider>();
+    if (_books.isEmpty) return false;
+    for (final book in _books) {
+      final bookId = book['id'] as String? ?? '';
+      if (lib.getProgressData(bookId)?['isFinished'] != true) return false;
+    }
+    return true;
+  }
+
+  Future<void> _markAllFinished() async {
+    final auth = context.read<AuthProvider>();
+    final api = auth.apiService;
+    if (api == null) return;
+    final lib = context.read<LibraryProvider>();
+
+    setState(() => _isMarkingAll = true);
+
+    for (final book in _books) {
+      final bookId = book['id'] as String? ?? '';
+      if (bookId.isEmpty) continue;
+      if (lib.getProgressData(bookId)?['isFinished'] == true) continue;
+      final media = book['media'] as Map<String, dynamic>? ?? {};
+      final duration = (media['duration'] is num)
+          ? (media['duration'] as num).toDouble()
+          : 0.0;
+      await api.markFinished(bookId, duration);
+      lib.markFinishedLocally(bookId, skipRefresh: true, skipAutoAdvance: true);
+    }
+
+    if (mounted) {
+      lib.refresh();
+      setState(() => _isMarkingAll = false);
+    }
+  }
+
+  Future<void> _markAllNotFinished() async {
+    final auth = context.read<AuthProvider>();
+    final api = auth.apiService;
+    if (api == null) return;
+    final lib = context.read<LibraryProvider>();
+
+    setState(() => _isMarkingAll = true);
+
+    for (final book in _books) {
+      final bookId = book['id'] as String? ?? '';
+      if (bookId.isEmpty) continue;
+      if (lib.getProgressData(bookId)?['isFinished'] != true) continue;
+      final media = book['media'] as Map<String, dynamic>? ?? {};
+      final duration = (media['duration'] is num)
+          ? (media['duration'] as num).toDouble()
+          : 0.0;
+      await api.markNotFinished(bookId, currentTime: 0, duration: duration);
+      lib.resetProgressFor(bookId);
+    }
+
+    if (mounted) {
+      lib.refresh();
+      setState(() => _isMarkingAll = false);
+    }
+  }
+
+  Widget _buildOverflowMenu(ColorScheme cs) {
+    final allDone = _allFinished;
+    final dl = DownloadService();
+    int downloaded = 0;
+    for (final book in _books) {
+      final bookId = book['id'] as String? ?? '';
+      if (dl.isDownloaded(bookId)) downloaded++;
+    }
+    final allDownloaded = downloaded == _books.length;
+    final hasSeriesId = widget.seriesId != null && widget.seriesId!.isNotEmpty;
+
+    if (_isMarkingAll || _isDownloadingAll) {
+      return Padding(
+        padding: const EdgeInsets.all(12),
+        child: SizedBox(
+          width: 18, height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
+        ),
+      );
+    }
+
+    return IconButton(
+      icon: Icon(Icons.more_vert_rounded, color: cs.onSurfaceVariant),
+      onPressed: () => _showSeriesMoreSheet(cs, allDownloaded, downloaded, allDone, hasSeriesId),
+    );
+  }
+
+  void _showSeriesMoreSheet(ColorScheme cs, bool allDownloaded, int downloaded, bool allDone, bool hasSeriesId) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+              if (!allDownloaded)
+                _moreItem(cs, Icons.download_rounded,
+                  downloaded > 0 ? 'Download Remaining (${_books.length - downloaded})' : 'Download All',
+                  onTap: () { Navigator.pop(ctx); _downloadAll(); }),
+              _moreItem(cs,
+                allDone ? Icons.remove_done_rounded : Icons.done_all_rounded,
+                allDone ? 'Mark All Not Finished' : 'Mark All Finished',
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  if (allDone) {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dlg) => AlertDialog(
+                        title: const Text('Mark All Not Finished?'),
+                        content: Text('This will clear the finished status for all ${_books.length} books in this series.'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(dlg, false), child: const Text('Cancel')),
+                          FilledButton(onPressed: () => Navigator.pop(dlg, true), child: const Text('Unmark All')),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) _markAllNotFinished();
+                  } else {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dlg) => AlertDialog(
+                        title: const Text('Fully Absorb Series?'),
+                        content: Text('This will mark all ${_books.length} books in this series as finished.'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(dlg, false), child: const Text('Cancel')),
+                          FilledButton(onPressed: () => Navigator.pop(dlg, true), child: const Text('Fully Absorb')),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) _markAllFinished();
+                  }
+                }),
+              if (hasSeriesId)
+                _moreItem(cs,
+                  _autoDownloadEnabled ? Icons.downloading_rounded : Icons.download_outlined,
+                  _autoDownloadEnabled ? 'Turn Auto-Download Off' : 'Turn Auto-Download On',
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final lib = context.read<LibraryProvider>();
+                    await lib.toggleRollingDownload(widget.seriesId!);
+                    setState(() => _autoDownloadEnabled = lib.isRollingDownloadEnabled(widget.seriesId!));
+                  }),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _moreItem(ColorScheme cs, IconData icon, String label, {required VoidCallback onTap}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: GestureDetector(onTap: onTap, child: Container(height: 44,
+        decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: cs.onSurface.withValues(alpha: 0.1))),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, size: 16, color: cs.onSurfaceVariant), const SizedBox(width: 8),
+          Text(label, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w500))]))),
+    );
+  }
+
   Future<void> _downloadAll() async {
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) return;
+
+    // Offer to enable auto-download if not already on
+    final seriesId = widget.seriesId;
+    if (seriesId != null && seriesId.isNotEmpty && !_autoDownloadEnabled) {
+      final enable = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Auto-Download This Series?'),
+          content: const Text('Automatically download the next books as you listen.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No Thanks')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Enable')),
+          ],
+        ),
+      );
+      if (enable == true && mounted) {
+        final lib = context.read<LibraryProvider>();
+        await lib.enableRollingDownload(seriesId);
+        setState(() => _autoDownloadEnabled = true);
+      }
+    }
 
     setState(() => _isDownloadingAll = true);
 
@@ -223,31 +461,52 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     final seriesPercent = (seriesProgress * 100).round();
 
     return ClipRect(child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
-          child: Row(
-            children: [
-              Icon(Icons.auto_stories_rounded, size: 20, color: cs.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(widget.seriesName,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: tt.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w600)),
+        // Header row: 3-dot menu pinned top-right
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(width: 48),
+            Expanded(
+              child: Column(
+                children: [
+                  Icon(Icons.auto_stories_rounded, size: 20, color: cs.primary),
+                  const SizedBox(height: 4),
+                  Text(widget.seriesName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: tt.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w600)),
+                ],
               ),
+            ),
+            SizedBox(
+              width: 48,
+              child: _books.isNotEmpty ? _buildOverflowMenu(cs) : null,
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: '${_books.length} book${_books.length != 1 ? 's' : ''} in this series'
+                    '${totalDuration > 0 ? ' · ${_formatDuration(totalDuration)}' : ''}',
+              ),
+              if (_autoDownloadEnabled) ...[
+                const TextSpan(text: ' · '),
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.middle,
+                  child: Icon(Icons.downloading_rounded, size: 14, color: cs.primary),
+                ),
+              ],
             ],
           ),
+          style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
         ),
-        Padding(
-          padding: EdgeInsets.fromLTRB(24, 0, 24, seriesProgress > 0 ? 4 : 12),
-          child: Text(
-            '${_books.length} book${_books.length != 1 ? 's' : ''} in this series',
-            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-          ),
-        ),
+        SizedBox(height: seriesProgress > 0 ? 4 : 12),
         if (seriesProgress > 0)
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
@@ -275,94 +534,6 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
               ],
             ),
           ),
-        // Download All button (reactive)
-        if (_books.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-            child: ListenableBuilder(
-              listenable: DownloadService(),
-              builder: (_, __) {
-                final dl = DownloadService();
-                int downloaded = 0;
-                int downloading = 0;
-                double totalProgress = 0;
-                for (final book in _books) {
-                  final bookId = book['id'] as String? ?? '';
-                  if (dl.isDownloaded(bookId)) {
-                    downloaded++;
-                  } else if (dl.isDownloading(bookId)) {
-                    downloading++;
-                    totalProgress += dl.downloadProgress(bookId);
-                  }
-                }
-                final allDone = downloaded == _books.length;
-                final anyActive = _isDownloadingAll || downloading > 0;
-                final overallProgress = _books.isNotEmpty
-                    ? (downloaded + totalProgress) / _books.length
-                    : 0.0;
-                final green = Theme.of(context).brightness == Brightness.dark
-                    ? Colors.greenAccent : Colors.green.shade700;
-
-                if (allDone) {
-                  return Container(height: 44,
-                    decoration: BoxDecoration(
-                      color: green.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: green.withValues(alpha: 0.15)),
-                    ),
-                    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      Icon(Icons.download_done_rounded, size: 16, color: green.withValues(alpha: 0.7)),
-                      const SizedBox(width: 6),
-                      Text('All Books Downloaded',
-                        style: TextStyle(color: green.withValues(alpha: 0.7), fontSize: 12, fontWeight: FontWeight.w500)),
-                    ]),
-                  );
-                }
-
-                return GestureDetector(
-                  onTap: anyActive ? null : _downloadAll,
-                  child: Container(height: 44,
-                    clipBehavior: Clip.antiAlias,
-                    decoration: BoxDecoration(
-                      color: cs.onSurface.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.1)),
-                    ),
-                    child: Stack(children: [
-                      if (anyActive)
-                        FractionallySizedBox(
-                          widthFactor: overallProgress.clamp(0.0, 1.0),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: cs.primary.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(13),
-                            ),
-                          ),
-                        ),
-                      Center(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        if (anyActive)
-                          SizedBox(width: 14, height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary))
-                        else
-                          Icon(Icons.download_rounded, size: 16, color: cs.onSurfaceVariant),
-                        const SizedBox(width: 6),
-                        Text(
-                          anyActive
-                              ? 'Downloading ${downloaded + downloading}/${_books.length} · ${(overallProgress * 100).toStringAsFixed(0)}%'
-                              : downloaded > 0
-                                  ? 'Download Remaining (${_books.length - downloaded})'
-                                  : 'Download All Books',
-                          style: TextStyle(
-                            color: anyActive ? cs.primary : cs.onSurfaceVariant,
-                            fontSize: 12, fontWeight: FontWeight.w500)),
-                      ])),
-                    ]),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
         if (_isLoading && _books.isEmpty)
           const Expanded(
               child: Center(child: CircularProgressIndicator()))
@@ -426,10 +597,13 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                     child: InkWell(
                       onTap: () {
                         if (bookId.isNotEmpty) {
+                          // Close series sheet before opening book to prevent infinite stacking
+                          final nav = Navigator.of(context);
+                          nav.pop();
                           if (lib.isPodcastLibrary) {
-                            EpisodeListSheet.show(context, book);
+                            EpisodeListSheet.show(nav.context, book);
                           } else {
-                            showBookDetailSheet(context, bookId);
+                            showBookDetailSheet(nav.context, bookId);
                           }
                         }
                       },

@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'scoped_prefs.dart';
 
 /// Types of playback events we track.
 enum PlaybackEventType {
@@ -124,9 +124,8 @@ class PlaybackHistoryService {
       detail: detail,
     );
 
-    final prefs = await SharedPreferences.getInstance();
     final key = 'playback_history_$itemId';
-    final existing = prefs.getStringList(key) ?? [];
+    final existing = await ScopedPrefs.getStringList(key);
 
     existing.add(jsonEncode(event.toJson()));
 
@@ -135,14 +134,13 @@ class PlaybackHistoryService {
       existing.removeRange(0, existing.length - _maxEventsPerBook);
     }
 
-    await prefs.setStringList(key, existing);
+    await ScopedPrefs.setStringList(key, existing);
   }
 
   /// Get all events for a book, newest first.
   Future<List<PlaybackEvent>> getHistory(String itemId) async {
-    final prefs = await SharedPreferences.getInstance();
     final key = 'playback_history_$itemId';
-    final stored = prefs.getStringList(key) ?? [];
+    final stored = await ScopedPrefs.getStringList(key);
 
     final events = <PlaybackEvent>[];
     for (final json in stored) {
@@ -158,7 +156,6 @@ class PlaybackHistoryService {
 
   /// Clear history for a book.
   Future<void> clearHistory(String itemId) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('playback_history_$itemId');
+    await ScopedPrefs.remove('playback_history_$itemId');
   }
 }

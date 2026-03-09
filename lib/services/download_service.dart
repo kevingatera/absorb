@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -116,14 +117,14 @@ class DownloadService extends ChangeNotifier {
   DownloadService._();
 
   final Map<String, DownloadInfo> _downloads = {};
-  String? _activeDownloadId;
-  http.Client? _httpClient;
-  bool _cancelled = false;
+  final Set<String> _activeDownloadIds = {};
+  final Map<String, http.Client> _httpClients = {};
+  final Set<String> _cancelledIds = {};
+  final Map<String, int> _downloadSlots = {};
   String? _customDownloadPath;
 
   /// Queue of pending download requests.
   final List<_QueuedDownload> _queue = [];
-  bool _processingQueue = false;
 
   /// The current download directory path, or null if using default.
   String? get customDownloadPath => _customDownloadPath;
@@ -197,6 +198,40 @@ class DownloadService extends ChangeNotifier {
     return total;
   }
 
+  /// Calculate total file size for a single download item.
+  int getItemFileSize(String itemId) {
+    final info = _downloads[itemId];
+    if (info == null || info.status != DownloadStatus.downloaded) return 0;
+    int total = 0;
+    for (final path in info.localPaths) {
+      try {
+        final file = File(path);
+        if (file.existsSync()) {
+          total += file.lengthSync();
+        }
+      } catch (_) {}
+    }
+    return total;
+  }
+
+  static const _storageChannel = MethodChannel('com.absorb.storage');
+
+  /// Get device storage info: {totalBytes, availableBytes}. Returns null on failure.
+  static Future<Map<String, int>?> getDeviceStorage() async {
+    try {
+      final result = await _storageChannel.invokeMethod('getDeviceStorage');
+      if (result is Map) {
+        return {
+          'totalBytes': (result['totalBytes'] as num).toInt(),
+          'availableBytes': (result['availableBytes'] as num).toInt(),
+        };
+      }
+    } catch (e) {
+      debugPrint('[Download] getDeviceStorage error: $e');
+    }
+    return null;
+  }
+
   DownloadInfo getInfo(String itemId) =>
       _downloads[itemId] ?? DownloadInfo(itemId: itemId);
 
@@ -215,6 +250,16 @@ class DownloadService extends ChangeNotifier {
           .where((d) => d.status == DownloadStatus.downloaded)
           .toList();
 
+  /// Get actively downloading items (in progress right now).
+  List<DownloadInfo> get activeDownloads =>
+      _downloads.values
+          .where((d) => d.status == DownloadStatus.downloading && _activeDownloadIds.contains(d.itemId))
+          .toList();
+
+  /// Get queued items (waiting for a download slot).
+  List<DownloadInfo> get queuedDownloads =>
+      _queue.map((q) => _downloads[q.itemId]).whereType<DownloadInfo>().toList();
+
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     _customDownloadPath = prefs.getString('custom_download_path');
@@ -222,6 +267,7 @@ class DownloadService extends ChangeNotifier {
     if (json != null) {
       try {
         final map = jsonDecode(json) as Map<String, dynamic>;
+        final orphanIds = <String>[];
         for (final entry in map.entries) {
           final info =
               DownloadInfo.fromJson(entry.value as Map<String, dynamic>);
@@ -232,14 +278,35 @@ class DownloadService extends ChangeNotifier {
           if (info.status == DownloadStatus.downloaded) {
             bool allExist = true;
             for (final path in info.localPaths) {
-              if (!File(path).existsSync()) {
+              if (!await File(path).exists()) {
                 allExist = false;
                 break;
               }
             }
             if (allExist) {
               _downloads[entry.key] = info;
+            } else {
+              orphanIds.add(entry.key);
             }
+          } else {
+            // Stale downloading/error entries from a previous crash
+            orphanIds.add(entry.key);
+          }
+        }
+        // Clean up partial/orphaned files on disk
+        if (orphanIds.isNotEmpty) {
+          final basePath = await downloadBasePath;
+          final internalBase = await _internalBasePath;
+          for (final id in orphanIds) {
+            debugPrint('[Download] Cleaning up orphaned entry: $id');
+            try {
+              final dir = Directory('$basePath/$id');
+              if (await dir.exists()) await dir.delete(recursive: true);
+            } catch (_) {}
+            try {
+              final coverDir = Directory('$internalBase/$id');
+              if (await coverDir.exists()) await coverDir.delete(recursive: true);
+            } catch (_) {}
           }
         }
       } catch (e) {
@@ -403,7 +470,7 @@ class DownloadService extends ChangeNotifier {
     String? coverUrl,
     String? episodeId,
   }) async {
-    if (_activeDownloadId == itemId) return null;
+    if (_activeDownloadIds.contains(itemId)) return null;
     if (isDownloaded(itemId)) return null;
     // Already queued — don't duplicate
     if (_queue.any((q) => q.itemId == itemId)) return null;
@@ -417,8 +484,10 @@ class DownloadService extends ChangeNotifier {
       }
     }
 
-    // If another download is active, queue this one
-    if (_activeDownloadId != null) {
+    final maxConcurrent = await PlayerSettings.getMaxConcurrentDownloads();
+
+    // If at capacity, queue this one
+    if (_activeDownloadIds.length >= maxConcurrent) {
       _queue.add(_QueuedDownload(
         api: api,
         itemId: itemId,
@@ -436,41 +505,47 @@ class DownloadService extends ChangeNotifier {
         coverUrl: coverUrl,
       );
       notifyListeners();
-      // Ensure queue processor is running
-      if (!_processingQueue) unawaited(_processQueue());
       return null;
     }
 
-    await _executeDownload(
+    // Launch immediately (fire-and-forget so caller doesn't block)
+    unawaited(_executeDownload(
       api: api,
       itemId: itemId,
       title: title,
       author: author,
       coverUrl: coverUrl,
       episodeId: episodeId,
-    );
-    // Process any queued downloads
-    if (_queue.isNotEmpty && !_processingQueue) {
-      unawaited(_processQueue());
-    }
+    ));
     return null;
   }
 
+  /// Fill free download slots from the queue.
   Future<void> _processQueue() async {
-    _processingQueue = true;
-    while (_activeDownloadId != null) {
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
-    while (_queue.isNotEmpty) {
+    final maxConcurrent = await PlayerSettings.getMaxConcurrentDownloads();
+    while (_queue.isNotEmpty && _activeDownloadIds.length < maxConcurrent) {
       final next = _queue.removeAt(0);
       // Skip if cancelled/removed while waiting
       if (isDownloaded(next.itemId)) continue;
-      await _executeDownload(
+      if (_activeDownloadIds.contains(next.itemId)) continue;
+      unawaited(_executeDownload(
         api: next.api, itemId: next.itemId, title: next.title,
         author: next.author, coverUrl: next.coverUrl, episodeId: next.episodeId,
-      );
+      ));
     }
-    _processingQueue = false;
+  }
+
+  /// Assign the lowest free notification slot (0–4).
+  int _assignSlot(String itemId) {
+    for (int i = 0; i < 5; i++) {
+      if (!_downloadSlots.containsValue(i)) {
+        _downloadSlots[itemId] = i;
+        return i;
+      }
+    }
+    // Fallback (shouldn't happen with max 5 concurrent)
+    _downloadSlots[itemId] = 0;
+    return 0;
   }
 
   Future<void> _executeDownload({
@@ -481,8 +556,12 @@ class DownloadService extends ChangeNotifier {
     String? coverUrl,
     String? episodeId,
   }) async {
-    _activeDownloadId = itemId;
-    _cancelled = false;
+    _activeDownloadIds.add(itemId);
+    _cancelledIds.remove(itemId);
+    final slot = _assignSlot(itemId);
+    final client = http.Client();
+    _httpClients[itemId] = client;
+
     _downloads[itemId] = DownloadInfo(
       itemId: itemId,
       status: DownloadStatus.downloading,
@@ -493,12 +572,12 @@ class DownloadService extends ChangeNotifier {
     );
     notifyListeners();
 
-    // Show persistent download notification via foreground service
+    // Show per-download notification + foreground service
     final notif = DownloadNotificationService();
     try {
-      await notif.startForeground(title: title, author: author);
+      await notif.startDownload(slot: slot, title: title, author: author);
     } catch (e) {
-      debugPrint('[Download] startForeground non-fatal error: $e');
+      debugPrint('[Download] startDownload non-fatal error: $e');
     }
 
     try {
@@ -545,36 +624,31 @@ class DownloadService extends ChangeNotifier {
       }
 
       final localPaths = List<String?>.filled(audioTracks.length, null);
-      _httpClient = http.Client();
 
       // Track progress per-track for overall calculation
       final trackProgress = List<double>.filled(audioTracks.length, 0.0);
-      int _lastNotifPercent = -1;
-      DateTime _lastUIUpdate = DateTime.now();
+      int lastNotifPercent = -1;
+      DateTime lastUIUpdate = DateTime.now();
 
-      Future<void> _showProgressSafe(
-        DownloadNotificationService notif,
-        String title,
-        String? author,
-        double progress,
-      ) async {
+      Future<void> showProgressSafe(double progress) async {
         try {
-          await notif.showProgress(
+          await notif.updateProgress(
+            slot: slot,
             title: title,
             author: author,
             progress: progress,
           );
         } catch (e) {
-          debugPrint('[Download] showProgress non-fatal error: $e');
+          debugPrint('[Download] updateProgress non-fatal error: $e');
         }
       }
 
-      void _updateProgress() {
+      void updateProgress() {
         final overall = trackProgress.reduce((a, b) => a + b) / audioTracks.length;
         final now = DateTime.now();
         // Throttle UI updates to max ~4/sec
-        if (now.difference(_lastUIUpdate).inMilliseconds > 250) {
-          _lastUIUpdate = now;
+        if (now.difference(lastUIUpdate).inMilliseconds > 250) {
+          lastUIUpdate = now;
           _downloads[itemId] = DownloadInfo(
             itemId: itemId,
             status: DownloadStatus.downloading,
@@ -587,13 +661,13 @@ class DownloadService extends ChangeNotifier {
         }
         // Throttle notification to every 2%
         final pct = (overall * 50).round();
-        if (pct != _lastNotifPercent) {
-          _lastNotifPercent = pct;
-          unawaited(_showProgressSafe(notif, title, author, overall));
+        if (pct != lastNotifPercent) {
+          lastNotifPercent = pct;
+          unawaited(showProgressSafe(overall));
         }
       }
 
-      Future<void> _downloadTrack(int i) async {
+      Future<void> downloadTrack(int i) async {
         final track = audioTracks[i] as Map<String, dynamic>;
         final contentUrl = track['contentUrl'] as String? ?? '';
         final fullUrl = api.buildTrackUrl(contentUrl);
@@ -615,7 +689,7 @@ class DownloadService extends ChangeNotifier {
 
         final request = http.Request('GET', Uri.parse(fullUrl));
         api.mediaHeaders.forEach((key, value) => request.headers[key] = value);
-        final response = await _httpClient!.send(request)
+        final response = await client.send(request)
             .timeout(const Duration(seconds: 30));
 
         if (response.statusCode != 200) {
@@ -625,24 +699,26 @@ class DownloadService extends ChangeNotifier {
         final totalBytes = response.contentLength ?? -1;
         int receivedBytes = 0;
         final sink = file.openWrite();
-
-        await for (final chunk in response.stream.timeout(const Duration(seconds: 60))) {
-          sink.add(chunk);
-          receivedBytes += chunk.length;
-          trackProgress[i] = totalBytes > 0 ? receivedBytes / totalBytes : 0.5;
-          _updateProgress();
+        try {
+          await for (final chunk in response.stream.timeout(const Duration(seconds: 60))) {
+            sink.add(chunk);
+            receivedBytes += chunk.length;
+            trackProgress[i] = totalBytes > 0 ? receivedBytes / totalBytes : 0.5;
+            updateProgress();
+          }
+        } finally {
+          await sink.close();
         }
-
-        await sink.close();
         localPaths[i] = filePath;
       }
 
       // Download tracks in parallel batches of 3
-      const concurrency = 3;
-      for (int batch = 0; batch < audioTracks.length; batch += concurrency) {
-        final end = (batch + concurrency).clamp(0, audioTracks.length);
+      const trackConcurrency = 3;
+      for (int batch = 0; batch < audioTracks.length; batch += trackConcurrency) {
+        if (_cancelledIds.contains(itemId)) break;
+        final end = (batch + trackConcurrency).clamp(0, audioTracks.length);
         await Future.wait([
-          for (int i = batch; i < end; i++) _downloadTrack(i),
+          for (int i = batch; i < end; i++) downloadTrack(i),
         ]);
       }
 
@@ -681,7 +757,7 @@ class DownloadService extends ChangeNotifier {
 
       // Show completion notification
       try {
-        await notif.showComplete(title: title);
+        await notif.finishDownload(slot: slot, title: title);
       } catch (_) {}
 
       // If this book is currently streaming, hot-swap to local files
@@ -694,14 +770,25 @@ class DownloadService extends ChangeNotifier {
 
       debugPrint('[Download] Complete: $title (${completedPaths.length} files)');
     } catch (e) {
-      if (_cancelled) {
-        debugPrint('[Download] Cancelled: $title');
-        _downloads.remove(itemId);
-        // Clean up partial files
+      // Clean up partial files on any failure
+      try {
         final basePath = await downloadBasePath;
         final bookDir = Directory('$basePath/$itemId');
         if (bookDir.existsSync()) bookDir.deleteSync(recursive: true);
+      } catch (_) {}
+
+      if (_cancelledIds.contains(itemId)) {
+        debugPrint('[Download] Cancelled: $title');
+        _downloads.remove(itemId);
+        try {
+          await notif.cancelDownload(slot);
+        } catch (_) {}
       } else {
+        final isStorageFull = e.toString().contains('No space left') ||
+            e.toString().contains('ENOSPC');
+        final errorMsg = isStorageFull
+            ? 'Not enough storage space'
+            : 'Download failed';
         debugPrint('[Download] Error: $e');
         _downloads[itemId] = DownloadInfo(
           itemId: itemId,
@@ -712,22 +799,41 @@ class DownloadService extends ChangeNotifier {
         );
         // Show error notification
         try {
-          await notif.showError(title: title, message: 'Download failed: $title');
+          await notif.finishDownload(
+            slot: slot,
+            title: title,
+            success: false,
+            errorMessage: '$errorMsg: $title',
+          );
         } catch (notifErr) {
-          debugPrint('[Download] showError non-fatal error: $notifErr');
+          debugPrint('[Download] finishDownload non-fatal error: $notifErr');
         }
       }
     }
 
-    _activeDownloadId = null;
-    _httpClient = null;
+    _activeDownloadIds.remove(itemId);
+    _downloadSlots.remove(itemId);
+    _httpClients.remove(itemId);
+    _cancelledIds.remove(itemId);
 
     notifyListeners();
+
+    // Fill freed slot from queue
+    unawaited(_processQueue());
   }
 
-  Future<void> deleteDownload(String itemId) async {
+  Future<void> deleteDownload(String itemId, {bool skipStopCheck = false}) async {
     final info = _downloads[itemId];
     if (info == null) return;
+
+    // Stop playback if this item is currently playing to avoid crashes
+    if (!skipStopCheck) {
+      final player = AudioPlayerService();
+      if (player.currentItemId == itemId ||
+          (itemId.length > 36 && player.currentItemId == itemId.substring(0, 36))) {
+        await player.stop();
+      }
+    }
 
     for (final path in info.localPaths) {
       try {
@@ -742,22 +848,24 @@ class DownloadService extends ChangeNotifier {
       if (bookDir.existsSync()) bookDir.deleteSync(recursive: true);
     } catch (_) {}
 
+    // Clean up cached cover image (stored separately in internal storage)
+    try {
+      final internalBase = await _internalBasePath;
+      final coverDir = Directory('$internalBase/$itemId');
+      if (coverDir.existsSync()) coverDir.deleteSync(recursive: true);
+    } catch (_) {}
+
     _downloads.remove(itemId);
     await _save();
     notifyListeners();
   }
 
   void cancelDownload(String itemId) {
-    if (_activeDownloadId == itemId) {
-      _cancelled = true;
-      _httpClient?.close();
-      _httpClient = null;
-      _activeDownloadId = null;
-      unawaited(
-        DownloadNotificationService().dismiss().catchError((Object e) {
-          debugPrint('[Download] dismiss non-fatal error: $e');
-        }),
-      );
+    if (_activeDownloadIds.contains(itemId)) {
+      _cancelledIds.add(itemId);
+      _httpClients[itemId]?.close();
+      _httpClients.remove(itemId);
+      // Notification cleanup happens in _executeDownload's catch block
     }
     // Remove from queue if it was waiting
     _queue.removeWhere((q) => q.itemId == itemId);

@@ -2,8 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 /// Manages notifications for audiobook downloads.
-/// Uses an Android **foreground service** for progress so the OS won't kill
-/// the download when the app is backgrounded or the screen is locked.
+/// Uses an Android **foreground service** for a summary notification so the OS
+/// won't kill the download when the app is backgrounded or the screen is locked.
+/// Each concurrent download gets its own progress notification.
 /// A separate high-importance channel handles completion/error alerts.
 class DownloadNotificationService {
   // Singleton
@@ -19,13 +20,20 @@ class DownloadNotificationService {
   static const _progressChannelId = 'absorb_downloads';
   static const _progressChannelName = 'Download Progress';
   static const _progressChannelDesc = 'Shows progress during audiobook downloads';
-  static const _progressNotifId = 9001;
 
   // Alert channel for completion / error (heads-up + sound)
   static const _alertChannelId = 'absorb_download_alerts';
   static const _alertChannelName = 'Download Alerts';
   static const _alertChannelDesc = 'Notifications when downloads finish or fail';
-  static const _alertNotifId = 9002;
+
+  // Notification IDs
+  static const _foregroundNotifId = 9000; // summary foreground service
+  // Per-download progress: 9001 + slot (slots 0–4)
+  static int _progressNotifId(int slot) => 9001 + slot;
+  // Alerts use incrementing IDs so they stack
+  int _nextAlertId = 9010;
+
+  int _activeCount = 0;
 
   Future<void> init() async {
     if (_initialized) return;
@@ -68,27 +76,128 @@ class DownloadNotificationService {
     _initialized = true;
   }
 
-  /// Start the foreground service and show initial progress notification.
-  /// Call once at the start of a download.
-  Future<void> startForeground({
+  /// Start tracking a new download. Starts the foreground service if this is
+  /// the first active download. Shows an individual progress notification.
+  Future<void> startDownload({
+    required int slot,
     required String title,
     String? author,
   }) async {
     if (!_initialized) await init();
+    _activeCount++;
 
-    final subtitle = author != null && author.isNotEmpty
-        ? '$author • Starting…'
-        : 'Starting…';
+    // Start foreground service if this is the first download
+    if (_activeCount == 1) {
+      await _startForeground();
+    } else {
+      await _updateForegroundSummary();
+    }
 
-    final androidDetails = AndroidNotificationDetails(
+    // Show individual progress notification
+    await _showSlotProgress(
+      slot: slot,
+      title: title,
+      author: author,
+      percent: 0,
+      starting: true,
+    );
+  }
+
+  /// Update progress for an individual download.
+  Future<void> updateProgress({
+    required int slot,
+    required String title,
+    required double progress,
+    String? author,
+  }) async {
+    if (!_initialized) await init();
+    final percent = (progress * 100).round().clamp(0, 100);
+    await _showSlotProgress(
+      slot: slot,
+      title: title,
+      author: author,
+      percent: percent,
+    );
+  }
+
+  /// Mark a download as finished (success or error). Cancels its progress
+  /// notification, shows an alert, and stops the foreground service if no
+  /// downloads remain.
+  Future<void> finishDownload({
+    required int slot,
+    required String title,
+    bool success = true,
+    String? errorMessage,
+  }) async {
+    if (!_initialized) await init();
+
+    // Cancel individual progress notification
+    try {
+      await _plugin.cancel(_progressNotifId(slot));
+    } catch (e) {
+      debugPrint('[DownloadNotif] Cancel slot $slot failed: $e');
+    }
+
+    _activeCount = (_activeCount - 1).clamp(0, 99);
+
+    if (_activeCount == 0) {
+      await _stopForeground();
+    } else {
+      await _updateForegroundSummary();
+    }
+
+    // Show alert
+    if (success) {
+      await _showAlert(
+        title: 'Download Complete',
+        body: '$title is ready to listen offline',
+      );
+    } else {
+      await _showAlert(
+        title: 'Download Failed',
+        body: errorMessage ?? title,
+      );
+    }
+  }
+
+  /// Cancel a download's notification without showing an alert.
+  Future<void> cancelDownload(int slot) async {
+    try {
+      await _plugin.cancel(_progressNotifId(slot));
+    } catch (e) {
+      debugPrint('[DownloadNotif] Cancel slot $slot failed: $e');
+    }
+
+    _activeCount = (_activeCount - 1).clamp(0, 99);
+
+    if (_activeCount == 0) {
+      await _stopForeground();
+    } else {
+      await _updateForegroundSummary();
+    }
+  }
+
+  /// Dismiss all download notifications and stop the foreground service.
+  Future<void> dismiss() async {
+    await _stopForeground();
+    _activeCount = 0;
+    // Cancel all possible slot notifications
+    for (int i = 0; i < 5; i++) {
+      try {
+        await _plugin.cancel(_progressNotifId(i));
+      } catch (_) {}
+    }
+  }
+
+  // ── Private helpers ──
+
+  Future<void> _startForeground() async {
+    const androidDetails = AndroidNotificationDetails(
       _progressChannelId,
       _progressChannelName,
       channelDescription: _progressChannelDesc,
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
-      showProgress: true,
-      maxProgress: 100,
-      progress: 0,
       ongoing: true,
       autoCancel: false,
       onlyAlertOnce: true,
@@ -96,16 +205,14 @@ class DownloadNotificationService {
       icon: 'drawable/ic_notification',
     );
 
-    // Start as a foreground service — this prevents Android from killing
-    // the process while the download is active.
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin != null) {
       try {
         await androidPlugin.startForegroundService(
-          _progressNotifId,
-          'Downloading: $title',
-          subtitle,
+          _foregroundNotifId,
+          'Downloading...',
+          '1 download active',
           notificationDetails: androidDetails,
           payload: 'download',
         );
@@ -113,30 +220,73 @@ class DownloadNotificationService {
         debugPrint('[DownloadNotif] Foreground service started');
       } catch (e) {
         debugPrint('[DownloadNotif] Foreground service failed, falling back: $e');
-        // Fall back to a regular notification
         await _plugin.show(
-          _progressNotifId,
-          'Downloading: $title',
-          subtitle,
-          NotificationDetails(android: androidDetails),
+          _foregroundNotifId,
+          'Downloading...',
+          '1 download active',
+          const NotificationDetails(android: androidDetails),
         );
         _foregroundActive = false;
       }
     }
   }
 
-  /// Show or update the download progress notification.
-  Future<void> showProgress({
-    required String title,
-    required double progress,
-    String? author,
-  }) async {
-    if (!_initialized) await init();
+  Future<void> _updateForegroundSummary() async {
+    if (_activeCount <= 0) return;
+    final subtitle = '$_activeCount download${_activeCount == 1 ? '' : 's'} active';
 
-    final percent = (progress * 100).round().clamp(0, 100);
-    final subtitle = author != null && author.isNotEmpty
-        ? '$author • $percent%'
-        : '$percent%';
+    final androidDetails = AndroidNotificationDetails(
+      _progressChannelId,
+      _progressChannelName,
+      channelDescription: _progressChannelDesc,
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+      ongoing: true,
+      autoCancel: false,
+      onlyAlertOnce: true,
+      category: AndroidNotificationCategory.progress,
+      icon: 'drawable/ic_notification',
+    );
+
+    await _plugin.show(
+      _foregroundNotifId,
+      'Downloading...',
+      subtitle,
+      NotificationDetails(android: androidDetails),
+    );
+  }
+
+  Future<void> _stopForeground() async {
+    if (_foregroundActive) {
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlugin != null) {
+        try {
+          await androidPlugin.stopForegroundService();
+          debugPrint('[DownloadNotif] Foreground service stopped');
+        } catch (e) {
+          debugPrint('[DownloadNotif] Stop foreground failed: $e');
+        }
+      }
+      _foregroundActive = false;
+    }
+    try {
+      await _plugin.cancel(_foregroundNotifId);
+    } catch (e) {
+      debugPrint('[DownloadNotif] Cancel foreground failed: $e');
+    }
+  }
+
+  Future<void> _showSlotProgress({
+    required int slot,
+    required String title,
+    String? author,
+    required int percent,
+    bool starting = false,
+  }) async {
+    final subtitle = starting
+        ? (author != null && author.isNotEmpty ? '$author • Starting…' : 'Starting…')
+        : (author != null && author.isNotEmpty ? '$author • $percent%' : '$percent%');
 
     final androidDetails = AndroidNotificationDetails(
       _progressChannelId,
@@ -155,43 +305,17 @@ class DownloadNotificationService {
     );
 
     await _plugin.show(
-      _progressNotifId,
+      _progressNotifId(slot),
       'Downloading: $title',
       subtitle,
       NotificationDetails(android: androidDetails),
     );
   }
 
-  /// Stop the foreground service and clear the progress notification.
-  Future<void> stopForeground() async {
-    if (_foregroundActive) {
-      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
-      if (androidPlugin != null) {
-        try {
-          await androidPlugin.stopForegroundService();
-          debugPrint('[DownloadNotif] Foreground service stopped');
-        } catch (e) {
-          debugPrint('[DownloadNotif] Stop foreground failed: $e');
-        }
-      }
-      _foregroundActive = false;
-    }
-    try {
-      await _plugin.cancel(_progressNotifId);
-    } catch (e) {
-      debugPrint('[DownloadNotif] Cancel progress failed: $e');
-    }
-  }
-
-  /// Show a heads-up completion notification with sound.
-  /// Stops the foreground service and dismisses the progress notification first.
-  Future<void> showComplete({required String title}) async {
-    if (!_initialized) await init();
-
-    // Stop the foreground service + clear progress
-    await stopForeground();
-
+  Future<void> _showAlert({
+    required String title,
+    required String body,
+  }) async {
     const androidDetails = AndroidNotificationDetails(
       _alertChannelId,
       _alertChannelName,
@@ -201,56 +325,19 @@ class DownloadNotificationService {
       ongoing: false,
       autoCancel: true,
       icon: 'drawable/ic_notification',
-      ticker: 'Download complete',
       category: AndroidNotificationCategory.status,
       visibility: NotificationVisibility.public,
     );
 
-    await _plugin.show(
-      _alertNotifId,
-      'Download Complete',
-      '$title is ready to listen offline',
-      const NotificationDetails(android: androidDetails),
-    );
-  }
-
-  /// Show a heads-up error notification with sound.
-  /// Stops the foreground service and dismisses the progress notification first.
-  Future<void> showError({required String title, String? message}) async {
-    if (!_initialized) await init();
-
-    // Stop the foreground service + clear progress
-    await stopForeground();
-
-    const androidDetails = AndroidNotificationDetails(
-      _alertChannelId,
-      _alertChannelName,
-      channelDescription: _alertChannelDesc,
-      importance: Importance.high,
-      priority: Priority.high,
-      ongoing: false,
-      autoCancel: true,
-      icon: 'drawable/ic_notification',
-      ticker: 'Download failed',
-      category: AndroidNotificationCategory.status,
-      visibility: NotificationVisibility.public,
-    );
+    final alertId = _nextAlertId++;
+    // Wrap around to avoid unbounded growth
+    if (_nextAlertId > 9099) _nextAlertId = 9010;
 
     await _plugin.show(
-      _alertNotifId,
-      'Download Failed',
-      message ?? title,
+      alertId,
+      title,
+      body,
       const NotificationDetails(android: androidDetails),
     );
-  }
-
-  /// Dismiss all download notifications and stop the foreground service.
-  Future<void> dismiss() async {
-    await stopForeground();
-    try {
-      await _plugin.cancel(_alertNotifId);
-    } catch (e) {
-      debugPrint('[DownloadNotif] Cancel alert failed: $e');
-    }
   }
 }

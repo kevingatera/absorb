@@ -1,38 +1,41 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:audio_service/audio_service.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'download_service.dart';
 import 'progress_sync_service.dart';
+import 'scoped_prefs.dart';
 
 // ─── Media ID scheme ─────────────────────────────────────────────────
 //
-// Root tabs (max 4):
-//   continue          → list of in-progress books
-//   recent            → list of recently added books (default library)
-//   library           → list of book-type libraries
-//   downloads         → list of downloaded books
+// Root tabs:
+//   continue          → list of in-progress books / podcast episodes
+//   library           → list of all libraries (books + podcasts)
+//   downloads         → list of downloaded books / podcast episodes
 //
-// Library drilldown:
-//   lib:<libraryId>              → sub-categories (Books, Series, Authors)
+// Book library drilldown:
 //   lib:<libraryId>:books        → all books in library
 //   lib:<libraryId>:series       → list of series
 //   lib:<libraryId>:authors      → list of authors
 //   series:<seriesId>@<libId>    → books in that series
 //   author:<authorId>@<libId>    → books by that author
 //
+// Podcast library drilldown:
+//   lib:<libraryId>              → list of podcast shows
+//   show:<showId>@<libId>        → episodes of a show
+//
 // Playable items:
 //   item:<absItemId>             → a playable book
+//   item:<showId>-<episodeId>    → a playable podcast episode
 // ─────────────────────────────────────────────────────────────────────
 
 class AutoMediaIds {
   // Root tabs
   static const root = 'root';
   static const continueListening = 'continue';
-  static const recent = 'recent';
   static const library = 'library';
   static const downloads = 'downloads';
 
@@ -41,6 +44,7 @@ class AutoMediaIds {
   static const libPrefix = 'lib:';
   static const seriesPrefix = 'series:';
   static const authorPrefix = 'author:';
+  static const showPrefix = 'show:';
 
   // Build IDs
   static String itemId(String absId) => '$itemPrefix$absId';
@@ -50,6 +54,7 @@ class AutoMediaIds {
   static String libAuthors(String libraryId) => '$libPrefix$libraryId:authors';
   static String seriesId(String sId, String libId) => '$seriesPrefix$sId@$libId';
   static String authorId(String aId, String libId) => '$authorPrefix$aId@$libId';
+  static String showId(String sId, String libId) => '$showPrefix$sId@$libId';
 
   // Parse helpers
   static String? absItemId(String mediaId) =>
@@ -71,6 +76,15 @@ class AutoMediaIds {
     final at = rest.indexOf('@');
     if (at < 0) return null;
     return (authorId: rest.substring(0, at), libId: rest.substring(at + 1));
+  }
+
+  /// Parse "show:<showId>@<libId>" → {showId, libId}
+  static ({String showId, String libId})? parseShow(String mediaId) {
+    if (!mediaId.startsWith(showPrefix)) return null;
+    final rest = mediaId.substring(showPrefix.length);
+    final at = rest.indexOf('@');
+    if (at < 0) return null;
+    return (showId: rest.substring(0, at), libId: rest.substring(at + 1));
   }
 
   /// Parse "lib:<libraryId>" or "lib:<libraryId>:books" etc.
@@ -101,6 +115,11 @@ class AutoBookEntry {
   final List<dynamic> chapters;
   final double? currentTime;
 
+  /// Non-null for podcast episodes — the episode ID within the show.
+  final String? episodeId;
+  /// Non-null for podcast episodes — the show (podcast) ID.
+  final String? showId;
+
   const AutoBookEntry({
     required this.id,
     required this.title,
@@ -109,12 +128,18 @@ class AutoBookEntry {
     this.coverUrl,
     this.chapters = const [],
     this.currentTime,
+    this.episodeId,
+    this.showId,
   });
 
   MediaItem toMediaItem() {
     final uri = coverUrl != null ? Uri.tryParse(coverUrl!) : null;
+    // For podcast episodes, use compound key as the playable media ID
+    final mediaId = (episodeId != null && showId != null)
+        ? AutoMediaIds.itemId('$showId-$episodeId')
+        : AutoMediaIds.itemId(id);
     return MediaItem(
-      id: AutoMediaIds.itemId(id),
+      id: mediaId,
       title: title,
       artist: author,
       album: title,
@@ -138,6 +163,7 @@ class AutoLibraryEntry {
   });
 
   bool get isBook => mediaType == 'book';
+  bool get isPodcast => mediaType == 'podcast';
 }
 
 // ─── Android Auto Service ────────────────────────────────────────────
@@ -150,11 +176,22 @@ class AndroidAutoService {
   // ── Cached data ──
   List<AutoBookEntry> _continueListening = [];
   List<AutoBookEntry> _downloaded = [];
-  List<AutoBookEntry> _recentlyAdded = [];
   List<AutoLibraryEntry> _libraries = [];
 
   DateTime? _lastRefresh;
   bool _isRefreshing = false;
+
+  /// Clear all cached browse-tree data and force a fresh server fetch
+  /// on the next access.  Call when the user switches accounts or logs out.
+  void clearCache() {
+    _continueListening = [];
+    _downloaded = [];
+    _libraries = [];
+    _lastRefresh = null;
+    _downloadsReady = false;
+    _isRefreshing = false;
+    debugPrint('[AndroidAuto] Cache cleared (user switch/logout)');
+  }
 
   // ── API helpers ──
 
@@ -167,6 +204,9 @@ class AndroidAutoService {
   }
 
   Future<String?> getDefaultLibraryId() async {
+    // Prefer the user's selected library (set in-app) over the server default
+    final selected = await ScopedPrefs.getString('last_selected_library');
+    if (selected != null) return selected;
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('default_library_id');
   }
@@ -177,7 +217,7 @@ class AndroidAutoService {
   bool _downloadsReady = false;
 
   /// Fire-and-forget server refresh. Downloads are already available;
-  /// this populates Continue, Recent, and Library tabs in the background.
+  /// this populates Continue and Library tabs in the background.
   void _backgroundRefresh() {
     refresh().then((_) {
       debugPrint('[AndroidAuto] Background refresh completed');
@@ -212,9 +252,9 @@ class AndroidAutoService {
       debugPrint('[AndroidAuto] Refresh done: '
           '${_continueListening.length} continue, '
           '${_downloaded.length} downloaded, '
-          '${_recentlyAdded.length} recent, '
           '${_libraries.length} libraries '
-          '(${_libraries.where((l) => l.isBook).length} book-type)');
+          '(${_libraries.where((l) => l.isBook).length} book, '
+          '${_libraries.where((l) => l.isPodcast).length} podcast)');
     } catch (e) {
       // Server unreachable — downloads are still available.
       _lastRefresh = DateTime.now();
@@ -235,12 +275,11 @@ class AndroidAutoService {
 
   /// Build a content:// URI for a locally cached cover image.
   /// Android Auto requires content:// URIs — file:// won't work.
-  static String _localCoverUri(String itemId) =>
+  static String localCoverUri(String itemId) =>
       'content://$_coverAuthority/cover/$itemId';
 
   Future<void> _refreshDownloaded() async {
     final ds = DownloadService();
-    final api = await getApi();
     final items = ds.downloadedItems;
     final entries = <AutoBookEntry>[];
 
@@ -257,19 +296,19 @@ class AndroidAutoService {
 
       final localPos = await ProgressSyncService().getSavedPosition(dl.itemId);
 
-      // Use HTTP cover URLs when online (more reliable in AA browse list),
-      // fall back to local content:// URIs when offline.
-      String? coverUrl;
-      final connectivity = await Connectivity().checkConnectivity();
-      final isOnline = !connectivity.contains(ConnectivityResult.none);
-      if (isOnline && api != null) {
-        coverUrl = api.getCoverUrl(dl.itemId, width: 400);
-      } else {
-        final localCover = await ds.getLocalCoverPath(dl.itemId);
-        if (localCover != null) {
-          coverUrl = _localCoverUri(dl.itemId);
-        }
+      // Detect podcast episode downloads via compound key (showId-episodeId).
+      final isEpisode = dl.itemId.length > 36;
+      String? showId;
+      String? episodeId;
+      if (isEpisode) {
+        showId = dl.itemId.substring(0, 36);
+        episodeId = dl.itemId.substring(37);
       }
+
+      // Use show ID for podcast episode covers so the CoverContentProvider
+      // can fall back to /api/items/<showId>/cover on the server.
+      final coverKey = isEpisode ? showId! : dl.itemId;
+      final coverUrl = localCoverUri(coverKey);
 
       entries.add(AutoBookEntry(
         id: dl.itemId,
@@ -279,8 +318,10 @@ class AndroidAutoService {
         coverUrl: coverUrl,
         chapters: chapters,
         currentTime: localPos > 0 ? localPos : null,
+        episodeId: episodeId,
+        showId: showId,
       ));
-      debugPrint('[AndroidAuto] Download entry: ${dl.title} cover=${coverUrl ?? "null"}');
+      debugPrint('[AndroidAuto] Download entry: ${dl.title} cover=$coverUrl');
     }
 
     _downloaded = entries;
@@ -294,13 +335,12 @@ class AndroidAutoService {
     final manualOffline = prefs.getBool('manual_offline_mode') ?? false;
     if (manualOffline) {
       _continueListening = [];
-      _recentlyAdded = [];
       _libraries = [];
       return;
     }
 
     try {
-      // ── Fetch all libraries (filter out podcasts) ──
+      // ── Fetch all libraries (books + podcasts) ──
       final libs = await api.getLibraries();
       _libraries = libs.map((l) {
         final m = l as Map<String, dynamic>;
@@ -309,7 +349,7 @@ class AndroidAutoService {
           name: m['name'] as String? ?? 'Library',
           mediaType: m['mediaType'] as String? ?? 'book',
         );
-      }).where((l) => l.id.isNotEmpty && l.isBook).toList();
+      }).where((l) => l.id.isNotEmpty && (l.isBook || l.isPodcast)).toList();
 
       // ── Continue Listening (from default library) ──
       final defaultLibId = await getDefaultLibraryId();
@@ -337,19 +377,10 @@ class AndroidAutoService {
           }
         }
         _continueListening = continueEntries;
-
-        // ── Recently Added (default library) ──
-        final recentResult = await api.getLibraryItems(
-          defaultLibId, limit: 30, sort: 'addedAt', desc: 1,
-        );
-        if (recentResult != null) {
-          _recentlyAdded = _resultsToEntries(recentResult, api);
-        }
       }
     } catch (e) {
       // Server unreachable — clear stale tabs so only Downloads shows offline
       _continueListening = [];
-      _recentlyAdded = [];
       _libraries = [];
       debugPrint('[AndroidAuto] Server fetch error: $e');
     }
@@ -373,20 +404,44 @@ class AndroidAutoService {
 
     final media = entity['media'] as Map<String, dynamic>?;
     final metadata = media?['metadata'] as Map<String, dynamic>? ?? {};
-    final title = metadata['title'] as String? ?? 'Unknown';
+    final showTitle = metadata['title'] as String? ?? 'Unknown';
     final author = metadata['authorName'] as String? ?? '';
-    final duration = (media?['duration'] as num?)?.toDouble() ?? 0;
-    final chapters = media?['chapters'] as List<dynamic>? ?? [];
 
     final progress = entity['mediaProgress'] as Map<String, dynamic>?;
     final currentTime = (progress?['currentTime'] as num?)?.toDouble();
 
+    // Podcast entities from continue-listening have a recentEpisode field
+    final recentEp = entity['recentEpisode'] as Map<String, dynamic>?;
+    if (recentEp != null) {
+      final episodeId = recentEp['id'] as String?;
+      if (episodeId == null) return null;
+      final episodeTitle = recentEp['title'] as String? ?? 'Episode';
+      final epDuration = (recentEp['duration'] as num?)?.toDouble() ?? 0;
+      final chapters = recentEp['chapters'] as List<dynamic>? ?? [];
+
+      return AutoBookEntry(
+        id: '$id-$episodeId', // compound key
+        title: episodeTitle,
+        author: showTitle,    // show name as artist
+        duration: epDuration,
+        coverUrl: localCoverUri(id), // show ID for cover
+        chapters: chapters,
+        currentTime: currentTime,
+        episodeId: episodeId,
+        showId: id,
+      );
+    }
+
+    // Regular book entity
+    final duration = (media?['duration'] as num?)?.toDouble() ?? 0;
+    final chapters = media?['chapters'] as List<dynamic>? ?? [];
+
     return AutoBookEntry(
       id: id,
-      title: title,
+      title: showTitle,
       author: author,
       duration: duration,
-      coverUrl: api.getCoverUrl(id, width: 400),
+      coverUrl: localCoverUri(id),
       chapters: chapters,
       currentTime: currentTime,
     );
@@ -409,7 +464,7 @@ class AndroidAutoService {
       title: title,
       author: author,
       duration: duration,
-      coverUrl: api.getCoverUrl(id, width: 400),
+      coverUrl: localCoverUri(id),
       chapters: chapters,
     );
   }
@@ -417,66 +472,30 @@ class AndroidAutoService {
   // ─── Browse tree ───────────────────────────────────────────────────
 
   List<MediaItem> _getRootChildren() {
-    final tabs = <MediaItem>[];
-
-    if (_continueListening.isNotEmpty) {
-      tabs.add(const MediaItem(
+    // Always show all three tabs so the layout is consistent and doesn't
+    // look like a missing 4th button.  Each tab fetches on-demand if its
+    // cache is empty (cold start / background refresh pending).
+    return const [
+      MediaItem(
         id: AutoMediaIds.continueListening,
         title: 'Continue',
         playable: false,
-      ));
-    }
-
-    if (_recentlyAdded.isNotEmpty) {
-      tabs.add(const MediaItem(
-        id: AutoMediaIds.recent,
-        title: 'Recent',
-        playable: false,
-      ));
-    }
-
-    if (_libraries.isNotEmpty) {
-      tabs.add(const MediaItem(
+      ),
+      MediaItem(
         id: AutoMediaIds.library,
         title: 'Library',
         playable: false,
-      ));
-    }
-
-    if (_downloaded.isNotEmpty) {
-      tabs.add(const MediaItem(
+      ),
+      MediaItem(
         id: AutoMediaIds.downloads,
         title: 'Downloads',
         playable: false,
-      ));
-    }
-
-    if (tabs.isEmpty) {
-      tabs.add(const MediaItem(
-        id: AutoMediaIds.library,
-        title: 'Library',
-        playable: false,
-      ));
-    }
-
-    return tabs;
+      ),
+    ];
   }
 
-  /// Library tab → list of book-type libraries
-  List<MediaItem> _getLibraryList() {
-    // If only one book library, skip the picker — go straight to sub-categories
-    // (handled by caller checking length)
-    return _libraries.map((lib) {
-      return MediaItem(
-        id: AutoMediaIds.libId(lib.id),
-        title: lib.name,
-        playable: false,
-      );
-    }).toList();
-  }
-
-  /// Sub-categories for a library: Books, Series, Authors
-  List<MediaItem> _getLibrarySubCategories(String libraryId) {
+  /// Sub-categories for a book library: Books, Series, Authors
+  List<MediaItem> _getBookSubCategories(String libraryId) {
     return [
       MediaItem(
         id: AutoMediaIds.libBooks(libraryId),
@@ -518,22 +537,45 @@ class AndroidAutoService {
 
     // ── Top-level tabs ──
     if (parentMediaId == AutoMediaIds.continueListening) {
+      // If empty (cold start / background refresh pending), fetch now
+      if (_continueListening.isEmpty) {
+        try {
+          await _refreshFromServer();
+        } catch (e) {
+          debugPrint('[AndroidAuto] On-demand continue fetch failed: $e');
+        }
+      }
       return _continueListening.map((e) => e.toMediaItem()).toList();
-    }
-    if (parentMediaId == AutoMediaIds.recent) {
-      return _recentlyAdded.map((e) => e.toMediaItem()).toList();
     }
     if (parentMediaId == AutoMediaIds.downloads) {
       return _downloaded.map((e) => e.toMediaItem()).toList();
     }
 
-    // ── Library tab ──
+    // ── Library list ──
     if (parentMediaId == AutoMediaIds.library) {
-      // If only one book library, skip picker → show sub-categories directly
-      if (_libraries.length == 1) {
-        return _getLibrarySubCategories(_libraries.first.id);
+      // If no libraries cached yet (cold start, background refresh pending
+      // or failed), fetch synchronously so the user sees real content
+      // instead of an empty list.
+      if (_libraries.isEmpty) {
+        try {
+          await _refreshFromServer();
+        } catch (e) {
+          debugPrint('[AndroidAuto] On-demand library fetch failed: $e');
+        }
       }
-      return _getLibraryList();
+      // If only one library, skip picker → go straight to its contents
+      if (_libraries.length == 1) {
+        final lib = _libraries.first;
+        if (lib.isPodcast) return _fetchPodcastShows(lib.id);
+        return _getBookSubCategories(lib.id);
+      }
+      return _libraries.map((lib) {
+        return MediaItem(
+          id: AutoMediaIds.libId(lib.id),
+          title: lib.name,
+          playable: false,
+        );
+      }).toList();
     }
 
     // ── Library drilldowns ──
@@ -543,8 +585,17 @@ class AndroidAutoService {
       if (libId == null) return [];
 
       if (sub == null) {
-        // "lib:<id>" → sub-categories
-        return _getLibrarySubCategories(libId);
+        // "lib:<id>" — check if book or podcast library
+        final lib = _libraries.cast<AutoLibraryEntry?>().firstWhere(
+          (l) => l!.id == libId,
+          orElse: () => null,
+        );
+        if (lib != null && lib.isPodcast) {
+          // Podcast library → list shows directly
+          return _fetchPodcastShows(libId);
+        }
+        // Book library → sub-categories
+        return _getBookSubCategories(libId);
       }
 
       switch (sub) {
@@ -555,6 +606,12 @@ class AndroidAutoService {
         case 'authors':
           return _fetchLibraryAuthors(libId);
       }
+    }
+
+    // ── Show drilldown (podcast episodes) ──
+    final show = AutoMediaIds.parseShow(parentMediaId);
+    if (show != null) {
+      return _fetchShowEpisodes(show.showId, show.libId);
     }
 
     // ── Series drilldown ──
@@ -724,6 +781,112 @@ class AndroidAutoService {
     }
   }
 
+  /// Fetch all podcast shows in a library. Shows are browsable, not playable.
+  Future<List<MediaItem>> _fetchPodcastShows(String libraryId) async {
+    final api = await getApi();
+    if (api == null) return [];
+
+    try {
+      const maxItems = 200;
+      final allShows = <MediaItem>[];
+      int page = 0;
+      const pageSize = 100;
+
+      while (allShows.length < maxItems) {
+        final result = await api.getLibraryItems(
+          libraryId, page: page, limit: pageSize,
+          sort: 'media.metadata.title', desc: 0,
+        );
+        if (result == null) break;
+
+        final results = result['results'] as List<dynamic>? ?? [];
+        for (final item in results) {
+          if (item is! Map<String, dynamic>) continue;
+          final id = item['id'] as String?;
+          if (id == null) continue;
+          final media = item['media'] as Map<String, dynamic>?;
+          final metadata = media?['metadata'] as Map<String, dynamic>? ?? {};
+          final title = metadata['title'] as String? ?? 'Unknown';
+          final coverUri = Uri.tryParse(localCoverUri(id));
+
+          allShows.add(MediaItem(
+            id: AutoMediaIds.showId(id, libraryId),
+            title: title,
+            artUri: coverUri,
+            playable: false,
+            extras: coverUri != null ? {'artUri': coverUri.toString()} : null,
+          ));
+        }
+
+        final total = (result['total'] as num?)?.toInt() ?? 0;
+        if (allShows.length >= total || results.length < pageSize) break;
+        page++;
+      }
+
+      if (allShows.length > maxItems) {
+        return allShows.sublist(0, maxItems);
+      }
+
+      debugPrint('[AndroidAuto] Fetched ${allShows.length} podcast shows');
+      return allShows;
+    } catch (e) {
+      debugPrint('[AndroidAuto] Error fetching podcast shows: $e');
+    }
+    return [];
+  }
+
+  /// Fetch episodes for a podcast show. Sorted newest-first.
+  Future<List<MediaItem>> _fetchShowEpisodes(String showId, String libraryId) async {
+    final api = await getApi();
+    if (api == null) return [];
+
+    try {
+      final fullItem = await api.getLibraryItem(showId);
+      if (fullItem == null) return [];
+
+      final media = fullItem['media'] as Map<String, dynamic>?;
+      final metadata = media?['metadata'] as Map<String, dynamic>? ?? {};
+      final showTitle = metadata['title'] as String? ?? 'Podcast';
+      final episodes = media?['episodes'] as List<dynamic>? ?? [];
+
+      // Sort newest first
+      final sorted = List<dynamic>.from(episodes);
+      sorted.sort((a, b) {
+        final aTime = (a['publishedAt'] as num?)?.toInt() ?? 0;
+        final bTime = (b['publishedAt'] as num?)?.toInt() ?? 0;
+        return bTime.compareTo(aTime);
+      });
+
+      final coverUri = Uri.tryParse(localCoverUri(showId));
+      final items = <MediaItem>[];
+
+      for (final ep in sorted) {
+        if (ep is! Map<String, dynamic>) continue;
+        final epId = ep['id'] as String?;
+        if (epId == null) continue;
+        final epTitle = ep['title'] as String? ?? 'Episode';
+        final epDuration = (ep['duration'] as num?)?.toDouble() ?? 0;
+
+        items.add(MediaItem(
+          id: AutoMediaIds.itemId('$showId-$epId'),
+          title: epTitle,
+          artist: showTitle,
+          album: showTitle,
+          duration: Duration(seconds: epDuration.round()),
+          artUri: coverUri,
+          playable: true,
+          extras: coverUri != null ? {'artUri': coverUri.toString()} : null,
+        ));
+      }
+
+      debugPrint('[AndroidAuto] Fetched ${items.length} episodes for "$showTitle"');
+      return items;
+    } catch (e) {
+      debugPrint('[AndroidAuto] Error fetching show episodes: $e');
+    }
+    return [];
+  }
+
   // ─── Search ────────────────────────────────────────────────────────
 
   Future<List<MediaItem>> search(String query) async {
@@ -736,6 +899,7 @@ class AndroidAutoService {
       if (result == null) return [];
 
       final items = <MediaItem>[];
+      // Search book results
       final books = result['book'] as List<dynamic>? ?? [];
       for (final b in books) {
         final bm = b as Map<String, dynamic>;
@@ -744,6 +908,28 @@ class AndroidAutoService {
           final entry = _libraryItemToEntry(libraryItem, api);
           if (entry != null) {
             items.add(entry.toMediaItem());
+          }
+        }
+      }
+      // Search podcast results
+      final podcasts = result['podcast'] as List<dynamic>? ?? [];
+      for (final p in podcasts) {
+        final pm = p as Map<String, dynamic>;
+        final libraryItem = pm['libraryItem'] as Map<String, dynamic>?;
+        if (libraryItem != null) {
+          final id = libraryItem['id'] as String?;
+          if (id != null) {
+            final media = libraryItem['media'] as Map<String, dynamic>?;
+            final metadata = media?['metadata'] as Map<String, dynamic>? ?? {};
+            final title = metadata['title'] as String? ?? 'Unknown';
+            final coverUri = Uri.tryParse(localCoverUri(id));
+            items.add(MediaItem(
+              id: AutoMediaIds.showId(id, libId),
+              title: title,
+              artUri: coverUri,
+              playable: false,
+              extras: coverUri != null ? {'artUri': coverUri.toString()} : null,
+            ));
           }
         }
       }
@@ -757,7 +943,7 @@ class AndroidAutoService {
   // ─── Lookup helpers ────────────────────────────────────────────────
 
   AutoBookEntry? findEntry(String absItemId) {
-    for (final list in [_continueListening, _downloaded, _recentlyAdded]) {
+    for (final list in [_continueListening, _downloaded]) {
       for (final entry in list) {
         if (entry.id == absItemId) return entry;
       }

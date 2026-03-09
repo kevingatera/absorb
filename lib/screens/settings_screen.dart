@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -11,10 +13,13 @@ import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import '../services/sleep_timer_service.dart';
 import '../services/user_account_service.dart';
+import '../services/backup_service.dart';
 import '../services/log_service.dart';
 import '../screens/login_screen.dart';
 import '../screens/app_shell.dart';
 import '../screens/admin_screen.dart';
+import '../screens/downloads_screen.dart';
+import '../screens/bookmarks_screen.dart';
 import '../main.dart' show themeNotifier, parseThemeMode;
 import '../widgets/absorb_page_header.dart';
 import '../widgets/absorb_slider.dart';
@@ -30,14 +35,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   AutoRewindSettings _rewindSettings = const AutoRewindSettings();
   double _defaultSpeed = 1.0;
   bool _wifiOnlyDownloads = false;
+  int _rollingDownloadCount = 3;
+  bool _rollingDownloadDeleteFinished = false;
   bool _showBookSlider = false;
+  bool _notifChapterProgress = false;
   bool _speedAdjustedTime = true;
   int _forwardSkip = 30;
   int _backSkip = 10;
   bool _shakeToResetSleep = true;
   bool _resetSleepOnPause = false;
+  bool _sleepFadeOut = true;
   int _shakeAddMinutes = 5;
-  bool _autoContinueSeries = true;
+  String _queueMode = 'off';
+  bool _queueAutoDownload = false;
+  bool _mergeAbsorbingLibraries = false;
+  int _maxConcurrentDownloads = 1;
+  String _whenFinished = 'overlay';
   bool _hideEbookOnly = false;
   bool _showGoodreadsButton = false;
   bool _loggingEnabled = false;
@@ -46,8 +59,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loaded = false;
   String _downloadLocationLabel = 'App Internal Storage (Default)';
   int _totalDownloadSizeBytes = 0;
+  int _deviceTotalBytes = 0;
+  int _deviceAvailableBytes = 0;
   AutoSleepSettings _autoSleepSettings = const AutoSleepSettings();
   String _appVersion = '';
+  String? _expandedSection;
+  final Map<String, GlobalKey> _sectionKeys = {};
+
+  GlobalKey _keyFor(String section) => _sectionKeys.putIfAbsent(section, () => GlobalKey());
+
+  void _onSectionExpanded(String section, bool expanded) {
+    setState(() {
+      if (expanded) {
+        _expandedSection = section;
+      } else if (_expandedSection == section) {
+        _expandedSection = null;
+      }
+    });
+    if (expanded) {
+      // Wait for the collapse/expand animations to finish before scrolling
+      Future.delayed(const Duration(milliseconds: 350), () {
+        final ctx = _keyFor(section).currentContext;
+        if (ctx != null && mounted) {
+          Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 250), curve: Curves.easeOut, alignment: 0.0);
+        }
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -56,39 +94,86 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
-    final s = await AutoRewindSettings.load();
-    final speed = await PlayerSettings.getDefaultSpeed();
-    final wifiOnly = await PlayerSettings.getWifiOnlyDownloads();
-    final bookSlider = await PlayerSettings.getShowBookSlider();
-    final speedAdj = await PlayerSettings.getSpeedAdjustedTime();
-    final fwd = await PlayerSettings.getForwardSkip();
-    final bk = await PlayerSettings.getBackSkip();
-    final shake = await PlayerSettings.getShakeToResetSleep();
-    final resetOnPause = await PlayerSettings.getResetSleepOnPause();
-    final shakeMins = await PlayerSettings.getShakeAddMinutes();
-    final autoSeries = await PlayerSettings.getAutoContinueSeries();
-    final hideEbook = await PlayerSettings.getHideEbookOnly();
-    final showGoodreads = await PlayerSettings.getShowGoodreadsButton();
-    final logging = await PlayerSettings.getLoggingEnabled();
-    final fullScreen = await PlayerSettings.getFullScreenPlayer();
-    final theme = await PlayerSettings.getThemeMode();
-
-    final dlLabel = await DownloadService().downloadLocationLabel;
-    final dlSize = await DownloadService().totalDownloadSize;
-    final autoSleep = await AutoSleepSettings.load();
-    final pkgInfo = await PackageInfo.fromPlatform();
+    final results = await Future.wait([
+      AutoRewindSettings.load(),                              // 0
+      PlayerSettings.getDefaultSpeed(),                       // 1
+      PlayerSettings.getWifiOnlyDownloads(),                  // 2
+      PlayerSettings.getRollingDownloadCount(),                // 3
+      PlayerSettings.getRollingDownloadDeleteFinished(),       // 4
+      PlayerSettings.getShowBookSlider(),                     // 5
+      PlayerSettings.getNotificationChapterProgress(),        // 6
+      PlayerSettings.getSpeedAdjustedTime(),                  // 7
+      PlayerSettings.getForwardSkip(),                        // 8
+      PlayerSettings.getBackSkip(),                           // 9
+      PlayerSettings.getShakeToResetSleep(),                  // 10
+      PlayerSettings.getResetSleepOnPause(),                  // 11
+      PlayerSettings.getSleepFadeOut(),                       // 12
+      PlayerSettings.getShakeAddMinutes(),                    // 13
+      PlayerSettings.getQueueMode(),                          // 14
+      PlayerSettings.getQueueAutoDownload(),                  // 15
+      PlayerSettings.getMergeAbsorbingLibraries(),            // 16
+      PlayerSettings.getMaxConcurrentDownloads(),             // 17
+      PlayerSettings.getWhenFinished(),                       // 18
+      PlayerSettings.getHideEbookOnly(),                      // 19
+      PlayerSettings.getShowGoodreadsButton(),                // 20
+      PlayerSettings.getLoggingEnabled(),                     // 21
+      PlayerSettings.getFullScreenPlayer(),                   // 22
+      PlayerSettings.getThemeMode(),                          // 23
+      DownloadService().downloadLocationLabel,                // 24
+      DownloadService().totalDownloadSize,                    // 25
+      DownloadService.getDeviceStorage(),                     // 26
+      AutoSleepSettings.load(),                               // 27
+      PackageInfo.fromPlatform(),                             // 28
+    ]);
+    final s = results[0] as AutoRewindSettings;
+    final speed = results[1] as double;
+    final wifiOnly = results[2] as bool;
+    final rollingCount = results[3] as int;
+    final rollingDelete = results[4] as bool;
+    final bookSlider = results[5] as bool;
+    final notifChapter = results[6] as bool;
+    final speedAdj = results[7] as bool;
+    final fwd = results[8] as int;
+    final bk = results[9] as int;
+    final shake = results[10] as bool;
+    final resetOnPause = results[11] as bool;
+    final sleepFade = results[12] as bool;
+    final shakeMins = results[13] as int;
+    final queueMode = results[14] as String;
+    final queueAutoDl = results[15] as bool;
+    final mergeLibs = results[16] as bool;
+    final maxConc = results[17] as int;
+    final whenFinished = results[18] as String;
+    final hideEbook = results[19] as bool;
+    final showGoodreads = results[20] as bool;
+    final logging = results[21] as bool;
+    final fullScreen = results[22] as bool;
+    final theme = results[23] as String;
+    final dlLabel = results[24] as String;
+    final dlSize = results[25] as int;
+    final deviceStorage = results[26] as Map<String, int>?;
+    final autoSleep = results[27] as AutoSleepSettings;
+    final pkgInfo = results[28] as PackageInfo;
     if (mounted) setState(() {
       _rewindSettings = s;
       _defaultSpeed = speed;
       _wifiOnlyDownloads = wifiOnly;
+      _rollingDownloadCount = rollingCount;
+      _rollingDownloadDeleteFinished = rollingDelete;
       _showBookSlider = bookSlider;
+      _notifChapterProgress = notifChapter;
       _speedAdjustedTime = speedAdj;
       _forwardSkip = fwd;
       _backSkip = bk;
       _shakeToResetSleep = shake;
       _resetSleepOnPause = resetOnPause;
+      _sleepFadeOut = sleepFade;
       _shakeAddMinutes = shakeMins;
-      _autoContinueSeries = autoSeries;
+      _queueMode = queueMode;
+      _queueAutoDownload = queueAutoDl;
+      _mergeAbsorbingLibraries = mergeLibs;
+      _maxConcurrentDownloads = maxConc;
+      _whenFinished = whenFinished;
       _hideEbookOnly = hideEbook;
       _showGoodreadsButton = showGoodreads;
       _loggingEnabled = logging;
@@ -96,6 +181,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _themeMode = theme;
       _downloadLocationLabel = dlLabel;
       _totalDownloadSizeBytes = dlSize;
+      if (deviceStorage != null) {
+        _deviceTotalBytes = deviceStorage['totalBytes']!;
+        _deviceAvailableBytes = deviceStorage['availableBytes']!;
+      }
       _autoSleepSettings = autoSleep;
       _appVersion = pkgInfo.version;
       _loaded = true;
@@ -404,9 +493,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 // ── Appearance ──
                 _CollapsibleSection(
+                  key: _keyFor('Appearance'),
                   icon: Icons.palette_outlined,
                   title: 'Appearance',
                   cs: cs,
+                  isExpanded: _expandedSection == 'Appearance',
+                  onExpansionChanged: (v) => _onSectionExpanded('Appearance', v),
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -442,11 +534,174 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 16),
 
+                // ── Absorbing Cards ──
+                _CollapsibleSection(
+                  key: _keyFor('Absorbing Cards'),
+                  icon: Icons.style_rounded,
+                  title: 'Absorbing Cards',
+                  cs: cs,
+                  isExpanded: _expandedSection == 'Absorbing Cards',
+                  onExpansionChanged: (v) => _onSectionExpanded('Absorbing Cards', v),
+                  children: [
+                    SwitchListTile(
+                      title: const Text('Full screen player'),
+                      subtitle: Text(
+                        _fullScreenPlayer ? 'On — books open in full screen when played' : 'Off — play within card view',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _fullScreenPlayer,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _fullScreenPlayer = v);
+                        PlayerSettings.setFullScreenPlayer(v);
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    SwitchListTile(
+                      title: const Text('Full book scrubber'),
+                      subtitle: Text(
+                        _showBookSlider ? 'On — seekable slider across entire book' : 'Off — progress bar only',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _showBookSlider,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _showBookSlider = v);
+                        PlayerSettings.setShowBookSlider(v);
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    SwitchListTile(
+                      title: const Text('Speed-adjusted time'),
+                      subtitle: Text(
+                        _speedAdjustedTime ? 'On — remaining time reflects playback speed' : 'Off — showing raw audio duration',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _speedAdjustedTime,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _speedAdjustedTime = v);
+                        PlayerSettings.setSpeedAdjustedTime(v);
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('When absorbed', style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+                        const SizedBox(height: 4),
+                        Text('What happens to the absorbing card when a book or episode finishes',
+                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                        const SizedBox(height: 8),
+                        SizedBox(width: double.infinity, child: SegmentedButton<String>(
+                          segments: const [
+                            ButtonSegment(value: 'overlay', icon: Icon(Icons.layers_rounded), label: Text('Show Overlay')),
+                            ButtonSegment(value: 'auto_remove', icon: Icon(Icons.auto_delete_rounded), label: Text('Auto-release')),
+                          ],
+                          selected: {_whenFinished},
+                          onSelectionChanged: _loaded ? (s) {
+                            setState(() => _whenFinished = s.first);
+                            PlayerSettings.setWhenFinished(s.first);
+                          } : null,
+                          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                        )),
+                      ]),
+                    ),
+                    SwitchListTile(
+                      title: const Text('Merge libraries'),
+                      subtitle: Text(
+                        _mergeAbsorbingLibraries
+                            ? 'Absorbing page shows items from all libraries'
+                            : 'Absorbing page shows current library only',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _mergeAbsorbingLibraries,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _mergeAbsorbingLibraries = v);
+                        PlayerSettings.setMergeAbsorbingLibraries(v);
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          Text('Queue mode', style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+                          const SizedBox(width: 4),
+                          GestureDetector(
+                            onTap: () => showDialog(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('Queue Mode'),
+                                content: const Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Off', style: TextStyle(fontWeight: FontWeight.w600)),
+                                    SizedBox(height: 4),
+                                    Text('Playback stops when the current book or episode finishes.'),
+                                    SizedBox(height: 12),
+                                    Text('Manual Queue', style: TextStyle(fontWeight: FontWeight.w600)),
+                                    SizedBox(height: 4),
+                                    Text('Your absorbing cards act as a playlist. When one finishes, the next non-finished card auto-plays. Add items with the "Add to Absorbing" button on a book or episode and reorder from the absorbing screen.'),
+                                    SizedBox(height: 12),
+                                    Text('Auto Absorb', style: TextStyle(fontWeight: FontWeight.w600)),
+                                    SizedBox(height: 4),
+                                    Text('Automatically absorbs the next book in a series or the next episode in a podcast show.'),
+                                  ],
+                                ),
+                                actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Got it'))],
+                              ),
+                            ),
+                            child: Icon(Icons.info_outline_rounded, size: 16, color: cs.onSurfaceVariant),
+                          ),
+                        ]),
+                        const SizedBox(height: 4),
+                        Text(
+                          _queueMode == 'off' ? 'Playback stops when current item finishes'
+                            : _queueMode == 'manual' ? 'Auto-plays next non-finished card in order'
+                            : 'Auto-absorbs next book in series or podcast episode',
+                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(width: double.infinity, child: SegmentedButton<String>(
+                          segments: const [
+                            ButtonSegment(value: 'off', icon: Icon(Icons.stop_rounded), label: Text('Off')),
+                            ButtonSegment(value: 'manual', icon: Icon(Icons.queue_music_rounded), label: Text('Manual')),
+                            ButtonSegment(value: 'auto_next', icon: Icon(Icons.skip_next_rounded), label: Text('Auto')),
+                          ],
+                          selected: {_queueMode},
+                          onSelectionChanged: _loaded ? (s) {
+                            setState(() => _queueMode = s.first);
+                            PlayerSettings.setQueueMode(s.first);
+                          } : null,
+                          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                        )),
+                        if (_queueMode == 'manual') ...[
+                          const SizedBox(height: 4),
+                          SwitchListTile(
+                            title: const Text('Auto-download queue'),
+                            subtitle: Text(
+                              _queueAutoDownload
+                                  ? 'Keep next $_rollingDownloadCount items downloaded'
+                                  : 'Off — manual downloads only',
+                              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                            value: _queueAutoDownload,
+                            onChanged: _loaded ? (v) {
+                              setState(() => _queueAutoDownload = v);
+                              PlayerSettings.setQueueAutoDownload(v);
+                            } : null,
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ],
+                      ]),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
                 // ── Playback ──
                 _CollapsibleSection(
+                  key: _keyFor('Playback'),
                   icon: Icons.play_circle_outline_rounded,
                   title: 'Playback',
                   cs: cs,
+                  isExpanded: _expandedSection == 'Playback',
+                  onExpansionChanged: (v) => _onSectionExpanded('Playback', v),
                   children: [
                     // Default speed
                     Padding(
@@ -540,52 +795,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       } : null,
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
-                    // Toggles
                     SwitchListTile(
-                      title: const Text('Full book scrubber'),
+                      title: const Text('Chapter progress in notification'),
                       subtitle: Text(
-                        _showBookSlider ? 'On — seekable slider across entire book' : 'Off — progress bar only',
+                        _notifChapterProgress ? 'On — lockscreen shows chapter progress' : 'Off — lockscreen shows full book progress',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                      value: _showBookSlider,
+                      value: _notifChapterProgress,
                       onChanged: _loaded ? (v) {
-                        setState(() => _showBookSlider = v);
-                        PlayerSettings.setShowBookSlider(v);
-                      } : null,
-                    ),
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    SwitchListTile(
-                      title: const Text('Speed-adjusted time'),
-                      subtitle: Text(
-                        _speedAdjustedTime ? 'On — remaining time reflects playback speed' : 'Off — showing raw audio duration',
-                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                      value: _speedAdjustedTime,
-                      onChanged: _loaded ? (v) {
-                        setState(() => _speedAdjustedTime = v);
-                        PlayerSettings.setSpeedAdjustedTime(v);
-                      } : null,
-                    ),
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    SwitchListTile(
-                      title: const Text('Full screen player'),
-                      subtitle: Text(
-                        _fullScreenPlayer ? 'On — books open in full screen when played' : 'Off — play within card view',
-                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                      value: _fullScreenPlayer,
-                      onChanged: _loaded ? (v) {
-                        setState(() => _fullScreenPlayer = v);
-                        PlayerSettings.setFullScreenPlayer(v);
-                      } : null,
-                    ),
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    SwitchListTile(
-                      title: const Text('Auto-absorb next in series'),
-                      subtitle: Text(
-                        _autoContinueSeries ? 'On — next book in series added to Absorbing' : 'Off',
-                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                      value: _autoContinueSeries,
-                      onChanged: _loaded ? (v) {
-                        setState(() => _autoContinueSeries = v);
-                        PlayerSettings.setAutoContinueSeries(v);
+                        setState(() => _notifChapterProgress = v);
+                        PlayerSettings.setNotificationChapterProgress(v);
                       } : null,
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
@@ -685,9 +903,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 // ── Sleep Timer ──
                 _CollapsibleSection(
+                  key: _keyFor('Sleep Timer'),
                   icon: Icons.bedtime_outlined,
                   title: 'Sleep Timer',
                   cs: cs,
+                  isExpanded: _expandedSection == 'Sleep Timer',
+                  onExpansionChanged: (v) => _onSectionExpanded('Sleep Timer', v),
                   children: [
                     SwitchListTile(
                       title: const Text('Shake to add time'),
@@ -735,6 +956,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onChanged: _loaded ? (v) {
                         setState(() => _resetSleepOnPause = v);
                         PlayerSettings.setResetSleepOnPause(v);
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    SwitchListTile(
+                      title: const Text('Fade volume before sleep'),
+                      subtitle: Text(
+                        _sleepFadeOut
+                            ? 'Gradually lowers volume during the last 30 seconds'
+                            : 'Playback stops immediately when timer ends',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _sleepFadeOut,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _sleepFadeOut = v);
+                        PlayerSettings.setSleepFadeOut(v);
                       } : null,
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
@@ -852,9 +1087,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 // ── Downloads & Storage ──
                 _CollapsibleSection(
+                  key: _keyFor('Downloads & Storage'),
                   icon: Icons.download_outlined,
                   title: 'Downloads & Storage',
                   cs: cs,
+                  isExpanded: _expandedSection == 'Downloads & Storage',
+                  onExpansionChanged: (v) => _onSectionExpanded('Downloads & Storage', v),
                   children: [
                     SwitchListTile(
                       title: const Text('Download over Wi-Fi only'),
@@ -865,6 +1103,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onChanged: _loaded ? (v) {
                         setState(() => _wifiOnlyDownloads = v);
                         PlayerSettings.setWifiOnlyDownloads(v);
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 12),
+                          Text('Concurrent downloads', style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+                          const SizedBox(height: 8),
+                          SizedBox(width: double.infinity, child: SegmentedButton<int>(
+                            segments: const [
+                              ButtonSegment(value: 1, label: Text('1')),
+                              ButtonSegment(value: 2, label: Text('2')),
+                              ButtonSegment(value: 3, label: Text('3')),
+                              ButtonSegment(value: 4, label: Text('4')),
+                              ButtonSegment(value: 5, label: Text('5')),
+                            ],
+                            selected: {_maxConcurrentDownloads},
+                            onSelectionChanged: (v) {
+                              setState(() => _maxConcurrentDownloads = v.first);
+                              PlayerSettings.setMaxConcurrentDownloads(v.first);
+                            },
+                          )),
+                          const SizedBox(height: 8),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    ListTile(
+                      title: const Text('Auto-download'),
+                      subtitle: Text(
+                        'Enable per series or podcast from their detail pages',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      leading: Icon(Icons.downloading_rounded, color: cs.primary),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Keep next', style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+                          const SizedBox(height: 8),
+                          SizedBox(width: double.infinity, child: SegmentedButton<int>(
+                            segments: const [
+                              ButtonSegment(value: 2, label: Text('2')),
+                              ButtonSegment(value: 3, label: Text('3')),
+                              ButtonSegment(value: 4, label: Text('4')),
+                              ButtonSegment(value: 5, label: Text('5')),
+                            ],
+                            selected: {_rollingDownloadCount},
+                            onSelectionChanged: (v) {
+                              setState(() => _rollingDownloadCount = v.first);
+                              PlayerSettings.setRollingDownloadCount(v.first);
+                            },
+                          )),
+                          const SizedBox(height: 8),
+                        ],
+                      ),
+                    ),
+                    SwitchListTile(
+                      title: const Text('Delete absorbed downloads'),
+                      subtitle: Text(
+                        _rollingDownloadDeleteFinished
+                            ? 'Finished items are removed to save space'
+                            : 'Off — finished downloads kept',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _rollingDownloadDeleteFinished,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _rollingDownloadDeleteFinished = v);
+                        PlayerSettings.setRollingDownloadDeleteFinished(v);
                       } : null,
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
@@ -880,14 +1190,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => _pickDownloadLocation(context, cs, tt),
                     ),
-                    if (_totalDownloadSizeBytes > 0) ...[
+                    if (_totalDownloadSizeBytes > 0 || _deviceTotalBytes > 0) ...[
                       const Divider(height: 1, indent: 16, endIndent: 16),
                       ListTile(
                         leading: Icon(Icons.data_usage_rounded, color: cs.onSurfaceVariant),
                         title: const Text('Storage used'),
                         subtitle: Text(
-                          _formatBytes(_totalDownloadSizeBytes),
+                          '${_totalDownloadSizeBytes > 0 ? '${_formatBytes(_totalDownloadSizeBytes)} used by downloads' : ''}'
+                          '${_totalDownloadSizeBytes > 0 && _deviceTotalBytes > 0 ? '\n' : ''}'
+                          '${_deviceTotalBytes > 0 ? '${_formatBytes(_deviceAvailableBytes)} free of ${_formatBytes(_deviceTotalBytes)}' : ''}',
                           style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                        isThreeLine: _totalDownloadSizeBytes > 0 && _deviceTotalBytes > 0,
                       ),
                     ],
                     const Divider(height: 1, indent: 16, endIndent: 16),
@@ -895,7 +1208,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       leading: Icon(Icons.storage_rounded, color: cs.primary),
                       title: const Text('Manage downloads'),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _showDownloadManager(context, cs, tt),
+                      onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const DownloadsScreen())),
                     ),
                   ],
                 ),
@@ -903,9 +1217,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 // ── Library ──
                 _CollapsibleSection(
+                  key: _keyFor('Library'),
                   icon: Icons.auto_stories_outlined,
                   title: 'Library',
                   cs: cs,
+                  isExpanded: _expandedSection == 'Library',
+                  onExpansionChanged: (v) => _onSectionExpanded('Library', v),
                   children: [
                     SwitchListTile(
                       title: const Text('Hide eBook-only titles'),
@@ -958,9 +1275,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 // ── Permissions ──
                 _CollapsibleSection(
+                  key: _keyFor('Permissions'),
                   icon: Icons.shield_outlined,
                   title: 'Permissions',
                   cs: cs,
+                  isExpanded: _expandedSection == 'Permissions',
+                  onExpansionChanged: (v) => _onSectionExpanded('Permissions', v),
                   children: [
                     ListTile(
                       leading: const Icon(Icons.notifications_outlined),
@@ -1017,9 +1337,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 // ── Issues & Support ──
                 _CollapsibleSection(
+                  key: _keyFor('Issues & Support'),
                   icon: Icons.support_agent_rounded,
                   title: 'Issues & Support',
                   cs: cs,
+                  isExpanded: _expandedSection == 'Issues & Support',
+                  onExpansionChanged: (v) => _onSectionExpanded('Issues & Support', v),
                   children: [
                     ListTile(
                       leading: Icon(Icons.bug_report_outlined, color: cs.onSurfaceVariant),
@@ -1138,6 +1461,70 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
                       ),
                     ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // ── Backup & Restore ──
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Card(
+                    elevation: 0,
+                    color: cs.surfaceContainerHigh,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(children: [
+                            Icon(Icons.settings_backup_restore_rounded, color: cs.primary, size: 22),
+                            const SizedBox(width: 10),
+                            Text('Backup & Restore', style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                          ]),
+                          const SizedBox(height: 4),
+                          Text('Save or restore all your settings to a file',
+                            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                          const SizedBox(height: 14),
+                          Row(children: [
+                            Expanded(child: FilledButton.tonalIcon(
+                              icon: const Icon(Icons.upload_rounded, size: 18),
+                              label: const Text('Back up'),
+                              onPressed: () => _backupSettings(context, cs, tt),
+                            )),
+                            const SizedBox(width: 10),
+                            Expanded(child: OutlinedButton.icon(
+                              icon: const Icon(Icons.download_rounded, size: 18),
+                              label: const Text('Restore'),
+                              onPressed: () => _restoreSettings(context, cs, tt),
+                            )),
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                // ── All Bookmarks ──
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Card(
+                    elevation: 0,
+                    color: cs.surfaceContainerHigh,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    child: ListTile(
+                      leading: Icon(Icons.bookmarks_rounded, color: cs.primary),
+                      title: const Text('All Bookmarks'),
+                      subtitle: Text('View bookmarks across all books',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const BookmarksScreen())),
+                    ),
                   ),
                 ),
 
@@ -1495,98 +1882,211 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showDownloadManager(BuildContext context, ColorScheme cs, TextTheme tt) {
-    showModalBottomSheet(
+  void _backupSettings(BuildContext context, ColorScheme cs, TextTheme tt) {
+    showDialog(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        minChildSize: 0.05,
-        maxChildSize: 0.85,
-        expand: false,
-        builder: (ctx, scrollController) => Container(
-          decoration: BoxDecoration(
-            color: cs.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.shield_rounded),
+        title: const Text('Include login info?'),
+        content: const Text(
+          'Would you like to include login credentials for all your saved accounts in the backup?\n\n'
+          'This makes it easy to restore on a new device, but the file will contain your auth tokens.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _performBackup(context, includeAccounts: false);
+            },
+            child: const Text('No, settings only'),
           ),
-          child: ListenableBuilder(
-          listenable: DownloadService(),
-          builder: (ctx, _) {
-            final items = DownloadService().downloadedItems;
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(width: 40, height: 4,
-                        decoration: BoxDecoration(
-                          color: cs.onSurfaceVariant.withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(2))),
-                      const SizedBox(height: 16),
-                      Text('Downloads',
-                        style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 12),
-                    ],
-                  ),
-                ),
-                if (items.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text('No downloads',
-                      style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
-                  )
-                else
-                  Expanded(
-                    child: ListView.builder(
-                      controller: scrollController,
-                      padding: EdgeInsets.only(bottom: 32 + MediaQuery.of(ctx).viewPadding.bottom),
-                      itemCount: items.length,
-                      itemBuilder: (ctx, index) {
-                        final info = items[index];
-                        return ListTile(
-                          leading: Icon(Icons.headphones_rounded, color: cs.primary),
-                          title: Text(info.title ?? 'Unknown',
-                            maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text(info.author ?? '',
-                            maxLines: 1, overflow: TextOverflow.ellipsis,
-                            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                          trailing: IconButton(
-                            icon: Icon(Icons.delete_outline, color: cs.error),
-                            onPressed: () {
-                              showDialog(
-                                context: ctx,
-                                builder: (d) => AlertDialog(
-                                  title: const Text('Remove download?'),
-                                  content: Text('Delete "${info.title}" from device?'),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(d),
-                                      child: const Text('Cancel')),
-                                    FilledButton(
-                                      onPressed: () {
-                                        DownloadService().deleteDownload(info.itemId);
-                                        Navigator.pop(d);
-                                      },
-                                      child: const Text('Remove')),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            );
-          },
-        ),
-        ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _performBackup(context, includeAccounts: true);
+            },
+            child: const Text('Yes, include accounts'),
+          ),
+        ],
       ),
     );
+  }
+
+  Future<void> _performBackup(BuildContext context, {required bool includeAccounts}) async {
+    try {
+      final data = await BackupService.exportSettings(includeAccounts: includeAccounts);
+      final jsonStr = const JsonEncoder.withIndent('  ').convert(data);
+      final now = DateTime.now();
+      final datePart = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      final fileName = 'absorb_backup_$datePart.absorb';
+
+      final bytes = Uint8List.fromList(utf8.encode(jsonStr));
+
+      final result = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save Absorb backup',
+        fileName: fileName,
+        type: FileType.any,
+        bytes: bytes,
+      );
+
+      if (result != null) {
+        // Desktop platforms need manual file write; mobile writes via bytes param
+        if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+          await File(result).writeAsString(jsonStr);
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(includeAccounts
+                ? 'Backup saved (with accounts)'
+                : 'Backup saved (settings only)'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Backup failed: $e')),
+        );
+      }
+    }
+  }
+
+  void _restoreSettings(BuildContext context, ColorScheme cs, TextTheme tt) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.any);
+      if (result == null || result.files.single.path == null) return;
+
+      final file = File(result.files.single.path!);
+      final jsonStr = await file.readAsString();
+      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+
+      if (data['version'] == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Invalid backup file')),
+          );
+        }
+        return;
+      }
+
+      if (!mounted) return;
+
+      final accounts = data['accounts'] as List<dynamic>?;
+      final hasAccounts = accounts != null && accounts.isNotEmpty;
+      final bookmarks = data['bookmarks'] as Map<String, dynamic>?;
+      final hasBookmarks = bookmarks != null && bookmarks.isNotEmpty;
+      final hasCustomHeaders = data['customHeaders'] != null;
+      final createdAt = data['createdAt'] as String?;
+      final appVersion = data['appVersion'] as String?;
+
+      String details = '';
+      if (appVersion != null) details += 'From Absorb v$appVersion';
+      if (createdAt != null) {
+        final dt = DateTime.tryParse(createdAt);
+        if (dt != null) {
+          details += details.isEmpty ? '' : ' · ';
+          details += '${dt.month}/${dt.day}/${dt.year}';
+        }
+      }
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(Icons.restore_rounded),
+          title: const Text('Restore backup?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('This will replace all your current settings with the backup values.'),
+              if (details.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(details, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
+              ],
+              if (hasAccounts || hasBookmarks || hasCustomHeaders) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (hasAccounts)
+                      _restoreChip(Icons.people_rounded, '${accounts.length} account(s)', cs),
+                    if (hasBookmarks)
+                      _restoreChip(Icons.bookmark_rounded, 'Bookmarks for ${bookmarks.length} book(s)', cs),
+                    if (hasCustomHeaders)
+                      _restoreChip(Icons.vpn_key_rounded, 'Custom headers', cs),
+                  ],
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Restore'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true || !mounted) return;
+
+      await BackupService.importSettings(data);
+
+      // Apply theme immediately
+      final theme = data['settings']?['themeMode'] as String?;
+      if (theme != null) {
+        themeNotifier.value = parseThemeMode(theme);
+      }
+
+      // Refresh UI
+      await _loadSettings();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Settings restored successfully'),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Restore failed: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _restoreChip(IconData icon, String label, ColorScheme cs) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: cs.primaryContainer.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 16, color: cs.primary),
+        const SizedBox(width: 8),
+        Text(label, style: TextStyle(fontSize: 12, color: cs.primary)),
+      ]),
+    );
+  }
+
+  /// Stop any active playback and sync progress to the server before
+  /// switching users, adding an account, or signing out.
+  Future<void> _stopAndSyncPlayback() async {
+    final player = AudioPlayerService();
+    if (player.hasBook) {
+      await player.pause();
+      await player.stop();
+    }
   }
 
   void _confirmLogout(BuildContext context) {
@@ -1603,9 +2103,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text('Stay'),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              context.read<AuthProvider>().logout();
+              await _stopAndSyncPlayback();
+              if (context.mounted) context.read<AuthProvider>().logout();
             },
             style: FilledButton.styleFrom(backgroundColor: cs.error),
             child: const Text('Sign Out'),
@@ -1616,6 +2117,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _addAccount(BuildContext context) async {
+    // Stop playback and sync before navigating to login
+    await _stopAndSyncPlayback();
+    if (!context.mounted) return;
     // Navigate to login screen as a pushed route (not replacing current)
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -1676,6 +2180,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (confirmed != true || !context.mounted) return;
 
+    // Stop playback and sync before switching
+    await _stopAndSyncPlayback();
+    if (!context.mounted) return;
+
     final auth = context.read<AuthProvider>();
     final lib = context.read<LibraryProvider>();
 
@@ -1691,35 +2199,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-class _CollapsibleSection extends StatelessWidget {
+class _CollapsibleSection extends StatefulWidget {
   final IconData icon;
   final String title;
   final ColorScheme cs;
   final List<Widget> children;
+  final bool isExpanded;
+  final ValueChanged<bool>? onExpansionChanged;
 
   const _CollapsibleSection({
+    super.key,
     required this.icon,
     required this.title,
     required this.cs,
     required this.children,
+    this.isExpanded = false,
+    this.onExpansionChanged,
   });
 
   @override
+  State<_CollapsibleSection> createState() => _CollapsibleSectionState();
+}
+
+class _CollapsibleSectionState extends State<_CollapsibleSection> {
+  final ExpansibleController _controller = ExpansibleController();
+  bool _isBuilt = false;
+
+  @override
+  void didUpdateWidget(covariant _CollapsibleSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_isBuilt && widget.isExpanded != oldWidget.isExpanded) {
+      if (widget.isExpanded) {
+        _controller.expand();
+      } else {
+        _controller.collapse();
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    _isBuilt = true;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Card(
-      elevation: 0,
+      elevation: isDark ? 0 : 2,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      color: cs.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: widget.cs.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: isDark ? BorderSide(color: widget.cs.outlineVariant.withValues(alpha: 0.3)) : BorderSide.none,
+      ),
       clipBehavior: Clip.antiAlias,
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          leading: Icon(icon, color: cs.primary, size: 22),
-          title: Text(title, style: TextStyle(fontWeight: FontWeight.w600)),
+          controller: _controller,
+          initiallyExpanded: widget.isExpanded,
+          onExpansionChanged: widget.onExpansionChanged,
+          leading: Icon(widget.icon, color: widget.cs.primary, size: 22),
+          title: Text(widget.title, style: TextStyle(fontWeight: FontWeight.w600)),
           childrenPadding: EdgeInsets.zero,
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-          children: children,
+          children: widget.children,
         ),
       ),
     );

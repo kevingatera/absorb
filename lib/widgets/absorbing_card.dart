@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
@@ -43,6 +42,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   ui.Image? _blurredCover; // Precached blurred background
   String? _blurredCoverUrl; // URL the blur was built from
   List<String> _buttonOrder = PlayerSettings.defaultButtonOrder;
+  bool _autoRemoveFinished = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -56,7 +56,11 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   List<dynamic> get _chapters {
     // Prefer fetched chapters (from full item), fall back to inline data
     if (_fetchedChapters != null && _fetchedChapters!.isNotEmpty) return _fetchedChapters!;
-    return _media['chapters'] as List<dynamic>? ?? [];
+    final inline = _media['chapters'] as List<dynamic>? ?? [];
+    if (inline.isNotEmpty) return inline;
+    // For active podcast episodes, chapters come from the playback session
+    if (_isActive && widget.player.chapters.isNotEmpty) return widget.player.chapters;
+    return [];
   }
   bool get _isActive {
     if (widget.player.currentItemId != _itemId) return false;
@@ -110,8 +114,16 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     _fetchChaptersIfNeeded();
     _startChapterTracking();
     ChromecastService().addListener(_onCastChanged);
+    DownloadService().addListener(_onDownloadChanged);
     PlayerSettings.settingsChanged.addListener(_reloadButtonOrder);
     _reloadButtonOrder();
+    _loadWhenFinished();
+  }
+
+  void _loadWhenFinished() {
+    PlayerSettings.getWhenFinished().then((mode) {
+      if (mounted) setState(() => _autoRemoveFinished = mode == 'auto_remove');
+    });
   }
 
   void _reloadButtonOrder() {
@@ -119,6 +131,8 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       if (mounted && o.join(',') != _buttonOrder.join(',')) setState(() => _buttonOrder = o);
     });
   }
+
+  void _onDownloadChanged() { if (mounted) setState(() {}); }
 
   void _onCastChanged() {
     _startChapterTracking();
@@ -216,9 +230,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   }
 
   @override
-  void didUpdateWidget(AbsorbingCard old) {
-    super.didUpdateWidget(old);
-    final oldId = old.item['id'] as String? ?? '';
+  void didUpdateWidget(AbsorbingCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldId = oldWidget.item['id'] as String? ?? '';
     if (oldId != _itemId) {
       // Item changed — reset all stale state
       _coverScheme = null;
@@ -230,13 +244,14 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       _lastChapterIdx = -1;
       _fetchChaptersIfNeeded();
     }
-    if (old.player != widget.player) _startChapterTracking();
+    if (oldWidget.player != widget.player) _startChapterTracking();
   }
 
   @override
   void dispose() {
     PlayerSettings.settingsChanged.removeListener(_reloadButtonOrder);
     ChromecastService().removeListener(_onCastChanged);
+    DownloadService().removeListener(_onDownloadChanged);
     _chapterTrackSub?.cancel();
     _blurredCover?.dispose();
     super.dispose();
@@ -320,7 +335,6 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     final tt = Theme.of(context).textTheme;
     final cs = _coverScheme ?? Theme.of(context).colorScheme;
     final accent = cs.primary;
-    final bgDark = cs.surface;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final lib = context.watch<LibraryProvider>();
@@ -448,7 +462,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                         shadows: [Shadow(color: isDark ? Colors.black.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.6), blurRadius: 4)],
                       )),
                     const Spacer(),
-                    if (totalChapters > 0 && !_isPodcastEpisode)
+                    if (totalChapters > 0 && (!_isPodcastEpisode || _chapters.isNotEmpty))
                       Text('Ch ${(chapterIdx + 1).clamp(1, totalChapters)} / $totalChapters',
                         style: tt.labelMedium?.copyWith(
                           color: isDark ? Colors.white.withValues(alpha: 0.85) : Colors.black.withValues(alpha: 0.75),
@@ -461,7 +475,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
               // ── Book progress bar ──
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: progress, staticDuration: _effectiveDuration, chapters: _chapters, showBookBar: !_isPodcastEpisode && !lib.isPodcastLibrary, showChapterBar: false, itemId: _itemId),
+                child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: progress, staticDuration: _effectiveDuration, chapters: _chapters, showBookBar: (!_isPodcastEpisode || _chapters.isNotEmpty) && (!lib.isPodcastLibrary || _chapters.isNotEmpty), showChapterBar: false, itemId: _itemId),
               ),
                 const SizedBox(height: 10),
                 // ── Cover with title/author/chapter overlaid + download badge ──
@@ -562,7 +576,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                   ),
                                 ],
                                 // Finished overlay
-                                if (isFinished) ...[
+                                if (isFinished && !_autoRemoveFinished) ...[
                                   Positioned.fill(
                                     child: Container(
                                       color: Colors.black.withValues(alpha: 0.78),
@@ -653,7 +667,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                 // ── Chapter pill-scrubber (same width as book bar) ──
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: _isPodcastEpisode ? 0.0 : progress, staticDuration: _isPodcastEpisode ? widget.player.totalDuration : _effectiveDuration, chapters: _chapters, showBookBar: false, showChapterBar: true, chapterName: _isPodcastEpisode ? (widget.player.currentEpisodeTitle ?? widget.player.currentTitle ?? _title) : (_episodeId != null && !_isActive ? (_recentEpisode?['title'] as String? ?? _title) : _chapterName(chapterIdx)), chapterIndex: chapterIdx, totalChapters: totalChapters, itemId: _itemId),
+                  child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: (_isPodcastEpisode && _chapters.isEmpty) ? 0.0 : progress, staticDuration: (_isPodcastEpisode && _chapters.isEmpty) ? widget.player.totalDuration : _effectiveDuration, chapters: _chapters, showBookBar: false, showChapterBar: true, chapterName: (_isPodcastEpisode && _chapters.isEmpty) ? (widget.player.currentEpisodeTitle ?? widget.player.currentTitle ?? _title) : (_episodeId != null && !_isActive ? (_recentEpisode?['title'] as String? ?? _title) : _chapterName(chapterIdx)), chapterIndex: chapterIdx, totalChapters: totalChapters, itemId: _itemId),
                 ),
                 // ── Controls + buttons ──
                 Expanded(
@@ -748,7 +762,12 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     if (_isCastingThis) {
       pos = cast.castPosition.inMilliseconds / 1000.0;
     } else if (_isActive) {
-      pos = widget.player.position.inMilliseconds / 1000.0;
+      final seekTarget = widget.player.activeSeekTarget;
+      if (seekTarget != null) {
+        pos = seekTarget;
+      } else {
+        pos = widget.player.position.inMilliseconds / 1000.0;
+      }
     } else {
       // Use stored progress to calculate position when not actively playing
       final lib = context.read<LibraryProvider>();
@@ -773,7 +792,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       final ch = ChromecastService().currentChapter;
       return ch?['title'] as String?;
     }
-    if (_isActive && widget.player.currentChapter != null) {
+    if (_isActive && widget.player.activeSeekTarget == null && widget.player.currentChapter != null) {
       return widget.player.currentChapter!['title'] as String?;
     }
     if (chapterIdx >= 0 && chapterIdx < _chapters.length) {
@@ -822,13 +841,16 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) { setState(() => _isStarting = false); return; }
-    await widget.player.playItem(
+    final error = await widget.player.playItem(
       api: api, itemId: _itemId, title: _title, author: _author,
       coverUrl: _coverUrl, totalDuration: _effectiveDuration, chapters: _chapters,
       episodeId: _episodeId,
       episodeTitle: _recentEpisode?['title'] as String?,
     );
-    if (mounted) setState(() => _isStarting = false);
+    if (mounted) {
+      if (error != null) showErrorSnackBar(context, error);
+      setState(() => _isStarting = false);
+    }
   }
 
   Future<void> _listenAgain() async {
@@ -851,18 +873,30 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     // Clear the locally saved position so playItem() doesn't override startTime
     // back to the end (where it was saved on completion)
     await ProgressSyncService().deleteLocal(progressKey);
-    await widget.player.playItem(
+    final error = await widget.player.playItem(
       api: api, itemId: _itemId, title: _title, author: _author,
       coverUrl: _coverUrl, totalDuration: _episodeId != null ? _effectiveDuration : _duration,
       chapters: _chapters,
       episodeId: _episodeId,
       episodeTitle: _recentEpisode?['title'] as String?,
     );
-    if (mounted) setState(() => _isStarting = false);
+    if (mounted) {
+      if (error != null) showErrorSnackBar(context, error);
+      setState(() => _isStarting = false);
+    }
   }
 
   void _deleteDownload(String dlKey) {
     DownloadService().deleteDownload(dlKey);
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(const SnackBar(
+          content: Text('Download removed'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ));
+    }
   }
 
   Future<void> _removeFromAbsorbing() async {
@@ -1107,12 +1141,33 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     if (chapters.isEmpty) return;
     final totalDur = _isCastingThis ? cast.castingDuration : (_isActive ? widget.player.totalDuration : _duration);
 
+    // Find current chapter index for auto-scroll
+    int currentIdx = -1;
+    if (_isPlaybackActive) {
+      final pos = _isCastingThis
+          ? cast.castPosition.inMilliseconds / 1000.0
+          : widget.player.position.inMilliseconds / 1000.0;
+      for (int i = 0; i < chapters.length; i++) {
+        final ch = chapters[i] as Map<String, dynamic>;
+        final start = (ch['start'] as num?)?.toDouble() ?? 0;
+        final end = (ch['end'] as num?)?.toDouble() ?? 0;
+        if (pos >= start && pos < end) { currentIdx = i; break; }
+      }
+    }
+
     showModalBottomSheet(
       context: context, isScrollControlled: true, useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => DraggableScrollableSheet(
         expand: false, initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.9,
-        builder: (_, sc) => Container(
+        builder: (_, sc) {
+          if (currentIdx > 0) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final target = currentIdx * 48.0 - 48;
+              if (sc.hasClients) sc.jumpTo(target.clamp(0, sc.position.maxScrollExtent));
+            });
+          }
+          return Container(
           decoration: BoxDecoration(
             color: Theme.of(context).bottomSheetTheme.backgroundColor,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -1134,17 +1189,22 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                     ? cast.castPosition.inMilliseconds / 1000.0
                     : (_isActive ? widget.player.position.inMilliseconds / 1000.0 : 0.0);
                 final isCurrent = _isPlaybackActive && pos >= start && pos < end;
+                final isFinished = _isPlaybackActive && pos >= end;
                 final pct = totalDur > 0 ? (end / totalDur * 100).round() : 0;
+                final cs = Theme.of(context).colorScheme;
                 return ListTile(
                   dense: true, selected: isCurrent,
                   selectedTileColor: accent.withValues(alpha: 0.1),
-                  leading: SizedBox(width: 28, child: Text('${i + 1}', textAlign: TextAlign.center,
-                    style: tt.labelMedium?.copyWith(fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w400, color: isCurrent ? accent : Theme.of(context).colorScheme.onSurfaceVariant))),
+                  leading: SizedBox(width: 28, child: isFinished
+                    ? Icon(Icons.check_rounded, size: 16, color: cs.onSurfaceVariant.withValues(alpha: 0.4))
+                    : Text('${i + 1}', textAlign: TextAlign.center,
+                        style: tt.labelMedium?.copyWith(fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w400, color: isCurrent ? accent : cs.onSurfaceVariant))),
                   title: Text(chTitle, maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: tt.bodyMedium?.copyWith(fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400, color: isCurrent ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7))),
+                    style: tt.bodyMedium?.copyWith(fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
+                      color: isCurrent ? cs.onSurface : isFinished ? cs.onSurface.withValues(alpha: 0.4) : cs.onSurface.withValues(alpha: 0.7))),
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                     Text('$pct%', style: tt.labelSmall?.copyWith(
-                      color: isCurrent ? accent.withValues(alpha: 0.7) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24), fontSize: 10, fontWeight: FontWeight.w600)),
+                      color: isCurrent ? accent.withValues(alpha: 0.7) : cs.onSurface.withValues(alpha: 0.24), fontSize: 10, fontWeight: FontWeight.w600)),
                     const SizedBox(width: 8),
                     Text(_fmtDur(end - start), style: tt.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                   ]),
@@ -1161,7 +1221,8 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
               },
             )),
           ]),
-        ),
+        );
+        },
       ),
     );
   }

@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../services/audio_player_service.dart';
 import '../services/chromecast_service.dart';
 import 'absorb_slider.dart';
-import 'absorbing_shared.dart';
 
 // ─── DUAL PROGRESS BAR (card version) ───────────────────────
 
@@ -115,6 +113,9 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with TickerPr
             _lastPosTime = DateTime.now();
             _currentSpeed = widget.player.speed;
             _isPlaying = widget.player.isPlaying;
+            // Stream has caught up — clear the seek target so subsequent
+            // position updates flow through normally without filtering.
+            widget.player.clearSeekTarget();
             return;
           }
           // Reject transient values far from the seek target
@@ -209,7 +210,7 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with TickerPr
             }
           }
         } else if (widget.isActive) {
-          final chapter = player.currentChapter;
+          final chapter = player.activeSeekTarget == null ? player.currentChapter : null;
           if (chapter != null) {
             chapterStart = (chapter['start'] as num?)?.toDouble() ?? 0;
             chapterEnd = (chapter['end'] as num?)?.toDouble() ?? totalDur;

@@ -87,6 +87,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
   bool _wasPlaying = false;
   bool _isPopping = false; // Prevent double-pop and setState during exit
   List<String> _buttonOrder = PlayerSettings.defaultButtonOrder;
+  bool _autoRemoveFinished = false;
 
   // Our own route, captured for popUntil when modals are stacked above us
   Route<dynamic>? _ownRoute;
@@ -105,7 +106,11 @@ class _ExpandedCardState extends State<ExpandedCard> {
   double get _duration => (_media['duration'] as num?)?.toDouble() ?? 0;
   List<dynamic> get _chapters {
     if (_fetchedChapters != null && _fetchedChapters!.isNotEmpty) return _fetchedChapters!;
-    return _media['chapters'] as List<dynamic>? ?? [];
+    final inline = _media['chapters'] as List<dynamic>? ?? [];
+    if (inline.isNotEmpty) return inline;
+    // For active podcast episodes, chapters come from the playback session
+    if (_isActive && widget.player.chapters.isNotEmpty) return widget.player.chapters;
+    return [];
   }
   bool get _isActive {
     if (widget.player.currentItemId != _itemId) return false;
@@ -160,6 +165,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
     ChromecastService().addListener(_onCastChanged);
     PlayerSettings.settingsChanged.addListener(_reloadButtonOrder);
     _reloadButtonOrder();
+    _loadWhenFinished();
     _startChapterTracking();
     _fetchChaptersIfNeeded();
     // Generate our own blurred cover
@@ -175,6 +181,12 @@ class _ExpandedCardState extends State<ExpandedCard> {
   void _reloadButtonOrder() {
     PlayerSettings.getCardButtonOrder().then((o) {
       if (mounted && o.join(',') != _buttonOrder.join(',')) setState(() => _buttonOrder = o);
+    });
+  }
+
+  void _loadWhenFinished() {
+    PlayerSettings.getWhenFinished().then((mode) {
+      if (mounted) setState(() => _autoRemoveFinished = mode == 'auto_remove');
     });
   }
 
@@ -550,7 +562,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                 shadows: [Shadow(color: isDark ? Colors.black.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.6), blurRadius: 4)],
                               )),
                             const Spacer(),
-                            if (totalChapters > 0 && !_isPodcastEpisode)
+                            if (totalChapters > 0 && (!_isPodcastEpisode || _chapters.isNotEmpty))
                               Text('Ch ${(chapterIdx + 1).clamp(1, totalChapters)} / $totalChapters',
                                 style: tt.labelMedium?.copyWith(
                                   color: isDark ? Colors.white.withValues(alpha: 0.85) : Colors.black.withValues(alpha: 0.75),
@@ -563,7 +575,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
                       // ── Book progress bar ──
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: progress, staticDuration: _effectiveDuration, chapters: _chapters, showBookBar: !_isPodcastEpisode && !lib.isPodcastLibrary, showChapterBar: false, itemId: _itemId),
+                        child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: progress, staticDuration: _effectiveDuration, chapters: _chapters, showBookBar: (!_isPodcastEpisode || _chapters.isNotEmpty) && (!lib.isPodcastLibrary || _chapters.isNotEmpty), showChapterBar: false, itemId: _itemId),
                       ),
                       const SizedBox(height: 16),
                       // ── Cover art (larger — 90% width) ──
@@ -659,7 +671,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                             ),
                                           ],
                                           // Finished overlay
-                                          if (isFinished && !isCastingThis) ...[
+                                          if (isFinished && !isCastingThis && !_autoRemoveFinished) ...[
                                             Positioned.fill(
                                               child: Container(color: Colors.black.withValues(alpha: 0.78)),
                                             ),
@@ -730,12 +742,12 @@ class _ExpandedCardState extends State<ExpandedCard> {
                       // ── Chapter scrubber ──
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: _isPodcastEpisode ? 0.0 : progress, staticDuration: _isPodcastEpisode ? widget.player.totalDuration : _effectiveDuration, chapters: _chapters, showBookBar: false, showChapterBar: true, chapterName: _isPodcastEpisode ? (widget.player.currentEpisodeTitle ?? widget.player.currentTitle ?? _title) : (_episodeId != null && !_isActive ? (_recentEpisode?['title'] as String? ?? _title) : _chapterName(chapterIdx)), chapterIndex: chapterIdx, totalChapters: totalChapters, itemId: _itemId),
+                        child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: (_isPodcastEpisode && _chapters.isEmpty) ? 0.0 : progress, staticDuration: (_isPodcastEpisode && _chapters.isEmpty) ? widget.player.totalDuration : _effectiveDuration, chapters: _chapters, showBookBar: false, showChapterBar: true, chapterName: (_isPodcastEpisode && _chapters.isEmpty) ? (widget.player.currentEpisodeTitle ?? widget.player.currentTitle ?? _title) : (_episodeId != null && !_isActive ? (_recentEpisode?['title'] as String? ?? _title) : _chapterName(chapterIdx)), chapterIndex: chapterIdx, totalChapters: totalChapters, itemId: _itemId),
                       ),
                       // ── Controls + buttons ──
                       Expanded(
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          padding: const EdgeInsets.symmetric(horizontal: 28),
                           child: Column(
                             children: [
                               const Spacer(flex: 2),
@@ -747,20 +759,20 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                 onStart: _startPlayback,
                                 itemId: _itemId,
                               ),
-                              const Spacer(flex: 3),
+                              const Spacer(flex: 4),
                               // ── Button grid ──
                               Row(children: [
                                 Expanded(child: _buildCardButton(_buttonOrder[0], accent, tt)),
                                 const SizedBox(width: 10),
                                 Expanded(child: _buildCardButton(_buttonOrder[1], accent, tt)),
                               ]),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 14),
                               Row(children: [
                                 Expanded(child: _buildCardButton(_buttonOrder[2], accent, tt)),
                                 const SizedBox(width: 10),
                                 Expanded(child: _buildCardButton(_buttonOrder[3], accent, tt)),
                               ]),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 14),
                               // More menu / Cast controls
                               Center(
                                 child: ListenableBuilder(
@@ -804,7 +816,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                   },
                                 ),
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 12),
                             ],
                           ),
                         ),
@@ -940,13 +952,16 @@ class _ExpandedCardState extends State<ExpandedCard> {
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) { setState(() => _isStarting = false); return; }
-    await widget.player.playItem(
+    final error = await widget.player.playItem(
       api: api, itemId: _itemId, title: _title, author: _author,
       coverUrl: _coverUrl, totalDuration: _effectiveDuration, chapters: _chapters,
       episodeId: _episodeId,
       episodeTitle: _recentEpisode?['title'] as String?,
     );
-    if (mounted) setState(() => _isStarting = false);
+    if (mounted) {
+      if (error != null) showErrorSnackBar(context, error);
+      setState(() => _isStarting = false);
+    }
   }
 
   Future<void> _listenAgain() async {
@@ -961,11 +976,14 @@ class _ExpandedCardState extends State<ExpandedCard> {
     await api.resetProgress(_itemId, _duration);
     lib.resetProgressFor(_itemId);
     await ProgressSyncService().deleteLocal(_itemId);
-    await widget.player.playItem(
+    final error = await widget.player.playItem(
       api: api, itemId: _itemId, title: _title, author: _author,
       coverUrl: _coverUrl, totalDuration: _duration, chapters: _chapters,
     );
-    if (mounted) setState(() => _isStarting = false);
+    if (mounted) {
+      if (error != null) showErrorSnackBar(context, error);
+      setState(() => _isStarting = false);
+    }
   }
 
   Future<void> _removeFromAbsorbing() async {
@@ -1212,12 +1230,33 @@ class _ExpandedCardState extends State<ExpandedCard> {
     if (chapters.isEmpty) return;
     final totalDur = _isCastingThis ? cast.castingDuration : (_isActive ? widget.player.totalDuration : _duration);
 
+    // Find current chapter index for auto-scroll
+    int currentIdx = -1;
+    if (_isPlaybackActive) {
+      final pos = _isCastingThis
+          ? cast.castPosition.inMilliseconds / 1000.0
+          : widget.player.position.inMilliseconds / 1000.0;
+      for (int i = 0; i < chapters.length; i++) {
+        final ch = chapters[i] as Map<String, dynamic>;
+        final start = (ch['start'] as num?)?.toDouble() ?? 0;
+        final end = (ch['end'] as num?)?.toDouble() ?? 0;
+        if (pos >= start && pos < end) { currentIdx = i; break; }
+      }
+    }
+
     showModalBottomSheet(
       context: context, isScrollControlled: true, useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => DraggableScrollableSheet(
         expand: false, initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.9,
-        builder: (_, sc) => Container(
+        builder: (_, sc) {
+          if (currentIdx > 0) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final target = currentIdx * 48.0 - 48; // one row above current
+              if (sc.hasClients) sc.jumpTo(target.clamp(0, sc.position.maxScrollExtent));
+            });
+          }
+          return Container(
           decoration: BoxDecoration(
             color: Theme.of(context).bottomSheetTheme.backgroundColor,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -1239,17 +1278,22 @@ class _ExpandedCardState extends State<ExpandedCard> {
                     ? cast.castPosition.inMilliseconds / 1000.0
                     : (_isActive ? widget.player.position.inMilliseconds / 1000.0 : 0.0);
                 final isCurrent = _isPlaybackActive && pos >= start && pos < end;
+                final isFinished = _isPlaybackActive && pos >= end;
                 final pct = totalDur > 0 ? (end / totalDur * 100).round() : 0;
+                final cs = Theme.of(context).colorScheme;
                 return ListTile(
                   dense: true, selected: isCurrent,
                   selectedTileColor: accent.withValues(alpha: 0.1),
-                  leading: SizedBox(width: 28, child: Text('${i + 1}', textAlign: TextAlign.center,
-                    style: tt.labelMedium?.copyWith(fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w400, color: isCurrent ? accent : Theme.of(context).colorScheme.onSurfaceVariant))),
+                  leading: SizedBox(width: 28, child: isFinished
+                    ? Icon(Icons.check_rounded, size: 16, color: cs.onSurfaceVariant.withValues(alpha: 0.4))
+                    : Text('${i + 1}', textAlign: TextAlign.center,
+                        style: tt.labelMedium?.copyWith(fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w400, color: isCurrent ? accent : cs.onSurfaceVariant))),
                   title: Text(chTitle, maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: tt.bodyMedium?.copyWith(fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400, color: isCurrent ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7))),
+                    style: tt.bodyMedium?.copyWith(fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
+                      color: isCurrent ? cs.onSurface : isFinished ? cs.onSurface.withValues(alpha: 0.4) : cs.onSurface.withValues(alpha: 0.7))),
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                     Text('$pct%', style: tt.labelSmall?.copyWith(
-                      color: isCurrent ? accent.withValues(alpha: 0.7) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24), fontSize: 10, fontWeight: FontWeight.w600)),
+                      color: isCurrent ? accent.withValues(alpha: 0.7) : cs.onSurface.withValues(alpha: 0.24), fontSize: 10, fontWeight: FontWeight.w600)),
                     const SizedBox(width: 8),
                     Text(_fmtDur(end - start), style: tt.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                   ]),
@@ -1266,7 +1310,8 @@ class _ExpandedCardState extends State<ExpandedCard> {
               },
             )),
           ]),
-        ),
+        );
+        },
       ),
     );
   }

@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
+
 import 'package:device_info_plus/device_info_plus.dart';
 
 import 'providers/auth_provider.dart';
@@ -18,6 +20,7 @@ import 'services/sleep_timer_service.dart';
 import 'services/user_account_service.dart';
 import 'services/android_auto_service.dart';
 import 'services/chromecast_service.dart';
+import 'services/home_widget_service.dart';
 import 'services/log_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/app_shell.dart';
@@ -25,6 +28,10 @@ import 'widgets/absorb_wave_icon.dart';
 
 /// Global notifier so any widget (e.g. settings) can change the theme instantly.
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
+
+/// Global key so non-widget code (e.g. providers) can show snackbars.
+final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
 
 ThemeMode parseThemeMode(String value) {
   switch (value) {
@@ -35,30 +42,28 @@ ThemeMode parseThemeMode(String value) {
 }
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
 
-  // Lock to portrait — no landscape support
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
-
-  // Load saved theme preference
-  final savedTheme = await PlayerSettings.getThemeMode();
-  themeNotifier.value = parseThemeMode(savedTheme);
-
-  // Load device info for server identification
-  await ApiService.initDeviceId();
-  await ApiService.initVersion();
+  // These calls use platform channels that require an Activity. When Android
+  // Auto cold-starts the app for the MediaBrowserService, no Activity exists
+  // and these calls can hang forever - blocking runApp() and freezing on the
+  // splash screen. Wrap in try-catch with a timeout so we always reach runApp().
   try {
-    final info = await DeviceInfoPlugin().androidInfo;
-    ApiService.deviceManufacturer = info.manufacturer;
-    ApiService.deviceModel = info.model;
+    FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   } catch (_) {}
 
-  // Initialize log service (must be before other services so debugPrint is captured)
-  final loggingEnabled = await PlayerSettings.getLoggingEnabled();
-  await LogService().init(loggingEnabled);
+  try {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]).timeout(const Duration(seconds: 2));
+  } catch (_) {}
+
+  // Load saved theme preference so we render the correct theme immediately
+  try {
+    final savedTheme = await PlayerSettings.getThemeMode();
+    themeNotifier.value = parseThemeMode(savedTheme);
+  } catch (_) {}
 
   // Capture Flutter framework errors (widget build failures, etc.)
   FlutterError.onError = (details) {
@@ -72,8 +77,10 @@ void main() async {
     return true;
   };
 
-  // Initialize download notification service
-  await DownloadNotificationService().init();
+  // Remove native splash — Flutter will render the AuthGate splash immediately
+  try {
+    FlutterNativeSplash.remove();
+  } catch (_) {}
 
   runApp(
     MultiProvider(
@@ -142,6 +149,7 @@ class AbsorbApp extends StatelessWidget {
             );
 
             return MaterialApp(
+              scaffoldMessengerKey: scaffoldMessengerKey,
               title: 'Absorb',
               debugShowCheckedModeBanner: false,
               themeMode: currentMode,
@@ -279,42 +287,91 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _initServices() async {
+    // Initialize log service FIRST so all debugPrint calls are captured in the
+    // log file. This is critical for diagnosing startup freezes in production.
     try {
-      await Permission.notification.request();
+      final loggingEnabled = await PlayerSettings.getLoggingEnabled();
+      await LogService().init(loggingEnabled);
+    } catch (_) {}
+
+    final sw = Stopwatch()..start();
+    debugPrint('[Init] _initServices started');
+
+    // Start auth restoration immediately — it doesn't depend on audio/cast/
+    // download services and must not be blocked by a hanging service init.
+    if (mounted) {
+      context.read<AuthProvider>().tryRestoreSession();
+    }
+
+    // Migrate old auto-play booleans → unified queueMode (one-time, no-op after first run)
+    debugPrint('[Init] migrateQueueMode... (${sw.elapsedMilliseconds}ms)');
+    await PlayerSettings.migrateQueueMode();
+
+    // Load device info for server identification
+    debugPrint('[Init] device info... (${sw.elapsedMilliseconds}ms)');
+    await ApiService.initDeviceId();
+    await ApiService.initVersion();
+    try {
+      final info = await DeviceInfoPlugin().androidInfo;
+      ApiService.deviceManufacturer = info.manufacturer;
+      ApiService.deviceModel = info.model;
+      ApiService.deviceSdkInt = info.version.sdkInt;
+    } catch (_) {}
+
+    // Downloads must be loaded before the audio handler so getChildren()
+    // can serve the Android Auto browse tree immediately.
+    debugPrint('[Init] DownloadService... (${sw.elapsedMilliseconds}ms)');
+    try {
+      await DownloadService().init().timeout(const Duration(seconds: 8));
     } catch (e) {
-      debugPrint('Permission request failed: $e');
+      debugPrint('[Init] DownloadService.init timed out or failed: $e');
+    }
+    debugPrint('[Init] DownloadService done (${sw.elapsedMilliseconds}ms)');
+
+    // Timeout guards against AudioService.init() hanging when Android killed
+    // the app process but kept the MediaBrowserService alive.
+    debugPrint('[Init] AudioPlayerService... (${sw.elapsedMilliseconds}ms)');
+    try {
+      await AudioPlayerService.init().timeout(const Duration(seconds: 8));
+    } catch (e) {
+      debugPrint('[Init] AudioPlayerService.init timed out or failed: $e');
+    }
+    debugPrint('[Init] AudioPlayerService done (${sw.elapsedMilliseconds}ms)');
+
+    try {
+      await DownloadNotificationService().init();
+    } catch (e) {
+      debugPrint('[Init] DownloadNotificationService failed: $e');
     }
 
     try {
-      await AudioPlayerService.init();
+      await Permission.notification.request();
     } catch (e) {
-      debugPrint('AudioService init failed: $e');
+      debugPrint('[Init] Permission request failed: $e');
     }
 
     // Initialize Chromecast
     try {
       await ChromecastService().init();
     } catch (e) {
-      debugPrint('Chromecast init failed: $e');
+      debugPrint('[Init] Chromecast init failed: $e');
     }
 
     // Initialize download tracker and progress sync
+    debugPrint('[Init] remaining services... (${sw.elapsedMilliseconds}ms)');
     try {
       await UserAccountService().init();
-      await DownloadService().init();
       await ProgressSyncService().init();
       await EqualizerService().init();
       await SleepTimerService().loadAutoSleepSettings();
       // Pre-populate Android Auto browse tree in background.
-      // Do not block app startup on Android Auto server refresh.
       Future.microtask(() => AndroidAutoService().refresh());
+      // Initialize homescreen widget
+      await HomeWidgetService().init();
     } catch (e) {
-      debugPrint('Service init failed: $e');
+      debugPrint('[Init] Service init failed: $e');
     }
-
-    if (mounted) {
-      context.read<AuthProvider>().tryRestoreSession();
-    }
+    debugPrint('[Init] _initServices complete (${sw.elapsedMilliseconds}ms)');
   }
 
   @override

@@ -15,6 +15,8 @@ class ProgressSyncService {
 
   StreamSubscription? _connectivitySub;
   bool _isOnline = true;
+  bool _isFlushing = false;
+  bool _flushAgain = false;
 
   /// Initialize — start listening for connectivity changes.
   Future<void> init() async {
@@ -131,66 +133,109 @@ class ProgressSyncService {
 
   /// Flush all pending syncs (call when coming back online).
   /// Compares local vs server timestamps — last-write-wins.
-  Future<void> flushPendingSync({ApiService? api}) async {
+  Future<void> flushPendingSync({ApiService? api, int maxItems = 5}) async {
     if (!_isOnline || api == null) return;
 
-    final pendingList = List<String>.from(
-        await ScopedPrefs.getStringList('pending_syncs'));
+    if (_isFlushing) {
+      _flushAgain = true;
+      return;
+    }
 
-    if (pendingList.isEmpty) return;
-    debugPrint('[Sync] Flushing ${pendingList.length} pending syncs');
+    _isFlushing = true;
+    try {
+      final pendingList = List<String>.from(
+          await ScopedPrefs.getStringList('pending_syncs'));
 
-    for (final itemId in pendingList) {
-      final data = await getLocal(itemId);
-      if (data == null) continue;
+      if (pendingList.isEmpty) return;
 
-      final localTime = (data['currentTime'] as num?)?.toDouble() ?? 0;
-      final localDuration = (data['duration'] as num?)?.toDouble() ?? 0;
-      final localTimestamp = (data['timestamp'] as num?)?.toInt() ?? 0;
-      if (localTime <= 0) continue;
+      final batch = pendingList.take(maxItems).toList();
+      debugPrint('[Sync] Flushing ${batch.length}/${pendingList.length} pending syncs');
 
-      try {
-        final serverProgress = await api.getItemProgress(itemId);
-        if (serverProgress != null) {
-          final serverTimestamp = (serverProgress['lastUpdate'] as num?)?.toInt() ?? 0;
-          final serverTime = (serverProgress['currentTime'] as num?)?.toDouble() ?? 0;
-
-          if (serverTimestamp > localTimestamp) {
-            debugPrint('[Sync] Server is newer for $itemId: server=${serverTime}s (${serverTimestamp}) vs local=${localTime}s (${localTimestamp}) — pulling');
-            await saveLocal(
-              itemId: itemId,
-              currentTime: serverTime,
-              duration: localDuration,
-              speed: (data['speed'] as num?)?.toDouble() ?? 1.0,
-            );
-            final updated = await ScopedPrefs.getStringList('pending_syncs');
-            updated.remove(itemId);
-            await ScopedPrefs.setStringList('pending_syncs', updated);
-            continue;
-          }
-          debugPrint('[Sync] Local is newer for $itemId: local=${localTime}s (${localTimestamp}) vs server=${serverTime}s (${serverTimestamp}) — pushing');
+      for (final itemId in batch) {
+        final data = await getLocal(itemId);
+        if (data == null) {
+          final updated = await ScopedPrefs.getStringList('pending_syncs');
+          updated.remove(itemId);
+          await ScopedPrefs.setStringList('pending_syncs', updated);
+          continue;
         }
 
-        final session = await api.startPlaybackSession(itemId);
-        if (session != null) {
-          final sessionId = session['id'] as String?;
-          if (sessionId != null) {
-            await api.syncPlaybackSession(
-              sessionId,
+        final localTime = (data['currentTime'] as num?)?.toDouble() ?? 0;
+        final localDuration = (data['duration'] as num?)?.toDouble() ?? 0;
+        final localTimestamp = (data['timestamp'] as num?)?.toInt() ?? 0;
+        if (localTime <= 0) {
+          final updated = await ScopedPrefs.getStringList('pending_syncs');
+          updated.remove(itemId);
+          await ScopedPrefs.setStringList('pending_syncs', updated);
+          continue;
+        }
+
+        try {
+          final serverProgress = await api.getItemProgress(itemId);
+          if (serverProgress != null) {
+            final serverTimestamp = (serverProgress['lastUpdate'] as num?)?.toInt() ?? 0;
+            final serverTime = (serverProgress['currentTime'] as num?)?.toDouble() ?? 0;
+
+            if (serverTimestamp > localTimestamp) {
+              debugPrint('[Sync] Server is newer for $itemId: server=$serverTime s ($serverTimestamp) vs local=$localTime s ($localTimestamp) — pulling');
+              await saveLocal(
+                itemId: itemId,
+                currentTime: serverTime,
+                duration: localDuration,
+                speed: (data['speed'] as num?)?.toDouble() ?? 1.0,
+              );
+              final updated = await ScopedPrefs.getStringList('pending_syncs');
+              updated.remove(itemId);
+              await ScopedPrefs.setStringList('pending_syncs', updated);
+              continue;
+            }
+            debugPrint('[Sync] Local is newer for $itemId: local=$localTime s ($localTimestamp) vs server=$serverTime s ($serverTimestamp) — pushing');
+          }
+
+          // Use the direct progress endpoint instead of creating a new
+          // playback session.  Creating a session can invalidate the
+          // player's active session on the server, causing subsequent
+          // in-playback syncs to silently fail.
+          final isCompound = itemId.length > 36;
+          final apiItemId = isCompound ? itemId.substring(0, 36) : itemId;
+          final episodeId = isCompound ? itemId.substring(37) : null;
+
+          if (episodeId != null) {
+            await api.updateEpisodeProgress(
+              apiItemId, episodeId,
               currentTime: localTime,
               duration: localDuration,
             );
-            await api.closePlaybackSession(sessionId);
-            debugPrint('[Sync] Flushed $itemId via session: ${localTime}s');
+          } else {
+            await api.updateProgress(
+              apiItemId,
+              currentTime: localTime,
+              duration: localDuration,
+            );
           }
-        }
+          debugPrint('[Sync] Flushed $itemId via progress update: ${localTime}s');
 
-        final updated = await ScopedPrefs.getStringList('pending_syncs');
-        updated.remove(itemId);
-        await ScopedPrefs.setStringList('pending_syncs', updated);
-      } catch (e) {
-        debugPrint('[Sync] Flush failed for $itemId: $e');
+          final updated = await ScopedPrefs.getStringList('pending_syncs');
+          updated.remove(itemId);
+          await ScopedPrefs.setStringList('pending_syncs', updated);
+        } catch (e) {
+          debugPrint('[Sync] Flush failed for $itemId: $e');
+        }
       }
+    } finally {
+      _isFlushing = false;
+    }
+
+    final remaining = await ScopedPrefs.getStringList('pending_syncs');
+    if ((_flushAgain || remaining.isNotEmpty) && _isOnline) {
+      _flushAgain = false;
+      unawaited(
+        Future<void>.delayed(const Duration(milliseconds: 250), () {
+          return flushPendingSync(api: api, maxItems: maxItems);
+        }),
+      );
+    } else {
+      _flushAgain = false;
     }
   }
 

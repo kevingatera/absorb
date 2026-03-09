@@ -1,7 +1,7 @@
 name: absorb
-description: A Material 3 Audiobookshelf client for Android.
+description: A Material 3 Audiobookshelf client.
 publish_to: 'none'
-version: 1.7.23+34
+version: 1.8.7+38
 
 environment:
   sdk: '>=3.1.0 <4.0.0'
@@ -12,6 +12,7 @@ dependencies:
   
   # Networking
   http: ^1.1.0
+  socket_io_client: ^3.0.2
   
   # State Management
   provider: ^6.1.1
@@ -68,12 +69,17 @@ dependencies:
   # Log sharing
   share_plus: ^10.0.0
 
+  # Homescreen widget
+  home_widget: ^0.7.0
+
+  # Splash screen (preserve during init)
+  flutter_native_splash: ^2.4.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.1
   flutter_launcher_icons: ^0.14.3
-  flutter_native_splash: ^2.4.4
   change_app_package_name: ^1.5.0
   rename_app: ^1.6.5
 
@@ -84,6 +90,8 @@ flutter:
 
 flutter_launcher_icons:
   android: true
+  ios: true
+  remove_alpha_ios: true
   image_path: "assets/icon/app_icon.png"
   adaptive_icon_background: "#000000"
   adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
@@ -94,3 +102,4 @@ flutter_native_splash:
   android_12:
     color: "#000000"
     image: "assets/icon/splash_logo.png"
+  ios: true

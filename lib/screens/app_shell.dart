@@ -38,7 +38,7 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver, TickerProviderStateMixin {
   static _AppShellState? _instance;
 
   // Tabs: 0=Home, 1=Library, 2=Absorbing (default), 3=Stats, 4=Settings
@@ -51,7 +51,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   String? _lastItemId;
   bool _expandedIsOpen = false;
   bool _wasCasting = false;
-  Timer? _castDisconnectTimer;
+  DateTime? _lastBackPress;
 
   // Lazily build tabs so startup on Absorbing does not initialize Home/Library
   // work until the user actually visits those tabs.
@@ -68,10 +68,21 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   void _navigateTo(int index) {
-    if (index == _currentIndex) return;
+    if (index == _currentIndex) {
+      // Already on this tab — handle re-tap actions
+      if (index == 2) {
+        // Absorbing tab: scroll to first card
+        AbsorbingScreen.scrollToFirst();
+      }
+      return;
+    }
     _ensurePageBuilt(index);
-    setState(() {
-      _currentIndex = index;
+    _fadeController.reverse().then((_) {
+      if (!mounted) return;
+      setState(() {
+        _currentIndex = index;
+      });
+      _fadeController.forward();
     });
   }
 
@@ -96,6 +107,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
+  late final AnimationController _fadeController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+    value: 1.0,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -113,6 +130,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _fadeController.dispose();
     _player.removeListener(_onPlayerChanged);
     _cast.removeListener(_onCastChanged);
     if (_instance == this) _instance = null;
@@ -202,20 +220,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _castDisconnectTimer?.cancel();
-      _castDisconnectTimer = null;
       _refreshDataForTab(_currentIndex);
       // Check auto sleep in case we resumed into the window
       SleepTimerService().checkAutoSleep();
-    } else if (state == AppLifecycleState.paused) {
-      // Disconnect cast if app doesn't resume (e.g. swiped away).
-      // detached doesn't fire reliably on Android swipe-away.
-      final cast = ChromecastService();
-      if (cast.isConnected) {
-        _castDisconnectTimer = Timer(const Duration(seconds: 3), () {
-          cast.disconnect();
-        });
-      }
     } else if (state == AppLifecycleState.detached) {
       final cast = ChromecastService();
       if (cast.isConnected) cast.disconnect();
@@ -261,9 +268,21 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           return;
         }
 
-        // If already on Absorbing tab, move app to background (keep playback alive)
+        // If already on Absorbing tab, require double-back to exit
         if (_currentIndex == 2) {
-          SystemChannels.platform.invokeMethod('SystemNavigator.pop', true);
+          final now = DateTime.now();
+          if (_lastBackPress != null && now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
+            SystemChannels.platform.invokeMethod('SystemNavigator.pop', true);
+            return;
+          }
+          _lastBackPress = now;
+          ScaffoldMessenger.of(context).clearSnackBars();
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: const Text('Press back again to exit'),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ));
           return;
         }
 
@@ -271,11 +290,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         _switchToAbsorbing();
       },
       child: Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: List<Widget>.generate(
-          _pages.length,
-          (i) => _pages[i] ?? const SizedBox.shrink(),
+      body: FadeTransition(
+        opacity: _fadeController,
+        child: IndexedStack(
+          index: _currentIndex,
+          children: List<Widget>.generate(
+            _pages.length,
+            (i) => _pages[i] ?? const SizedBox.shrink(),
+          ),
         ),
       ),
       bottomNavigationBar: Column(

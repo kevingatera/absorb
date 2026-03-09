@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
@@ -20,6 +21,16 @@ class AbsorbingScreen extends StatefulWidget {
     globalKey.currentState?._scrollToActiveCard();
   }
 
+  /// Scroll to the first card (used when re-tapping the Absorbing tab)
+  static void scrollToFirst() {
+    final state = globalKey.currentState;
+    if (state != null && state._pageController.hasClients) {
+      state._pageController.animateToPage(0,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic);
+    }
+  }
+
   @override
   State<AbsorbingScreen> createState() => _AbsorbingScreenState();
 }
@@ -36,6 +47,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     _player.addListener(_rebuild);
     _cast.addListener(_rebuild);
     _restoreLastFinished();
+    _loadMergeLibraries();
   }
 
   Future<void> _restoreLastFinished() async {
@@ -43,6 +55,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     if (saved != null && saved.isNotEmpty && mounted) {
       setState(() => _lastFinishedId = saved);
     }
+  }
+
+  Future<void> _loadMergeLibraries() async {
+    final v = await PlayerSettings.getMergeAbsorbingLibraries();
+    if (mounted && v != _mergeLibraries) setState(() => _mergeLibraries = v);
   }
 
   @override
@@ -64,9 +81,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   // Used during the slide-to-front animation so the user sees their book smoothly
   // slide to the beginning rather than the list instantly reordering underneath them.
   bool _suppressReorder = false;
+  bool _mergeLibraries = false;
 
   void _rebuild() {
     if (!mounted) return;
+    _loadMergeLibraries(); // refresh in case setting changed
     // Detect item or episode change (same show, different episode counts as a change)
     final itemChanged = _player.currentItemId != _lastPlayingId;
     final episodeChanged = _player.currentEpisodeId != _lastPlayingEpisodeId;
@@ -95,6 +114,10 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             ? (_pageController.page ?? 0).round()
             : 0;
         _suppressReorder = currentPage > 0;
+        if (!_suppressReorder) {
+          // No animation needed — persist the move-to-front immediately.
+          lib.moveAbsorbingToFront(playingKey);
+        }
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToActiveCard());
       } else if (wasPlayingId != null && !_isSyncing) {
         // Playback stopped — keep this item at the front of the list.
@@ -165,6 +188,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             .then((_) {
           if (!mounted) return;
           _suppressReorder = false;
+          // Persist the played item at front so subsequent plays
+          // maintain the correct order instead of reverting.
+          if (playingKey != null) {
+            context.read<LibraryProvider>().moveAbsorbingToFront(playingKey);
+          }
           setState(() {});
         });
       } else {
@@ -284,11 +312,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
         items.add(fromSection);
         continue;
       }
-      // Cache fallback — only include if it matches the current library
+      // Cache fallback — include if it matches the current library (or merge is on)
       final cached = cache[key];
       if (cached != null) {
         final itemLibId = cached['libraryId'] as String?;
-        if (selectedLibraryId == null || itemLibId == null || itemLibId == selectedLibraryId) {
+        if (_mergeLibraries || selectedLibraryId == null || itemLibId == null || itemLibId == selectedLibraryId) {
           items.add(cached);
         } else {
           skippedKeys[key] = 'wrong library (item=$itemLibId, selected=$selectedLibraryId)';
@@ -329,8 +357,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
     if (activeId != null) {
       final activeIsPodcast = activeEpId != null;
-      // Only show if the active item matches the current library type
-      if (activeIsPodcast == isPod) {
+      // Only show if the active item matches the current library type (or merge is on)
+      if (_mergeLibraries || activeIsPodcast == isPod) {
         final activeKey = activeEpId != null ? '$activeId-$activeEpId' : activeId;
 
         final existingIdx = items.indexWhere((b) => _absorbingKey(b) == activeKey);
@@ -368,7 +396,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     if (!_player.hasBook && _lastFinishedId != null && !removes.contains(_lastFinishedId)) {
       // Compound podcast keys are "uuid-uuid" (>36 chars); plain book UUIDs are 36.
       final finishedIsPodcast = _lastFinishedId!.length > 36;
-      if (finishedIsPodcast == isPod) {
+      if (_mergeLibraries || finishedIsPodcast == isPod) {
         final finishedIdx = items.indexWhere((b) => _absorbingKey(b) == _lastFinishedId);
         if (finishedIdx > 0) {
           final item = items.removeAt(finishedIdx);
@@ -382,6 +410,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    _loadMergeLibraries(); // refresh in case setting changed
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final lib = context.watch<LibraryProvider>();
@@ -404,7 +433,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       }
       books = books.where((b) {
         if (activeKey != null && _absorbingKey(b) == activeKey) return true;
-        return dl.isDownloaded(b['id'] as String? ?? '');
+        final dlKey = _absorbingKey(b);
+        return dl.isDownloaded(dlKey);
       }).toList();
     }
 
@@ -435,7 +465,18 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                   onTap: () {
                     final newVal = !lib.isManualOffline;
                     lib.setManualOffline(newVal);
-                    if (newVal) _stopAndRefresh(lib);
+                    if (newVal) {
+                      // Only stop playback if the current item isn't downloaded
+                      final dl = DownloadService();
+                      final itemId = _player.currentItemId;
+                      final epId = _player.currentEpisodeId;
+                      final dlKey = epId != null && itemId != null
+                          ? '$itemId-$epId'
+                          : itemId;
+                      if (dlKey == null || !dl.isDownloaded(dlKey)) {
+                        _stopAndRefresh(lib);
+                      }
+                    }
                   },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
@@ -534,6 +575,21 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                       ),
                     ),
                   ),
+              if (books.length > 1) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => _showReorderSheet(context, lib, books),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: subtleBg,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: subtleBorder),
+                    ),
+                    child: Icon(Icons.reorder_rounded, size: 14, color: muted),
+                  ),
+                ),
+              ],
               ],
             ),
             // ── Page Dots ──
@@ -548,7 +604,17 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                   ? Center(child: CircularProgressIndicator(strokeWidth: 2, color: cs.onSurface.withValues(alpha: 0.24)))
                   : books.isEmpty
                       ? _emptyState(cs, tt, effectiveOffline)
-                      : PageView.builder(
+                      : books.length == 1
+                          ? LayoutBuilder(
+                              builder: (context, constraints) {
+                                final vPad = (constraints.maxHeight * 0.04).clamp(12.0, 40.0);
+                                return Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: vPad),
+                                  child: RepaintBoundary(child: AbsorbingCard(key: ValueKey(_absorbingKey(books[0])), item: books[0], player: _player)),
+                                );
+                              },
+                            )
+                          : PageView.builder(
                           controller: _pageController,
                           scrollDirection: Axis.horizontal,
                           clipBehavior: Clip.none,
@@ -630,6 +696,28 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       ),
     );
   }
+
+  void _showReorderSheet(BuildContext context, LibraryProvider lib, List<Map<String, dynamic>> books) {
+    final keys = books.map((b) => _absorbingKey(b)).toList();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        builder: (_, __) => _ReorderAbsorbingSheet(
+          keys: keys,
+          books: books,
+          lib: lib,
+          absorbingKeyFn: _absorbingKey,
+        ),
+      ),
+    );
+  }
 }
 
 // ─── PAGE DOTS ──────────────────────────────────────────────
@@ -664,6 +752,254 @@ class _PageDots extends StatelessWidget {
           }),
         );
       },
+    );
+  }
+}
+
+// ─── REORDER ABSORBING SHEET ──────────────────────────────────
+
+class _ReorderAbsorbingSheet extends StatefulWidget {
+  final List<String> keys;
+  final List<Map<String, dynamic>> books;
+  final LibraryProvider lib;
+  final String Function(Map<String, dynamic>) absorbingKeyFn;
+
+  const _ReorderAbsorbingSheet({
+    required this.keys,
+    required this.books,
+    required this.lib,
+    required this.absorbingKeyFn,
+  });
+
+  @override
+  State<_ReorderAbsorbingSheet> createState() => _ReorderAbsorbingSheetState();
+}
+
+class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
+  late List<String> _order;
+  late Map<String, Map<String, dynamic>> _booksByKey;
+
+  @override
+  void initState() {
+    super.initState();
+    _order = List.from(widget.keys);
+    _booksByKey = {
+      for (final b in widget.books) widget.absorbingKeyFn(b): b,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(children: [
+        // Handle
+        Center(child: Container(
+          margin: const EdgeInsets.only(top: 10),
+          width: 32, height: 4,
+          decoration: BoxDecoration(
+            color: cs.onSurface.withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        )),
+        // Header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+          child: Row(children: [
+            Expanded(child: Text('Manage Queue',
+              style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600))),
+            TextButton(
+              onPressed: () {
+                widget.lib.reorderAbsorbing(_order);
+                Navigator.pop(context);
+              },
+              child: const Text('Done'),
+            ),
+          ]),
+        ),
+        Expanded(
+          child: ReorderableListView.builder(
+            buildDefaultDragHandles: false,
+            padding: EdgeInsets.only(bottom: bottomInset + 16),
+            proxyDecorator: (child, index, animation) {
+              return AnimatedBuilder(
+                animation: animation,
+                builder: (context, child) => Material(
+                  elevation: 4,
+                  borderRadius: BorderRadius.circular(12),
+                  color: cs.surfaceContainer,
+                  child: child,
+                ),
+                child: child,
+              );
+            },
+            itemCount: _order.length,
+            onReorder: (oldIdx, newIdx) {
+              setState(() {
+                if (newIdx > oldIdx) newIdx--;
+                final item = _order.removeAt(oldIdx);
+                _order.insert(newIdx, item);
+              });
+            },
+            itemBuilder: (context, i) {
+              final key = _order[i];
+              final book = _booksByKey[key];
+              if (book == null) return SizedBox.shrink(key: ValueKey(key));
+
+              final media = book['media'] as Map<String, dynamic>? ?? {};
+              final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+              final title = metadata['title'] as String? ?? 'Unknown';
+              final author = metadata['authorName'] as String? ?? '';
+              final re = book['recentEpisode'] as Map<String, dynamic>?;
+              final epTitle = re?['title'] as String?;
+              final isFinished = widget.lib.isItemFinishedByKey(key);
+
+              return Dismissible(
+                key: ValueKey(key),
+                direction: DismissDirection.endToStart,
+                background: Container(
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.only(right: 24),
+                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: cs.error.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.remove_circle_outline_rounded, color: cs.error),
+                ),
+                onDismissed: (_) {
+                  final removedKey = _order[i];
+                  setState(() => _order.removeAt(i));
+                  widget.lib.removeFromAbsorbing(removedKey);
+                  widget.lib.reorderAbsorbing(_order);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isFinished ? cs.onSurface.withValues(alpha: 0.03) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(children: [
+                      // Queue position number
+                      SizedBox(width: 24, child: Text('${i + 1}',
+                        style: tt.labelMedium?.copyWith(
+                          color: isFinished ? cs.onSurface.withValues(alpha: 0.3) : cs.primary,
+                          fontWeight: FontWeight.w700,
+                        ))),
+                      // Finished indicator
+                      if (isFinished)
+                        Icon(Icons.check_circle_rounded, size: 16, color: Colors.green.withValues(alpha: 0.5))
+                      else
+                        Icon(Icons.circle_outlined, size: 16, color: cs.onSurface.withValues(alpha: 0.2)),
+                      const SizedBox(width: 8),
+                      // Title + subtitle
+                      Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(epTitle ?? title,
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: tt.bodyMedium?.copyWith(
+                              color: isFinished ? cs.onSurface.withValues(alpha: 0.4) : null,
+                            )),
+                          if (epTitle != null)
+                            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                          if (author.isNotEmpty && epTitle == null)
+                            Text(author, maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                        ],
+                      )),
+                      // Drag handle (long-press to avoid conflict with system home gesture)
+                      _DragHandle(index: i, color: cs.onSurface),
+                    ]),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ─── DRAG HANDLE WITH HOLD FEEDBACK ─────────────────────────
+
+class _DragHandle extends StatefulWidget {
+  final int index;
+  final Color color;
+  const _DragHandle({required this.index, required this.color});
+
+  @override
+  State<_DragHandle> createState() => _DragHandleState();
+}
+
+class _DragHandleState extends State<_DragHandle> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  // Match ReorderableDelayedDragStartListener's default delay
+  static const _holdDuration = Duration(milliseconds: 500);
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: _holdDuration);
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) {
+        HapticFeedback.mediumImpact();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onDown(PointerDownEvent _) {
+    _controller.forward(from: 0);
+  }
+
+  void _onUp(PointerEvent _) {
+    _controller.stop();
+    _controller.reset();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: _onDown,
+      onPointerUp: _onUp,
+      onPointerCancel: _onUp,
+      child: ReorderableDelayedDragStartListener(
+        index: widget.index,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            final ready = _controller.isCompleted;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: ready ? widget.color.withValues(alpha: 0.1) : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.drag_handle_rounded, size: 20,
+                color: widget.color.withValues(alpha: ready ? 0.7 : 0.3)),
+            );
+          },
+        ),
+      ),
     );
   }
 }
