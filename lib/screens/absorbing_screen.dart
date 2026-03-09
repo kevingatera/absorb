@@ -391,7 +391,12 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     final selectedLibraryId = lib.selectedLibraryId;
     final items = <Map<String, dynamic>>[];
     final skippedKeys = <String, String>{};
+    final seenKeys = <String>{};
     for (final key in lib.absorbingBookIds) {
+      if (!seenKeys.add(key)) {
+        skippedKeys[key] = 'duplicate key';
+        continue;
+      }
       if (removes.contains(key)) {
         skippedKeys[key] = 'removed';
         continue;
