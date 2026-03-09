@@ -1183,6 +1183,17 @@ class LibraryProvider extends ChangeNotifier {
   Set<String> get manualAbsorbRemoves => _manualAbsorbRemoves;
   List<String> get absorbingBookIds => _absorbingBookIds;
 
+  bool _dedupeAbsorbingIds() {
+    final seen = <String>{};
+    final deduped = <String>[];
+    for (final key in _absorbingBookIds) {
+      if (seen.add(key)) deduped.add(key);
+    }
+    if (deduped.length == _absorbingBookIds.length) return false;
+    _absorbingBookIds = deduped;
+    return true;
+  }
+
   /// Move an existing absorbing key to the front and persist.
   /// No-op if the key isn't in the list or is already first.
   void moveAbsorbingToFront(String key) {
@@ -1203,15 +1214,22 @@ class LibraryProvider extends ChangeNotifier {
   /// [afterKey] — insert right after this key (e.g. next-in-series after
   ///             the finished book). Repositions even if already in list.
   void _absorbingIdsAdd(String key, {String? afterKey, bool atFront = true}) {
+    if (_absorbingBookIds.contains(key) && afterKey == null) return;
+
     if (afterKey != null) {
+      _absorbingBookIds.remove(key);
       final afterIdx = _absorbingBookIds.indexOf(afterKey);
       if (afterIdx >= 0) {
-        _absorbingBookIds.remove(key);
         _absorbingBookIds.insert(afterIdx + 1, key);
         return;
       }
     }
-    _absorbingBookIds.add(key);
+    if (_absorbingBookIds.contains(key)) return;
+    if (atFront) {
+      _absorbingBookIds.insert(0, key);
+    } else {
+      _absorbingBookIds.add(key);
+    }
   }
 
   Map<String, Map<String, dynamic>> get absorbingItemCache =>
@@ -1236,9 +1254,13 @@ class LibraryProvider extends ChangeNotifier {
         if (key != null) _absorbingItemCache[key] = m;
       } catch (_) {}
     }
+    if (_dedupeAbsorbingIds()) {
+      await _saveManualAbsorbing();
+    }
   }
 
   Future<void> _saveManualAbsorbing() async {
+    _dedupeAbsorbingIds();
     await ScopedPrefs.setStringList(
         'absorbing_manual_adds', _manualAbsorbAdds.toList());
     await ScopedPrefs.setStringList(
@@ -1518,6 +1540,7 @@ class LibraryProvider extends ChangeNotifier {
   /// Replace the absorbing card order with a new order and persist.
   Future<void> reorderAbsorbing(List<String> newOrder) async {
     _absorbingBookIds = newOrder;
+    _dedupeAbsorbingIds();
     await _saveManualAbsorbing();
     notifyListeners();
     _catchUpQueueAutoDownloads();
