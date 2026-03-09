@@ -884,53 +884,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                               itemCount: books.length,
                               itemBuilder: (_, i) => LayoutBuilder(
                                 builder: (context, constraints) {
-                                  final cardWidth = constraints.maxWidth;
                                   final vPad = (constraints.maxHeight * 0.04)
                                       .clamp(12.0, 40.0);
-                                  return AnimatedBuilder(
-                                    animation: _pageController,
-                                    builder: (context, child) {
-                                      double distFromCenter = 0.0;
-                                      double rawDist = 0.0;
-                                      if (_pageController
-                                          .position.haveDimensions) {
-                                        final page = _pageController.page ??
-                                            _pageController.initialPage
-                                                .toDouble();
-                                        rawDist = page - i;
-                                        distFromCenter = rawDist.abs();
-                                      }
-
-                                      final double scaleX;
-                                      if (distFromCenter >= 1.0) {
-                                        scaleX = 0.85;
-                                      } else {
-                                        final t = Curves.easeOut
-                                            .transform(1.0 - distFromCenter);
-                                        scaleX = 0.85 + (t * 0.15);
-                                      }
-
-                                      final squeezedWidth = cardWidth * scaleX;
-                                      final freedSpace =
-                                          cardWidth - squeezedWidth;
-                                      final direction = rawDist > 0
-                                          ? 1.0
-                                          : (rawDist < 0 ? -1.0 : 0.0);
-                                      final translateX =
-                                          direction * freedSpace * 0.45;
-
-                                      return Transform(
-                                        alignment: Alignment.center,
-                                        transform: Matrix4.identity()
-                                          ..translate(translateX, 0.0, 0.0)
-                                          ..scale(scaleX, 1.0, 1.0),
-                                        child: Padding(
-                                          padding: EdgeInsets.symmetric(
-                                              horizontal: 4, vertical: vPad),
-                                          child: child,
-                                        ),
-                                      );
-                                    },
+                                  return Padding(
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 4, vertical: vPad),
                                     child: RepaintBoundary(
                                       child: AbsorbingCard(
                                         key: ValueKey(_absorbingKey(books[i])),
