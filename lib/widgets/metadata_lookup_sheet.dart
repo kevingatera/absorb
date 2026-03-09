@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/api_service.dart';
 import '../services/metadata_override_service.dart';
+import 'status_message_view.dart';
 
 /// Bottom sheet that lets users search for book metadata via the ABS server
 /// and pick a result to store as a local override.
@@ -100,7 +101,8 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet> {
     addIfPresent('narrator', book['narrator'] ?? book['narratorName']);
     addIfPresent('description', book['description']);
     addIfPresent('publisher', book['publisher']);
-    addIfPresent('publishedYear', book['publishedYear'] ?? book['publishedDate']);
+    addIfPresent(
+        'publishedYear', book['publishedYear'] ?? book['publishedDate']);
     addIfPresent('asin', book['asin']);
     addIfPresent('isbn', book['isbn']);
 
@@ -122,7 +124,10 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet> {
       override['series'] = series;
     } else if (series is String && series.isNotEmpty) {
       override['series'] = [
-        {'name': series, 'sequence': _safeString(book['volumeNumber'] ?? book['sequence'])}
+        {
+          'name': series,
+          'sequence': _safeString(book['volumeNumber'] ?? book['sequence'])
+        }
       ];
     }
 
@@ -217,9 +222,11 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet> {
                           child: DropdownButton<String>(
                             value: _provider,
                             isExpanded: true,
-                            dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-                            style: tt.bodySmall
-                                ?.copyWith(color: Colors.white70),
+                            dropdownColor: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHigh,
+                            style:
+                                tt.bodySmall?.copyWith(color: Colors.white70),
                             icon: Icon(Icons.expand_more_rounded,
                                 size: 18, color: Colors.white38),
                             items: _providers.map((p) {
@@ -271,31 +278,28 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet> {
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white24))
                 : _results.isEmpty
-                    ? Center(
-                        child: Text(
-                          _hasSearched
-                              ? 'No results found.\nTry adjusting your search or provider.'
-                              : 'Search for metadata above',
-                          textAlign: TextAlign.center,
-                          style: tt.bodyMedium
-                              ?.copyWith(color: Colors.white38),
-                        ),
+                    ? StatusMessageView(
+                        icon: _hasSearched
+                            ? Icons.search_off_rounded
+                            : Icons.manage_search_rounded,
+                        title: _hasSearched
+                            ? 'No metadata matches found'
+                            : 'Search for better metadata',
+                        message: _hasSearched
+                            ? 'Try a different title, author, or metadata provider.'
+                            : 'Search by title or author above, then choose the result you want to keep.',
+                        surfaceColor: Colors.white.withValues(alpha: 0.04),
+                        borderColor: Colors.white.withValues(alpha: 0.08),
+                        titleColor: Colors.white,
+                        messageColor: Colors.white70,
                       )
                     : ListView.separated(
-                        padding: EdgeInsets.fromLTRB(
-                            16,
-                            12,
-                            16,
-                            16 +
-                                MediaQuery.of(context)
-                                    .viewPadding
-                                    .bottom),
+                        padding: EdgeInsets.fromLTRB(16, 12, 16,
+                            16 + MediaQuery.of(context).viewPadding.bottom),
                         itemCount: _results.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: 8),
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (context, index) {
-                          return _buildResultCard(
-                              _results[index], cs, tt);
+                          return _buildResultCard(_results[index], cs, tt);
                         },
                       ),
           ),
@@ -320,8 +324,7 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet> {
         style: const TextStyle(color: Colors.white, fontSize: 14),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(
-              color: Colors.white38, fontSize: 13),
+          labelStyle: TextStyle(color: Colors.white38, fontSize: 13),
           prefixIcon: Icon(icon, size: 18, color: Colors.white30),
           filled: true,
           fillColor: Colors.white.withValues(alpha: 0.06),
@@ -329,18 +332,15 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet> {
               const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(
-                color: Colors.white.withValues(alpha: 0.08)),
+            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(
-                color: Colors.white.withValues(alpha: 0.08)),
+            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide:
-                BorderSide(color: cs.primary.withValues(alpha: 0.5)),
+            borderSide: BorderSide(color: cs.primary.withValues(alpha: 0.5)),
           ),
         ),
       ),
@@ -419,23 +419,21 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: tt.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white)),
+                            fontWeight: FontWeight.w600, color: Colors.white)),
                     if (author.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(author,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: tt.bodySmall
-                              ?.copyWith(color: Colors.white60)),
+                          style: tt.bodySmall?.copyWith(color: Colors.white60)),
                     ],
                     if (narrator.isNotEmpty) ...[
                       const SizedBox(height: 1),
                       Text('Narrated by $narrator',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: tt.labelSmall
-                              ?.copyWith(color: Colors.white38)),
+                          style:
+                              tt.labelSmall?.copyWith(color: Colors.white38)),
                     ],
                     const SizedBox(height: 4),
                     Wrap(
@@ -455,8 +453,8 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet> {
                       Text(desc,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: tt.labelSmall?.copyWith(
-                              color: Colors.white30, height: 1.3)),
+                          style: tt.labelSmall
+                              ?.copyWith(color: Colors.white30, height: 1.3)),
                     ],
                   ],
                 ),
@@ -489,8 +487,7 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet> {
             'This is stored locally on your device.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
               onPressed: () {
                 Navigator.pop(ctx);
@@ -507,8 +504,7 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet> {
       color: cs.surfaceContainerHighest,
       child: Center(
         child: Icon(Icons.headphones_rounded,
-            size: 20,
-            color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+            size: 20, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
       ),
     );
   }
@@ -529,8 +525,7 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet> {
             child: Text(text,
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,
-                style: const TextStyle(
-                    color: Colors.white38, fontSize: 10)),
+                style: const TextStyle(color: Colors.white38, fontSize: 10)),
           ),
         ],
       ),
