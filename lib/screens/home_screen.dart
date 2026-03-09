@@ -8,6 +8,7 @@ import '../services/audio_player_service.dart';
 import '../widgets/home_section.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/shimmer.dart';
+import '../widgets/book_card.dart';
 import '../widgets/book_detail_sheet.dart';
 import '../widgets/card_buttons.dart';
 import '../widgets/episode_list_sheet.dart';
@@ -506,6 +507,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     final type = section['type'] ?? 'book';
                     if (entities.isEmpty) return const SliverToBoxAdapter();
 
+                    if (lib.isOffline && id == 'downloaded-books') {
+                      return SliverToBoxAdapter(
+                        child: _OfflineDownloadsSection(
+                          title: label,
+                          icon: _sectionIcons[id] ?? Icons.album_outlined,
+                          entities: entities,
+                        ),
+                      );
+                    }
+
                     return SliverToBoxAdapter(
                       child: HomeSection(
                         title: label,
@@ -522,6 +533,82 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _OfflineDownloadsSection extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final List<dynamic> entities;
+
+  const _OfflineDownloadsSection({
+    required this.title,
+    required this.icon,
+    required this.entities,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final items = entities.whereType<Map<String, dynamic>>().toList();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: cs.primary.withValues(alpha: 0.7)),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: tt.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: cs.onSurface.withValues(alpha: 0.8),
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Container(
+                    height: 0.5,
+                    color: cs.outlineVariant.withValues(alpha: 0.2),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth;
+                final crossAxisCount =
+                    width >= 720 ? 4 : (width >= 520 ? 3 : 2);
+
+                return GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: items.length,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: crossAxisCount,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 0.62,
+                  ),
+                  itemBuilder: (context, index) => BookCard(item: items[index]),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

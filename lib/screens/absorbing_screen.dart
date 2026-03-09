@@ -362,13 +362,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     final removes = lib.manualAbsorbRemoves;
     final cache = lib.absorbingItemCache;
 
-    // Quick lookup of fresh data — only from the in-progress sections.
-    // For podcast episodes, key by compound "itemId-episodeId".
-    const allowedSections = {
-      'continue-listening',
-      'continue-series',
-      'downloaded-books'
-    };
+    // Quick lookup of fresh data — only from in-progress sections.
+    final allowedSections = <String>{'continue-listening', 'continue-series'};
     final sectionLookup = <String, Map<String, dynamic>>{};
     for (final section in lib.personalizedSections) {
       final sectionId = section['id'] as String? ?? '';
