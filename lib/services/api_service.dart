@@ -252,27 +252,46 @@ class ApiService {
 
   /// Get user's listening stats.
   Future<Map<String, dynamic>?> getListeningStats() async {
-    final stopwatch = Stopwatch()..start();
-    try {
-      final response = await http
-          .get(
-            Uri.parse('$_cleanBaseUrl/api/me/listening-stats?minified=1'),
-            headers: _headers,
-          )
-          .timeout(const Duration(seconds: 10));
+    Future<Map<String, dynamic>?> requestStats(Uri uri, String label) async {
+      final stopwatch = Stopwatch()..start();
+      try {
+        final response = await http
+            .get(
+              uri,
+              headers: _headers,
+            )
+            .timeout(const Duration(seconds: 10));
 
-      stopwatch.stop();
-      debugPrint(
-          '[StatsApi] /api/me/listening-stats ${response.statusCode} in ${stopwatch.elapsedMilliseconds}ms (${response.bodyBytes.length} bytes)');
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
+        stopwatch.stop();
+        debugPrint(
+            '[StatsApi] $label ${response.statusCode} in ${stopwatch.elapsedMilliseconds}ms (${response.bodyBytes.length} bytes)');
+        if (response.statusCode != 200) return null;
+
+        final data = jsonDecode(response.body);
+        return data is Map<String, dynamic> ? data : null;
+      } catch (e) {
+        stopwatch.stop();
+        debugPrint(
+            '[StatsApi] $label failed after ${stopwatch.elapsedMilliseconds}ms: $e');
+        return null;
       }
-    } catch (e) {
-      stopwatch.stop();
-      debugPrint(
-          '[StatsApi] /api/me/listening-stats failed after ${stopwatch.elapsedMilliseconds}ms: $e');
     }
-    return null;
+
+    final minifiedUri =
+        Uri.parse('$_cleanBaseUrl/api/me/listening-stats?minified=1');
+    final legacyUri = Uri.parse('$_cleanBaseUrl/api/me/listening-stats');
+
+    final minifiedStats =
+        await requestStats(minifiedUri, '/api/me/listening-stats?minified=1');
+    if (minifiedStats != null) return minifiedStats;
+
+    debugPrint('[StatsApi] Falling back to legacy listening stats response');
+
+    try {
+      return await requestStats(legacyUri, '/api/me/listening-stats');
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Get user's listening sessions (paginated).
