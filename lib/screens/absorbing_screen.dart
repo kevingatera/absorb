@@ -36,6 +36,30 @@ class AbsorbingScreen extends StatefulWidget {
   State<AbsorbingScreen> createState() => _AbsorbingScreenState();
 }
 
+class _AbsorbingLibrarySnapshot {
+  final bool isPodcastLibrary;
+  final bool isOffline;
+  final bool isManualOffline;
+  final bool isLoading;
+  final String? selectedLibraryId;
+  final Set<String> manualAbsorbRemoves;
+  final Map<String, Map<String, dynamic>> absorbingItemCache;
+  final List<String> absorbingBookIds;
+  final List<dynamic> personalizedSections;
+
+  const _AbsorbingLibrarySnapshot({
+    required this.isPodcastLibrary,
+    required this.isOffline,
+    required this.isManualOffline,
+    required this.isLoading,
+    required this.selectedLibraryId,
+    required this.manualAbsorbRemoves,
+    required this.absorbingItemCache,
+    required this.absorbingBookIds,
+    required this.personalizedSections,
+  });
+}
+
 class _AbsorbingScreenState extends State<AbsorbingScreen> {
   final _player = AudioPlayerService();
   final _pageController = PageController(viewportFraction: 0.92);
@@ -99,6 +123,20 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   String? _lastLoggedActiveKey;
   bool? _lastLoggedHasBook;
   bool? _lastLoggedIsCasting;
+
+  _AbsorbingLibrarySnapshot _snapshotLibrary(LibraryProvider lib) {
+    return _AbsorbingLibrarySnapshot(
+      isPodcastLibrary: lib.isPodcastLibrary,
+      isOffline: lib.isOffline,
+      isManualOffline: lib.isManualOffline,
+      isLoading: lib.isLoading,
+      selectedLibraryId: lib.selectedLibraryId,
+      manualAbsorbRemoves: lib.manualAbsorbRemoves,
+      absorbingItemCache: lib.absorbingItemCache,
+      absorbingBookIds: lib.absorbingBookIds,
+      personalizedSections: lib.personalizedSections,
+    );
+  }
 
   void _onPlayerSettingsChanged() {
     _loadMergeLibraries();
@@ -216,7 +254,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     if (playingKey == null) return;
 
     final lib = context.read<LibraryProvider>();
-    final books = _getAbsorbingBooks(lib);
+    final books = _getAbsorbingBooks(_snapshotLibrary(lib));
     final idx = books.indexWhere((b) => _absorbingKey(b) == playingKey);
     if (idx >= 0 && _pageController.hasClients) {
       if (_suppressReorder) {
@@ -321,7 +359,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     return itemId;
   }
 
-  List<Map<String, dynamic>> _getAbsorbingBooks(LibraryProvider lib) {
+  List<Map<String, dynamic>> _getAbsorbingBooks(_AbsorbingLibrarySnapshot lib) {
     final removes = lib.manualAbsorbRemoves;
     final cache = lib.absorbingItemCache;
 
@@ -471,7 +509,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   }
 
   void _logBuildState({
-    required LibraryProvider lib,
+    required _AbsorbingLibrarySnapshot lib,
     required bool effectiveOffline,
     required int rawCount,
     required int visibleCount,
@@ -504,14 +542,15 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    _loadMergeLibraries(); // refresh in case setting changed
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
     final lowerFade = Color.lerp(cs.surface, scaffoldBg, 0.55) ?? scaffoldBg;
-    final lib = context.watch<LibraryProvider>();
+    final lib = context.read<LibraryProvider>();
+    final libState = context
+        .select<LibraryProvider, _AbsorbingLibrarySnapshot>(_snapshotLibrary);
     final dl = DownloadService();
-    var books = _getAbsorbingBooks(lib);
+    var books = _getAbsorbingBooks(libState);
     final rawCount = books.length;
 
     String? activeKey;
@@ -526,7 +565,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     }
 
     // Force offline mode when actually offline
-    final effectiveOffline = lib.isOffline;
+    final effectiveOffline = libState.isOffline;
     if (effectiveOffline) {
       books = books.where((b) {
         final key = _absorbingKey(b);
@@ -538,18 +577,18 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     }
 
     _logBuildState(
-      lib: lib,
+      lib: libState,
       effectiveOffline: effectiveOffline,
       rawCount: rawCount,
       visibleCount: books.length,
       activeKey: activeKey,
     );
 
-    final showBlockingLoader = lib.isLoading &&
+    final showBlockingLoader = libState.isLoading &&
         books.isEmpty &&
         !_player.hasBook &&
         !_cast.isCasting &&
-        lib.personalizedSections.isEmpty;
+        libState.personalizedSections.isEmpty;
 
     final muted = cs.onSurfaceVariant;
     final subtleBg = cs.onSurface.withValues(alpha: 0.06);
