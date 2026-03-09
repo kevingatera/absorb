@@ -183,8 +183,12 @@ class LibraryProvider extends ChangeNotifier {
       return;
     }
 
-    // Build fake entities from download metadata
-    final entities = <Map<String, dynamic>>[];
+    // Build fake entities from download metadata.
+    // Split in-progress downloads into an offline continue-listening section so
+    // Absorbing stays focused on what is actively being listened to, while Home
+    // can use the remaining space for the rest of the downloaded library.
+    final continueEntities = <Map<String, dynamic>>[];
+    final downloadedEntities = <Map<String, dynamic>>[];
     for (final dl in downloads) {
       // Try to extract duration from cached session data
       double duration = 0;
@@ -202,10 +206,11 @@ class LibraryProvider extends ChangeNotifier {
 
       // Podcast downloads use compound key "showId-episodeId"
       final isCompound = dl.itemId.length > 36;
+      late final Map<String, dynamic> entity;
       if (isCompound) {
         final showId = dl.itemId.substring(0, 36);
         final episodeId = dl.itemId.substring(37);
-        entities.add({
+        entity = {
           'id': showId,
           '_absorbingKey': dl.itemId,
           'recentEpisode': {
@@ -220,9 +225,9 @@ class LibraryProvider extends ChangeNotifier {
             'duration': duration,
             'chapters': chapters,
           },
-        });
+        };
       } else {
-        entities.add({
+        entity = {
           'id': dl.itemId,
           'media': {
             'metadata': {
@@ -232,18 +237,40 @@ class LibraryProvider extends ChangeNotifier {
             'duration': duration,
             'chapters': chapters,
           },
-        });
+        };
+      }
+
+      final progress = _resetItems.contains(dl.itemId)
+          ? 0.0
+          : _localProgressOverrides[dl.itemId] ??
+              (_progressMap[dl.itemId]?['progress'] as num?)?.toDouble() ??
+              0.0;
+      final isFinished =
+          _progressMap[dl.itemId]?['isFinished'] == true || progress >= 0.999;
+
+      if (progress > 0 && !isFinished) {
+        continueEntities.add(entity);
+      } else {
+        downloadedEntities.add(entity);
       }
     }
 
     final isPodcast = isPodcastLibrary;
     _personalizedSections = [
-      {
-        'id': 'downloaded-books',
-        'label': isPodcast ? 'Downloaded Episodes' : 'Downloaded Books',
-        'type': isPodcast ? 'podcast' : 'book',
-        'entities': entities,
-      },
+      if (continueEntities.isNotEmpty)
+        {
+          'id': 'continue-listening',
+          'label': 'Continue Listening',
+          'type': isPodcast ? 'podcast' : 'book',
+          'entities': continueEntities,
+        },
+      if (downloadedEntities.isNotEmpty)
+        {
+          'id': 'downloaded-books',
+          'label': isPodcast ? 'Downloaded Episodes' : 'Downloaded Books',
+          'type': isPodcast ? 'podcast' : 'book',
+          'entities': downloadedEntities,
+        },
     ];
     _errorMessage = null;
     _isLoading = false;
@@ -1243,9 +1270,7 @@ class LibraryProvider extends ChangeNotifier {
 
     for (final section in _personalizedSections) {
       final id = section['id'] as String? ?? '';
-      if (id == 'continue-listening' ||
-          id == 'continue-series' ||
-          id == 'downloaded-books') {
+      if (id == 'continue-listening' || id == 'continue-series') {
         final isContinueSeries = id == 'continue-series';
         for (final e in (section['entities'] as List<dynamic>? ?? [])) {
           if (e is Map<String, dynamic>) {
