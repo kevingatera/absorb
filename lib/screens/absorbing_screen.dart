@@ -9,6 +9,7 @@ import '../services/download_service.dart';
 import '../services/scoped_prefs.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/absorbing_card.dart';
+import '../widgets/status_message_view.dart';
 
 class AbsorbingScreen extends StatefulWidget {
   const AbsorbingScreen({super.key});
@@ -113,6 +114,67 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   // slide to the beginning rather than the list instantly reordering underneath them.
   bool _suppressReorder = false;
   bool _mergeLibraries = false;
+  int? _pendingIndicatorSelection;
+  Duration _pendingIndicatorDuration = const Duration(milliseconds: 220);
+  bool _pendingIndicatorHaptics = true;
+  int? _activeIndicatorSelection;
+  bool _isProcessingIndicatorSelection = false;
+
+  Future<void> _switchToAbsorbingPage(
+    int index, {
+    Duration duration = const Duration(milliseconds: 220),
+    bool withHaptics = true,
+  }) async {
+    if (!_pageController.hasClients) return;
+
+    final currentPage =
+        (_pageController.page ?? _pageController.initialPage).round();
+    if (!_isProcessingIndicatorSelection && index == currentPage) return;
+    if (_activeIndicatorSelection == index ||
+        _pendingIndicatorSelection == index) {
+      return;
+    }
+
+    _pendingIndicatorSelection = index;
+    _pendingIndicatorDuration = duration;
+    _pendingIndicatorHaptics = withHaptics;
+    if (_isProcessingIndicatorSelection) return;
+
+    _isProcessingIndicatorSelection = true;
+    try {
+      while (mounted && _pageController.hasClients) {
+        final target = _pendingIndicatorSelection;
+        if (target == null) break;
+
+        final targetDuration = _pendingIndicatorDuration;
+        final useHaptics = _pendingIndicatorHaptics;
+        _pendingIndicatorSelection = null;
+
+        final visiblePage =
+            (_pageController.page ?? _pageController.initialPage).round();
+        if (target == visiblePage) continue;
+
+        _activeIndicatorSelection = target;
+        if (useHaptics) {
+          await HapticFeedback.selectionClick();
+        }
+
+        await _pageController.animateToPage(
+          target,
+          duration: targetDuration,
+          curve: Curves.easeOutCubic,
+        );
+      }
+    } finally {
+      _activeIndicatorSelection = null;
+      _isProcessingIndicatorSelection = false;
+    }
+  }
+
+  void _clearIndicatorSelectionState() {
+    _activeIndicatorSelection = null;
+  }
+
   bool? _lastSeenHasBook;
   bool? _lastSeenIsPlaying;
 
@@ -362,13 +424,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     final removes = lib.manualAbsorbRemoves;
     final cache = lib.absorbingItemCache;
 
-    // Quick lookup of fresh data — only from the in-progress sections.
-    // For podcast episodes, key by compound "itemId-episodeId".
-    const allowedSections = {
-      'continue-listening',
-      'continue-series',
-      'downloaded-books'
-    };
+    // Quick lookup of fresh data — only from in-progress sections.
+    final allowedSections = <String>{'continue-listening', 'continue-series'};
     final sectionLookup = <String, Map<String, dynamic>>{};
     for (final section in lib.personalizedSections) {
       final sectionId = section['id'] as String? ?? '';
@@ -778,9 +835,17 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             // ── Page Dots ──
             if (books.length > 1)
               Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 4),
-                child:
-                    _PageDots(count: books.length, controller: _pageController),
+                padding: const EdgeInsets.only(top: 4, bottom: 0),
+                child: _PageDots(
+                  count: books.length,
+                  controller: _pageController,
+                  onSelected: (index) => _switchToAbsorbingPage(index),
+                  onScrubSelected: (index) => _switchToAbsorbingPage(
+                    index,
+                    duration: const Duration(milliseconds: 110),
+                    withHaptics: false,
+                  ),
+                ),
               ),
             // ── Cards (refreshable) ──
             Expanded(
@@ -810,6 +875,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                             )
                           : PageView.builder(
                               controller: _pageController,
+                              onPageChanged: (_) =>
+                                  _clearIndicatorSelectionState(),
                               scrollDirection: Axis.horizontal,
                               clipBehavior: Clip.none,
                               physics: const PageScrollPhysics(
@@ -843,37 +910,23 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   Widget _emptyState(ColorScheme cs, TextTheme tt, bool isOffline) {
     final lib = context.read<LibraryProvider>();
     final isPod = lib.isPodcastLibrary;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-              isOffline
-                  ? Icons.cloud_off_rounded
-                  : isPod
-                      ? Icons.podcasts_rounded
-                      : Icons.headphones_rounded,
-              size: 64,
-              color: cs.onSurface.withValues(alpha: 0.15)),
-          const SizedBox(height: 16),
-          Text(
-              isOffline
-                  ? (isPod ? 'No downloaded episodes' : 'No downloaded books')
-                  : (isPod ? 'Nothing playing yet' : 'Nothing absorbing yet'),
-              style: tt.titleMedium?.copyWith(color: cs.onSurfaceVariant)),
-          const SizedBox(height: 8),
-          Text(
-              isOffline
-                  ? (isPod
-                      ? 'Download episodes to listen offline'
-                      : 'Download books to listen offline')
-                  : (isPod
-                      ? 'Start an episode from the Shows tab'
-                      : 'Start a book from the Library tab'),
-              style: tt.bodySmall
-                  ?.copyWith(color: cs.onSurface.withValues(alpha: 0.24))),
-        ],
-      ),
+    final hasDownloads = DownloadService().downloadedItems.isNotEmpty;
+    return StatusMessageView(
+      icon: isOffline
+          ? Icons.download_for_offline_outlined
+          : isPod
+              ? Icons.podcasts_rounded
+              : Icons.headphones_rounded,
+      title: isOffline
+          ? (hasDownloads
+              ? 'No offline listening in progress'
+              : 'No offline downloads yet')
+          : 'Nothing is queued in Absorbing',
+      message: isOffline
+          ? (hasDownloads
+              ? 'Your downloaded library is still available on Home. Start a downloaded ${isPod ? 'episode' : 'book'} there and it will appear here.'
+              : 'Download ${isPod ? 'episodes' : 'books'} while online, then start one to keep it handy here for offline listening.')
+          : 'Start a ${isPod ? 'show episode from Shows or Home' : 'book from Home or Library'} and Absorbing will keep it within easy reach.',
     );
   }
 
@@ -904,9 +957,28 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 // ─── PAGE DOTS ──────────────────────────────────────────────
 
 class _PageDots extends StatelessWidget {
+  static const double _slotWidth = 20;
+  static const double _trackHeight = 16;
+
   final int count;
   final PageController controller;
-  const _PageDots({required this.count, required this.controller});
+  final ValueChanged<int> onSelected;
+  final ValueChanged<int> onScrubSelected;
+
+  const _PageDots({
+    required this.count,
+    required this.controller,
+    required this.onSelected,
+    required this.onScrubSelected,
+  });
+
+  int _indexForPosition(double dx) {
+    if (count <= 1) return 0;
+
+    final trackWidth = count * _slotWidth;
+    final clampedDx = dx.clamp(0.0, trackWidth - 0.001);
+    return (clampedDx / _slotWidth).floor().clamp(0, count - 1);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -915,24 +987,43 @@ class _PageDots extends StatelessWidget {
       listenable: controller,
       builder: (_, __) {
         final page = controller.hasClients ? (controller.page ?? 0).round() : 0;
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(count, (i) {
-            final active = i == page;
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: active ? 20 : 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: active
-                    ? cs.onSurface.withValues(alpha: 0.54)
-                    : cs.onSurface.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(3),
+
+        return Center(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (details) =>
+                onSelected(_indexForPosition(details.localPosition.dx)),
+            onHorizontalDragStart: (details) =>
+                onScrubSelected(_indexForPosition(details.localPosition.dx)),
+            onHorizontalDragUpdate: (details) =>
+                onScrubSelected(_indexForPosition(details.localPosition.dx)),
+            child: SizedBox(
+              width: count * _slotWidth,
+              height: _trackHeight,
+              child: Row(
+                children: List.generate(count, (i) {
+                  final active = i == page;
+                  return SizedBox(
+                    width: _slotWidth,
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        width: active ? 18 : 8,
+                        height: active ? 6 : 4,
+                        decoration: BoxDecoration(
+                          color: active
+                              ? cs.onSurface.withValues(alpha: 0.54)
+                              : cs.onSurface.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
               ),
-            );
-          }),
+            ),
+          ),
         );
       },
     );
