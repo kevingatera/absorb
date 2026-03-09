@@ -44,8 +44,14 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   @override
   void initState() {
     super.initState();
-    _player.addListener(_rebuild);
-    _cast.addListener(_rebuild);
+    _lastPlayingId = _player.currentItemId;
+    _lastPlayingEpisodeId = _player.currentEpisodeId;
+    _wasCasting = _cast.isCasting;
+    _lastSeenHasBook = _player.hasBook;
+    _lastSeenIsPlaying = _player.isPlaying;
+    _player.addListener(_onServicesChanged);
+    _cast.addListener(_onServicesChanged);
+    PlayerSettings.settingsChanged.addListener(_onPlayerSettingsChanged);
     _restoreLastFinished();
     _loadMergeLibraries();
   }
@@ -64,8 +70,9 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
   @override
   void dispose() {
-    _player.removeListener(_rebuild);
-    _cast.removeListener(_rebuild);
+    _player.removeListener(_onServicesChanged);
+    _cast.removeListener(_onServicesChanged);
+    PlayerSettings.settingsChanged.removeListener(_onPlayerSettingsChanged);
     _pageController.dispose();
     super.dispose();
   }
@@ -82,6 +89,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   // slide to the beginning rather than the list instantly reordering underneath them.
   bool _suppressReorder = false;
   bool _mergeLibraries = false;
+  bool? _lastSeenHasBook;
+  bool? _lastSeenIsPlaying;
 
   bool? _lastLoggedEffectiveOffline;
   int? _lastLoggedRawCount;
@@ -90,12 +99,22 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   bool? _lastLoggedHasBook;
   bool? _lastLoggedIsCasting;
 
-  void _rebuild() {
+  void _onPlayerSettingsChanged() {
+    _loadMergeLibraries();
+  }
+
+  void _onServicesChanged() {
     if (!mounted) return;
-    _loadMergeLibraries(); // refresh in case setting changed
+
+    final hasBookChanged = _player.hasBook != _lastSeenHasBook;
+    final isPlayingChanged = _player.isPlaying != _lastSeenIsPlaying;
+    _lastSeenHasBook = _player.hasBook;
+    _lastSeenIsPlaying = _player.isPlaying;
+
     // Detect item or episode change (same show, different episode counts as a change)
     final itemChanged = _player.currentItemId != _lastPlayingId;
     final episodeChanged = _player.currentEpisodeId != _lastPlayingEpisodeId;
+    var shouldRebuild = hasBookChanged || isPlayingChanged;
     if (itemChanged || episodeChanged) {
       final wasPlayingId = _lastPlayingId;
       final wasEpisodeId = _lastPlayingEpisodeId;
@@ -108,9 +127,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
         final playingKey = _player.currentEpisodeId != null
             ? '${_player.currentItemId!}-${_player.currentEpisodeId!}'
             : _player.currentItemId!;
-        lib.unblockFromAbsorbing(playingKey,
+        lib.unblockFromAbsorbing(
+          playingKey,
           episodeTitle: _player.currentEpisodeTitle,
-          episodeDuration: _player.currentEpisodeId != null ? _player.totalDuration : null,
+          episodeDuration:
+              _player.currentEpisodeId != null ? _player.totalDuration : null,
         );
         // Persist so this item stays at front even if the app is killed
         _lastFinishedId = playingKey;
@@ -125,28 +146,32 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
           // No animation needed — persist the move-to-front immediately.
           lib.moveAbsorbingToFront(playingKey);
         }
-        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToActiveCard());
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _scrollToActiveCard());
       } else if (wasPlayingId != null && !_isSyncing) {
         // Playback stopped — keep this item at the front of the list.
         // Don't call markFinishedLocally here: actual completion is handled
         // by _onBookFinishedCallback, which fires from the player service.
         _suppressReorder = false;
-        final finishedKey = wasEpisodeId != null
-            ? '$wasPlayingId-$wasEpisodeId'
-            : wasPlayingId;
+        final finishedKey =
+            wasEpisodeId != null ? '$wasPlayingId-$wasEpisodeId' : wasPlayingId;
         _lastFinishedId = finishedKey;
         ScopedPrefs.setString('absorbing_last_finished', finishedKey);
       }
+      shouldRebuild = true;
     }
 
     // Track cast state — when casting starts, scroll to the card;
     // when it stops/disconnects, keep that card at front.
     final nowCasting = _cast.isCasting;
+    final prevCastItemId = _lastCastItemId;
+    final prevCastEpisodeId = _lastCastEpisodeId;
     if (nowCasting && !_wasCasting) {
       // Casting just started — scroll to the cast card
       _lastCastItemId = _cast.castingItemId;
       _lastCastEpisodeId = _cast.castingEpisodeId;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToActiveCard());
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _scrollToActiveCard());
     } else if (nowCasting) {
       _lastCastItemId = _cast.castingItemId;
       _lastCastEpisodeId = _cast.castingEpisodeId;
@@ -159,9 +184,18 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       _lastCastItemId = null;
       _lastCastEpisodeId = null;
     }
+    final castChanged = nowCasting != _wasCasting ||
+        prevCastItemId != _cast.castingItemId ||
+        prevCastEpisodeId != _cast.castingEpisodeId;
     _wasCasting = nowCasting;
+    if (nowCasting) {
+      _lastCastItemId = _cast.castingItemId;
+      _lastCastEpisodeId = _cast.castingEpisodeId;
+    }
 
-    setState(() {});
+    if (shouldRebuild || castChanged) {
+      setState(() {});
+    }
   }
 
   void _scrollToActiveCard({int retries = 2}) {
@@ -258,8 +292,12 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
           'the server has.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sync')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Sync')),
         ],
       ),
     );
@@ -288,7 +326,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
     // Quick lookup of fresh data — only from the in-progress sections.
     // For podcast episodes, key by compound "itemId-episodeId".
-    const allowedSections = {'continue-listening', 'continue-series', 'downloaded-books'};
+    const allowedSections = {
+      'continue-listening',
+      'continue-series',
+      'downloaded-books'
+    };
     final sectionLookup = <String, Map<String, dynamic>>{};
     for (final section in lib.personalizedSections) {
       final sectionId = section['id'] as String? ?? '';
@@ -312,7 +354,10 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     final items = <Map<String, dynamic>>[];
     final skippedKeys = <String, String>{};
     for (final key in lib.absorbingBookIds) {
-      if (removes.contains(key)) { skippedKeys[key] = 'removed'; continue; }
+      if (removes.contains(key)) {
+        skippedKeys[key] = 'removed';
+        continue;
+      }
       // Prefer fresh data from current library's sections
       final fromSection = sectionLookup[key];
       if (fromSection != null) {
@@ -323,10 +368,14 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       final cached = cache[key];
       if (cached != null) {
         final itemLibId = cached['libraryId'] as String?;
-        if (_mergeLibraries || selectedLibraryId == null || itemLibId == null || itemLibId == selectedLibraryId) {
+        if (_mergeLibraries ||
+            selectedLibraryId == null ||
+            itemLibId == null ||
+            itemLibId == selectedLibraryId) {
           items.add(cached);
         } else {
-          skippedKeys[key] = 'wrong library (item=$itemLibId, selected=$selectedLibraryId)';
+          skippedKeys[key] =
+              'wrong library (item=$itemLibId, selected=$selectedLibraryId)';
         }
       } else {
         skippedKeys[key] = 'not in section or cache';
@@ -366,9 +415,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       final activeIsPodcast = activeEpId != null;
       // Only show if the active item matches the current library type (or merge is on)
       if (_mergeLibraries || activeIsPodcast == isPod) {
-        final activeKey = activeEpId != null ? '$activeId-$activeEpId' : activeId;
+        final activeKey =
+            activeEpId != null ? '$activeId-$activeEpId' : activeId;
 
-        final existingIdx = items.indexWhere((b) => _absorbingKey(b) == activeKey);
+        final existingIdx =
+            items.indexWhere((b) => _absorbingKey(b) == activeKey);
         if (!_suppressReorder && existingIdx > 0) {
           final item = items.removeAt(existingIdx);
           items.insert(0, item);
@@ -400,11 +451,14 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
     // When nothing is playing, keep the last-finished item at the front
     // Only if it matches the current library type
-    if (!_player.hasBook && _lastFinishedId != null && !removes.contains(_lastFinishedId)) {
+    if (!_player.hasBook &&
+        _lastFinishedId != null &&
+        !removes.contains(_lastFinishedId)) {
       // Compound podcast keys are "uuid-uuid" (>36 chars); plain book UUIDs are 36.
       final finishedIsPodcast = _lastFinishedId!.length > 36;
       if (_mergeLibraries || finishedIsPodcast == isPod) {
-        final finishedIdx = items.indexWhere((b) => _absorbingKey(b) == _lastFinishedId);
+        final finishedIdx =
+            items.indexWhere((b) => _absorbingKey(b) == _lastFinishedId);
         if (finishedIdx > 0) {
           final item = items.removeAt(finishedIdx);
           items.insert(0, item);
@@ -531,25 +585,35 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     curve: Curves.easeOutCubic,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      color: effectiveOffline ? Colors.orange.withValues(alpha: 0.15) : subtleBg,
+                      color: effectiveOffline
+                          ? Colors.orange.withValues(alpha: 0.15)
+                          : subtleBg,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: effectiveOffline ? Colors.orange.withValues(alpha: 0.3) : subtleBorder),
+                      border: Border.all(
+                          color: effectiveOffline
+                              ? Colors.orange.withValues(alpha: 0.3)
+                              : subtleBorder),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          effectiveOffline ? Icons.airplanemode_active_rounded : Icons.airplanemode_inactive_rounded,
-                          size: 14, color: effectiveOffline ? Colors.orange : muted,
+                          effectiveOffline
+                              ? Icons.airplanemode_active_rounded
+                              : Icons.airplanemode_inactive_rounded,
+                          size: 14,
+                          color: effectiveOffline ? Colors.orange : muted,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           effectiveOffline ? 'Offline' : 'Online',
                           style: TextStyle(
                             color: effectiveOffline ? Colors.orange : muted,
-                            fontSize: 11, fontWeight: FontWeight.w500,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
@@ -560,16 +624,19 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                 // Unified button: "Sync" when idle, "Stop & Sync" when playing
                 if (!effectiveOffline)
                   GestureDetector(
-                    onTap: _isSyncing ? null : () {
-                      if (_player.hasBook) {
-                        _stopAndRefresh(lib);
-                      } else {
-                        _confirmAndSync(lib);
-                      }
-                    },
+                    onTap: _isSyncing
+                        ? null
+                        : () {
+                            if (_player.hasBook) {
+                              _stopAndRefresh(lib);
+                            } else {
+                              _confirmAndSync(lib);
+                            }
+                          },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
                         color: subtleBg,
                         borderRadius: BorderRadius.circular(20),
@@ -580,17 +647,33 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           if (_isSyncing) ...[
-                            SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, color: muted)),
+                            SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 1.5, color: muted)),
                             const SizedBox(width: 6),
-                            Text('Syncing…', style: TextStyle(color: muted, fontSize: 11, fontWeight: FontWeight.w500)),
+                            Text('Syncing…',
+                                style: TextStyle(
+                                    color: muted,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500)),
                           ] else if (_player.hasBook) ...[
                             Icon(Icons.stop_rounded, size: 14, color: muted),
                             const SizedBox(width: 4),
-                            Text('Stop & Sync', style: TextStyle(color: muted, fontSize: 11, fontWeight: FontWeight.w500)),
+                            Text('Stop & Sync',
+                                style: TextStyle(
+                                    color: muted,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500)),
                           ] else ...[
                             Icon(Icons.sync_rounded, size: 14, color: muted),
                             const SizedBox(width: 4),
-                            Text('Sync', style: TextStyle(color: muted, fontSize: 11, fontWeight: FontWeight.w500)),
+                            Text('Sync',
+                                style: TextStyle(
+                                    color: muted,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500)),
                           ],
                         ],
                       ),
@@ -606,7 +689,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                       child: GestureDetector(
                         onTap: () => _stopAndRefresh(lib),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
                           decoration: BoxDecoration(
                             color: subtleBg,
                             borderRadius: BorderRadius.circular(20),
@@ -618,103 +702,137 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                             children: [
                               Icon(Icons.stop_rounded, size: 14, color: muted),
                               const SizedBox(width: 4),
-                              Text('Stop', style: TextStyle(color: muted, fontSize: 11, fontWeight: FontWeight.w500)),
+                              Text('Stop',
+                                  style: TextStyle(
+                                      color: muted,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500)),
                             ],
                           ),
                         ),
                       ),
                     ),
                   ),
-              if (books.length > 1) ...[
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () => _showReorderSheet(context, lib, books),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: subtleBg,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: subtleBorder),
+                if (books.length > 1) ...[
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => _showReorderSheet(context, lib, books),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: subtleBg,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: subtleBorder),
+                      ),
+                      child:
+                          Icon(Icons.reorder_rounded, size: 14, color: muted),
                     ),
-                    child: Icon(Icons.reorder_rounded, size: 14, color: muted),
                   ),
-                ),
-              ],
+                ],
               ],
             ),
             // ── Page Dots ──
             if (books.length > 1)
               Padding(
                 padding: const EdgeInsets.only(top: 8, bottom: 4),
-                child: _PageDots(count: books.length, controller: _pageController),
+                child:
+                    _PageDots(count: books.length, controller: _pageController),
               ),
             // ── Cards (refreshable) ──
             Expanded(
               child: showBlockingLoader
-                  ? Center(child: CircularProgressIndicator(strokeWidth: 2, color: cs.onSurface.withValues(alpha: 0.24)))
+                  ? Center(
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: cs.onSurface.withValues(alpha: 0.24)))
                   : books.isEmpty
                       ? _emptyState(cs, tt, effectiveOffline)
                       : books.length == 1
                           ? LayoutBuilder(
                               builder: (context, constraints) {
-                                final vPad = (constraints.maxHeight * 0.04).clamp(12.0, 40.0);
+                                final vPad = (constraints.maxHeight * 0.04)
+                                    .clamp(12.0, 40.0);
                                 return Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: vPad),
-                                  child: RepaintBoundary(child: AbsorbingCard(key: ValueKey(_absorbingKey(books[0])), item: books[0], player: _player)),
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: vPad),
+                                  child: RepaintBoundary(
+                                      child: AbsorbingCard(
+                                          key:
+                                              ValueKey(_absorbingKey(books[0])),
+                                          item: books[0],
+                                          player: _player)),
                                 );
                               },
                             )
                           : PageView.builder(
-                          controller: _pageController,
-                          scrollDirection: Axis.horizontal,
-                          clipBehavior: Clip.none,
-                          physics: const PageScrollPhysics(parent: ClampingScrollPhysics()),
-                          itemCount: books.length,
-                          itemBuilder: (_, i) => LayoutBuilder(
-                            builder: (context, constraints) {
-                              final cardWidth = constraints.maxWidth;
-                              final vPad = (constraints.maxHeight * 0.04).clamp(12.0, 40.0);
-                              return AnimatedBuilder(
-                                animation: _pageController,
-                                builder: (context, child) {
-                                  double distFromCenter = 0.0;
-                                  double rawDist = 0.0;
-                                  if (_pageController.position.haveDimensions) {
-                                    final page = _pageController.page ?? _pageController.initialPage.toDouble();
-                                    rawDist = page - i; // negative = card is to the right
-                                    distFromCenter = rawDist.abs();
-                                  }
-                                  final double scaleX;
-                                  if (distFromCenter >= 1.0) {
-                                    scaleX = 0.85;
-                                  } else {
-                                    // Use easeOut curve for smoother transition
-                                    final t = Curves.easeOut.transform(1.0 - distFromCenter);
-                                    scaleX = 0.85 + (t * 0.15); // 0.85 → 1.0
-                                  }
-                                  // Calculate how much space the squeeze frees up, then translate toward center
-                                  final squeezedWidth = cardWidth * scaleX;
-                                  final freedSpace = cardWidth - squeezedWidth;
-                                  // Pull card toward center by half the freed space
-                                  final direction = rawDist > 0 ? 1.0 : (rawDist < 0 ? -1.0 : 0.0);
-                                  final translateX = direction * freedSpace * 0.45;
+                              controller: _pageController,
+                              scrollDirection: Axis.horizontal,
+                              clipBehavior: Clip.none,
+                              physics: const PageScrollPhysics(
+                                  parent: ClampingScrollPhysics()),
+                              itemCount: books.length,
+                              itemBuilder: (_, i) => LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final cardWidth = constraints.maxWidth;
+                                  final vPad = (constraints.maxHeight * 0.04)
+                                      .clamp(12.0, 40.0);
+                                  return AnimatedBuilder(
+                                    animation: _pageController,
+                                    builder: (context, child) {
+                                      double distFromCenter = 0.0;
+                                      double rawDist = 0.0;
+                                      if (_pageController
+                                          .position.haveDimensions) {
+                                        final page = _pageController.page ??
+                                            _pageController.initialPage
+                                                .toDouble();
+                                        rawDist = page -
+                                            i; // negative = card is to the right
+                                        distFromCenter = rawDist.abs();
+                                      }
+                                      final double scaleX;
+                                      if (distFromCenter >= 1.0) {
+                                        scaleX = 0.85;
+                                      } else {
+                                        // Use easeOut curve for smoother transition
+                                        final t = Curves.easeOut
+                                            .transform(1.0 - distFromCenter);
+                                        scaleX =
+                                            0.85 + (t * 0.15); // 0.85 → 1.0
+                                      }
+                                      // Calculate how much space the squeeze frees up, then translate toward center
+                                      final squeezedWidth = cardWidth * scaleX;
+                                      final freedSpace =
+                                          cardWidth - squeezedWidth;
+                                      // Pull card toward center by half the freed space
+                                      final direction = rawDist > 0
+                                          ? 1.0
+                                          : (rawDist < 0 ? -1.0 : 0.0);
+                                      final translateX =
+                                          direction * freedSpace * 0.45;
 
-                                  return Transform(
-                                    alignment: Alignment.center,
-                                    transform: Matrix4.identity()
-                                      ..translate(translateX, 0.0, 0.0)
-                                      ..scale(scaleX, 1.0, 1.0),
-                                    child: Padding(
-                                      padding: EdgeInsets.symmetric(horizontal: 4, vertical: vPad),
-                                      child: child,
-                                    ),
+                                      return Transform(
+                                        alignment: Alignment.center,
+                                        transform: Matrix4.identity()
+                                          ..translate(translateX, 0.0, 0.0)
+                                          ..scale(scaleX, 1.0, 1.0),
+                                        child: Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal: 4, vertical: vPad),
+                                          child: child,
+                                        ),
+                                      );
+                                    },
+                                    child: RepaintBoundary(
+                                        child: AbsorbingCard(
+                                            key: ValueKey(
+                                                _absorbingKey(books[i])),
+                                            item: books[i],
+                                            player: _player)),
                                   );
                                 },
-                                child: RepaintBoundary(child: AbsorbingCard(key: ValueKey(_absorbingKey(books[i])), item: books[i], player: _player)),
-                              );
-                            },
-                          ),
-                        ),
+                              ),
+                            ),
             ),
           ],
         ),
@@ -729,25 +847,38 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(isOffline ? Icons.cloud_off_rounded
-              : isPod ? Icons.podcasts_rounded : Icons.headphones_rounded,
-            size: 64, color: cs.onSurface.withValues(alpha: 0.15)),
+          Icon(
+              isOffline
+                  ? Icons.cloud_off_rounded
+                  : isPod
+                      ? Icons.podcasts_rounded
+                      : Icons.headphones_rounded,
+              size: 64,
+              color: cs.onSurface.withValues(alpha: 0.15)),
           const SizedBox(height: 16),
-          Text(isOffline
-              ? (isPod ? 'No downloaded episodes' : 'No downloaded books')
-              : (isPod ? 'Nothing playing yet' : 'Nothing absorbing yet'),
-            style: tt.titleMedium?.copyWith(color: cs.onSurfaceVariant)),
+          Text(
+              isOffline
+                  ? (isPod ? 'No downloaded episodes' : 'No downloaded books')
+                  : (isPod ? 'Nothing playing yet' : 'Nothing absorbing yet'),
+              style: tt.titleMedium?.copyWith(color: cs.onSurfaceVariant)),
           const SizedBox(height: 8),
-          Text(isOffline
-              ? (isPod ? 'Download episodes to listen offline' : 'Download books to listen offline')
-              : (isPod ? 'Start an episode from the Shows tab' : 'Start a book from the Library tab'),
-            style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.24))),
+          Text(
+              isOffline
+                  ? (isPod
+                      ? 'Download episodes to listen offline'
+                      : 'Download books to listen offline')
+                  : (isPod
+                      ? 'Start an episode from the Shows tab'
+                      : 'Start a book from the Library tab'),
+              style: tt.bodySmall
+                  ?.copyWith(color: cs.onSurface.withValues(alpha: 0.24))),
         ],
       ),
     );
   }
 
-  void _showReorderSheet(BuildContext context, LibraryProvider lib, List<Map<String, dynamic>> books) {
+  void _showReorderSheet(BuildContext context, LibraryProvider lib,
+      List<Map<String, dynamic>> books) {
     final keys = books.map((b) => _absorbingKey(b)).toList();
     showModalBottomSheet(
       context: context,
@@ -795,7 +926,9 @@ class _PageDots extends StatelessWidget {
               width: active ? 20 : 6,
               height: 6,
               decoration: BoxDecoration(
-                color: active ? cs.onSurface.withValues(alpha: 0.54) : cs.onSurface.withValues(alpha: 0.15),
+                color: active
+                    ? cs.onSurface.withValues(alpha: 0.54)
+                    : cs.onSurface.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(3),
               ),
             );
@@ -851,9 +984,11 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
       ),
       child: Column(children: [
         // Handle
-        Center(child: Container(
+        Center(
+            child: Container(
           margin: const EdgeInsets.only(top: 10),
-          width: 32, height: 4,
+          width: 32,
+          height: 4,
           decoration: BoxDecoration(
             color: cs.onSurface.withValues(alpha: 0.2),
             borderRadius: BorderRadius.circular(2),
@@ -863,8 +998,10 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
           child: Row(children: [
-            Expanded(child: Text('Manage Queue',
-              style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600))),
+            Expanded(
+                child: Text('Manage Queue',
+                    style:
+                        tt.titleMedium?.copyWith(fontWeight: FontWeight.w600))),
             TextButton(
               onPressed: () {
                 widget.lib.reorderAbsorbing(_order);
@@ -917,12 +1054,14 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
                 background: Container(
                   alignment: Alignment.centerRight,
                   padding: const EdgeInsets.only(right: 24),
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                   decoration: BoxDecoration(
                     color: cs.error.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(Icons.remove_circle_outline_rounded, color: cs.error),
+                  child: Icon(Icons.remove_circle_outline_rounded,
+                      color: cs.error),
                 ),
                 onDismissed: (_) {
                   final removedKey = _order[i];
@@ -931,42 +1070,64 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
                   widget.lib.reorderAbsorbing(_order);
                 },
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      color: isFinished ? cs.onSurface.withValues(alpha: 0.03) : Colors.transparent,
+                      color: isFinished
+                          ? cs.onSurface.withValues(alpha: 0.03)
+                          : Colors.transparent,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(children: [
                       // Queue position number
-                      SizedBox(width: 24, child: Text('${i + 1}',
-                        style: tt.labelMedium?.copyWith(
-                          color: isFinished ? cs.onSurface.withValues(alpha: 0.3) : cs.primary,
-                          fontWeight: FontWeight.w700,
-                        ))),
+                      SizedBox(
+                          width: 24,
+                          child: Text('${i + 1}',
+                              style: tt.labelMedium?.copyWith(
+                                color: isFinished
+                                    ? cs.onSurface.withValues(alpha: 0.3)
+                                    : cs.primary,
+                                fontWeight: FontWeight.w700,
+                              ))),
                       // Finished indicator
                       if (isFinished)
-                        Icon(Icons.check_circle_rounded, size: 16, color: Colors.green.withValues(alpha: 0.5))
+                        Icon(Icons.check_circle_rounded,
+                            size: 16,
+                            color: Colors.green.withValues(alpha: 0.5))
                       else
-                        Icon(Icons.circle_outlined, size: 16, color: cs.onSurface.withValues(alpha: 0.2)),
+                        Icon(Icons.circle_outlined,
+                            size: 16,
+                            color: cs.onSurface.withValues(alpha: 0.2)),
                       const SizedBox(width: 8),
                       // Title + subtitle
-                      Expanded(child: Column(
+                      Expanded(
+                          child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(epTitle ?? title,
-                            maxLines: 1, overflow: TextOverflow.ellipsis,
-                            style: tt.bodyMedium?.copyWith(
-                              color: isFinished ? cs.onSurface.withValues(alpha: 0.4) : null,
-                            )),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: tt.bodyMedium?.copyWith(
+                                color: isFinished
+                                    ? cs.onSurface.withValues(alpha: 0.4)
+                                    : null,
+                              )),
                           if (epTitle != null)
-                            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                            Text(title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: tt.bodySmall
+                                    ?.copyWith(color: cs.onSurfaceVariant)),
                           if (author.isNotEmpty && epTitle == null)
-                            Text(author, maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                            Text(author,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: tt.bodySmall
+                                    ?.copyWith(color: cs.onSurfaceVariant)),
                         ],
                       )),
                       // Drag handle (long-press to avoid conflict with system home gesture)
@@ -994,7 +1155,8 @@ class _DragHandle extends StatefulWidget {
   State<_DragHandle> createState() => _DragHandleState();
 }
 
-class _DragHandleState extends State<_DragHandle> with SingleTickerProviderStateMixin {
+class _DragHandleState extends State<_DragHandle>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   // Match ReorderableDelayedDragStartListener's default delay
   static const _holdDuration = Duration(milliseconds: 500);
@@ -1041,11 +1203,14 @@ class _DragHandleState extends State<_DragHandle> with SingleTickerProviderState
               duration: const Duration(milliseconds: 150),
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: ready ? widget.color.withValues(alpha: 0.1) : Colors.transparent,
+                color: ready
+                    ? widget.color.withValues(alpha: 0.1)
+                    : Colors.transparent,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(Icons.drag_handle_rounded, size: 20,
-                color: widget.color.withValues(alpha: ready ? 0.7 : 0.3)),
+              child: Icon(Icons.drag_handle_rounded,
+                  size: 20,
+                  color: widget.color.withValues(alpha: ready ? 0.7 : 0.3)),
             );
           },
         ),
