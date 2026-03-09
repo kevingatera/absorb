@@ -9,6 +9,7 @@ import '../services/download_service.dart';
 import '../services/scoped_prefs.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/absorbing_card.dart';
+import '../widgets/status_message_view.dart';
 
 class AbsorbingScreen extends StatefulWidget {
   const AbsorbingScreen({super.key});
@@ -838,37 +839,23 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   Widget _emptyState(ColorScheme cs, TextTheme tt, bool isOffline) {
     final lib = context.read<LibraryProvider>();
     final isPod = lib.isPodcastLibrary;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-              isOffline
-                  ? Icons.cloud_off_rounded
-                  : isPod
-                      ? Icons.podcasts_rounded
-                      : Icons.headphones_rounded,
-              size: 64,
-              color: cs.onSurface.withValues(alpha: 0.15)),
-          const SizedBox(height: 16),
-          Text(
-              isOffline
-                  ? (isPod ? 'No downloaded episodes' : 'No downloaded books')
-                  : (isPod ? 'Nothing playing yet' : 'Nothing absorbing yet'),
-              style: tt.titleMedium?.copyWith(color: cs.onSurfaceVariant)),
-          const SizedBox(height: 8),
-          Text(
-              isOffline
-                  ? (isPod
-                      ? 'Download episodes to listen offline'
-                      : 'Download books to listen offline')
-                  : (isPod
-                      ? 'Start an episode from the Shows tab'
-                      : 'Start a book from the Library tab'),
-              style: tt.bodySmall
-                  ?.copyWith(color: cs.onSurface.withValues(alpha: 0.24))),
-        ],
-      ),
+    final hasDownloads = DownloadService().downloadedItems.isNotEmpty;
+    return StatusMessageView(
+      icon: isOffline
+          ? Icons.download_for_offline_outlined
+          : isPod
+              ? Icons.podcasts_rounded
+              : Icons.headphones_rounded,
+      title: isOffline
+          ? (hasDownloads
+              ? 'No offline listening in progress'
+              : 'No offline downloads yet')
+          : 'Nothing is queued in Absorbing',
+      message: isOffline
+          ? (hasDownloads
+              ? 'Your downloaded library is still available on Home. Start a downloaded ${isPod ? 'episode' : 'book'} there and it will appear here.'
+              : 'Download ${isPod ? 'episodes' : 'books'} while online, then start one to keep it handy here for offline listening.')
+          : 'Start a ${isPod ? 'show episode from Shows or Home' : 'book from Home or Library'} and Absorbing will keep it within easy reach.',
     );
   }
 

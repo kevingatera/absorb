@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import 'library_search_results.dart';
+import 'status_message_view.dart';
 
 class AuthorBooksSheet extends StatefulWidget {
   final String libraryId;
@@ -51,8 +52,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
       final cleanUrl = (auth.serverUrl ?? '').endsWith('/')
           ? auth.serverUrl!.substring(0, auth.serverUrl!.length - 1)
           : auth.serverUrl!;
-      final url =
-          '$cleanUrl/api/libraries/${widget.libraryId}/items'
+      final url = '$cleanUrl/api/libraries/${widget.libraryId}/items'
           '?filter=authors.$filterValue&sort=media.metadata.title&limit=200&collapseseries=0';
 
       final response = await http.get(
@@ -93,28 +93,29 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(widget.authorName,
-                    style: tt.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w600)),
+                    style:
+                        tt.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
               ),
             ],
           ),
         ),
         if (_isLoading)
-          const Expanded(
-              child: Center(child: CircularProgressIndicator()))
+          const Expanded(child: Center(child: CircularProgressIndicator()))
         else if (_books.isEmpty)
           Expanded(
-            child: Center(
-              child: Text('No books found',
-                  style: tt.bodyLarge
-                      ?.copyWith(color: cs.onSurfaceVariant)),
+            child: StatusMessageView(
+              icon: Icons.person_search_rounded,
+              title: 'No books found for ${widget.authorName}',
+              message:
+                  'This author does not have any matching books in the current library yet.',
             ),
           )
         else
           Expanded(
             child: ListView.builder(
               controller: widget.scrollController,
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 24 + MediaQuery.of(context).viewPadding.bottom),
+              padding: EdgeInsets.fromLTRB(
+                  16, 0, 16, 24 + MediaQuery.of(context).viewPadding.bottom),
               itemCount: _books.length,
               itemBuilder: (context, index) {
                 return BookResultTile(

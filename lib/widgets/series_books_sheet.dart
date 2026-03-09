@@ -6,6 +6,7 @@ import '../providers/library_provider.dart';
 import '../services/download_service.dart';
 import 'book_detail_sheet.dart';
 import 'episode_list_sheet.dart';
+import 'status_message_view.dart';
 
 /// Show a bottom sheet with all books in a series, sorted by sequence.
 /// Can be called from any screen.
@@ -405,7 +406,8 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     var skipped = 0;
     String? firstError;
 
-    debugPrint('[Series] Queueing whole series download for "${widget.seriesName}" (${_books.length} books)');
+    debugPrint(
+        '[Series] Queueing whole series download for "${widget.seriesName}" (${_books.length} books)');
 
     for (final book in _books) {
       if (!mounted) break;
@@ -438,7 +440,8 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
       queued++;
     }
 
-    debugPrint('[Series] Queue complete queued=$queued skipped=$skipped error=${firstError ?? '-'}');
+    debugPrint(
+        '[Series] Queue complete queued=$queued skipped=$skipped error=${firstError ?? '-'}');
 
     if (mounted) {
       setState(() => _isDownloadingAll = false);
@@ -569,9 +572,11 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
           const Expanded(child: Center(child: CircularProgressIndicator()))
         else if (_books.isEmpty)
           Expanded(
-            child: Center(
-              child: Text('No books found',
-                  style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
+            child: StatusMessageView(
+              icon: Icons.menu_book_rounded,
+              title: 'No books found in this series',
+              message:
+                  'This series does not have any books in the current library yet.',
             ),
           )
         else

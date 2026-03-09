@@ -10,6 +10,7 @@ import '../services/chromecast_service.dart';
 import '../providers/auth_provider.dart';
 import 'card_buttons.dart';
 import 'html_description.dart';
+import 'status_message_view.dart';
 
 /// Bottom sheet that shows a podcast's episode list.
 /// Mirrors the UX of [BookDetailSheet] but adapted for podcast shows.
@@ -34,7 +35,8 @@ class EpisodeListSheet extends StatefulWidget {
       backgroundColor: Colors.transparent,
       builder: (_) => DraggableScrollableSheet(
         initialChildSize: 0.85,
-        minChildSize: 0.05, snap: true,
+        minChildSize: 0.05,
+        snap: true,
         maxChildSize: 0.95,
         expand: false,
         builder: (_, scrollController) => EpisodeListSheet._(
@@ -158,7 +160,9 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
         chapters: chapters,
         episodeId: episodeId,
       );
-      if (mounted) Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
+      if (mounted)
+        Navigator.of(context, rootNavigator: true)
+            .popUntil((route) => route.isFirst);
       return;
     }
 
@@ -176,7 +180,8 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
     );
     if (mounted) {
       if (error != null) showErrorSnackBar(context, error);
-      Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
+      Navigator.of(context, rootNavigator: true)
+          .popUntil((route) => route.isFirst);
     }
   }
 
@@ -199,7 +204,8 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
     );
 
     if (error != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error)));
     }
   }
 
@@ -214,10 +220,15 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Auto-Download This Podcast?'),
-          content: const Text('Automatically download the next episodes as you listen.'),
+          content: const Text(
+              'Automatically download the next episodes as you listen.'),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No Thanks')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Enable')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('No Thanks')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Enable')),
           ],
         ),
       );
@@ -234,7 +245,8 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
       if (!mounted) break;
       final episodeId = ep['id'] as String? ?? '';
       final key = '$_itemId-$episodeId';
-      if (DownloadService().isDownloaded(key) || DownloadService().isDownloading(key)) continue;
+      if (DownloadService().isDownloaded(key) ||
+          DownloadService().isDownloading(key)) continue;
 
       await DownloadService().downloadItem(
         api: api,
@@ -263,7 +275,8 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
       return Padding(
         padding: const EdgeInsets.all(12),
         child: SizedBox(
-          width: 18, height: 18,
+          width: 18,
+          height: 18,
           child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
         ),
       );
@@ -278,7 +291,8 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
           case 'auto_download':
             final lib = context.read<LibraryProvider>();
             await lib.toggleRollingDownload(_itemId);
-            setState(() => _autoDownloadEnabled = lib.isRollingDownloadEnabled(_itemId));
+            setState(() =>
+                _autoDownloadEnabled = lib.isRollingDownloadEnabled(_itemId));
         }
       },
       itemBuilder: (_) => [
@@ -290,7 +304,8 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
               title: Text(downloaded > 0
                   ? 'Download Remaining (${_episodes.length - downloaded})'
                   : 'Download All'),
-              dense: true, contentPadding: EdgeInsets.zero,
+              dense: true,
+              contentPadding: EdgeInsets.zero,
             ),
           ),
         if (_itemId.isNotEmpty)
@@ -303,7 +318,8 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
               title: Text(_autoDownloadEnabled
                   ? 'Turn Auto-Download Off'
                   : 'Turn Auto-Download On'),
-              dense: true, contentPadding: EdgeInsets.zero,
+              dense: true,
+              contentPadding: EdgeInsets.zero,
             ),
           ),
       ],
@@ -334,19 +350,25 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
           Positioned.fill(
             child: RepaintBoundary(
               child: CachedNetworkImage(
-                imageUrl: coverUrl, fit: BoxFit.cover,
+                imageUrl: coverUrl,
+                fit: BoxFit.cover,
                 httpHeaders: lib.mediaHeaders,
                 imageBuilder: (_, p) => ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50, tileMode: TileMode.decal),
-                  child: Image(image: p, fit: BoxFit.cover)),
+                    imageFilter: ImageFilter.blur(
+                        sigmaX: 50, sigmaY: 50, tileMode: TileMode.decal),
+                    child: Image(image: p, fit: BoxFit.cover)),
                 placeholder: (_, __) => const SizedBox(),
                 errorWidget: (_, __, ___) => const SizedBox(),
               ),
             ),
           ),
         // Gradient overlay
-        Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
-          begin: Alignment.topCenter, end: Alignment.bottomCenter,
+        Positioned.fill(
+            child: DecoratedBox(
+                decoration: BoxDecoration(
+                    gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
           colors: [
             Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.6),
             Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85),
@@ -356,98 +378,131 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
         // Content
         Column(children: [
           // Drag handle
-          Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 8, bottom: 4),
-            decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+          Center(
+              child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(top: 8, bottom: 4),
+                  decoration: BoxDecoration(
+                      color: cs.onSurface.withValues(alpha: 0.24),
+                      borderRadius: BorderRadius.circular(2)))),
 
           // ── Header (shrinks when sheet is small) ──
           Flexible(
             flex: 0,
             child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-            child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-              // Show title with 3-dot menu pinned right
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(width: 48),
-                  Expanded(
-                    child: Text(_title, textAlign: TextAlign.center,
-                      style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
-                  ),
-                  SizedBox(
-                    width: 48,
-                    child: _episodes.isNotEmpty ? _buildOverflowMenu(cs) : null,
-                  ),
-                ],
-              ),
-              if (_author.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(_author, textAlign: TextAlign.center,
-                  style: tt.bodyMedium?.copyWith(color: cs.onSurface.withValues(alpha: 0.6))),
-              ],
-
-              // Description
-              if (_description.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                HtmlDescription(
-                  html: _description,
-                  maxLines: 2,
-                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant, height: 1.4),
-                  linkColor: cs.primary,
-                ),
-              ],
-
-              // Metadata chips
-              const SizedBox(height: 12),
-              Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
-                if (!_isLoading) _chip(Icons.podcasts_rounded, '${_episodes.length} episode${_episodes.length == 1 ? '' : 's'}'),
-                if (_autoDownloadEnabled) _chip(Icons.downloading_rounded, 'Auto-Download'),
-              ]),
-
-              // Episodes section header
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Text('Episodes', style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: _toggleSortOrder,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(_newestFirst ? 'Newest' : 'Oldest',
-                          style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
-                        const SizedBox(width: 2),
-                        Icon(_newestFirst ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
-                          size: 14, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
-                      ],
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              child: SingleChildScrollView(
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                // Show title with 3-dot menu pinned right
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(width: 48),
+                    Expanded(
+                      child: Text(_title,
+                          textAlign: TextAlign.center,
+                          style: tt.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: cs.onSurface)),
                     ),
+                    SizedBox(
+                      width: 48,
+                      child:
+                          _episodes.isNotEmpty ? _buildOverflowMenu(cs) : null,
+                    ),
+                  ],
+                ),
+                if (_author.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(_author,
+                      textAlign: TextAlign.center,
+                      style: tt.bodyMedium?.copyWith(
+                          color: cs.onSurface.withValues(alpha: 0.6))),
+                ],
+
+                // Description
+                if (_description.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  HtmlDescription(
+                    html: _description,
+                    maxLines: 2,
+                    style: tt.bodySmall
+                        ?.copyWith(color: cs.onSurfaceVariant, height: 1.4),
+                    linkColor: cs.primary,
                   ),
                 ],
-              ),
-              const SizedBox(height: 4),
-            ])),
-          ),
+
+                // Metadata chips
+                const SizedBox(height: 12),
+                Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      if (!_isLoading)
+                        _chip(Icons.podcasts_rounded,
+                            '${_episodes.length} episode${_episodes.length == 1 ? '' : 's'}'),
+                      if (_autoDownloadEnabled)
+                        _chip(Icons.downloading_rounded, 'Auto-Download'),
+                    ]),
+
+                // Episodes section header
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Text('Episodes',
+                        style: tt.titleSmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                            fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: _toggleSortOrder,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(_newestFirst ? 'Newest' : 'Oldest',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: cs.onSurfaceVariant
+                                      .withValues(alpha: 0.6))),
+                          const SizedBox(width: 2),
+                          Icon(
+                              _newestFirst
+                                  ? Icons.arrow_downward_rounded
+                                  : Icons.arrow_upward_rounded,
+                              size: 14,
+                              color:
+                                  cs.onSurfaceVariant.withValues(alpha: 0.6)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+              ])),
+            ),
           ),
 
           // ── Scrollable episode list ──
           Expanded(
             child: _isLoading
-                ? Center(child: CircularProgressIndicator(strokeWidth: 2, color: cs.onSurface.withValues(alpha: 0.24)))
+                ? Center(
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: cs.onSurface.withValues(alpha: 0.24)))
                 : _episodes.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.podcasts_rounded, size: 48, color: cs.onSurface.withValues(alpha: 0.15)),
-                            const SizedBox(height: 12),
-                            Text('No episodes found', style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
-                          ],
-                        ),
+                    ? const StatusMessageView(
+                        icon: Icons.podcasts_rounded,
+                        title: 'No episodes available',
+                        message:
+                            'This show does not have any episodes ready in the current library yet.',
                       )
                     : ListView.builder(
                         controller: widget.scrollController,
-                        padding: EdgeInsets.only(bottom: 32 + MediaQuery.of(context).viewPadding.bottom),
+                        padding: EdgeInsets.only(
+                            bottom:
+                                32 + MediaQuery.of(context).viewPadding.bottom),
                         itemCount: _episodes.length,
                         itemBuilder: (context, index) {
                           final ep = _episodes[index] as Map<String, dynamic>;
@@ -470,14 +525,21 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
   Widget _chip(IconData icon, String text) {
     final cs = Theme.of(context).colorScheme;
     return Container(
-      constraints: const BoxConstraints(maxWidth: 200),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: cs.onSurface.withValues(alpha: 0.08))),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 12, color: cs.onSurfaceVariant), const SizedBox(width: 4),
-        Flexible(child: Text(text, overflow: TextOverflow.ellipsis, maxLines: 1,
-          style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11)))]));
+        constraints: const BoxConstraints(maxWidth: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+            color: cs.onSurface.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: cs.onSurface.withValues(alpha: 0.08))),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 12, color: cs.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Flexible(
+              child: Text(text,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11)))
+        ]));
   }
 }
 
@@ -488,7 +550,8 @@ class EpisodeDetailSheet extends StatefulWidget {
   final Map<String, dynamic> episode;
   final ScrollController? scrollController;
 
-  const EpisodeDetailSheet({super.key, required this.podcastItem, required this.episode})
+  const EpisodeDetailSheet(
+      {super.key, required this.podcastItem, required this.episode})
       : scrollController = null;
 
   const EpisodeDetailSheet._({
@@ -497,7 +560,8 @@ class EpisodeDetailSheet extends StatefulWidget {
     required this.scrollController,
   }) : super(key: null);
 
-  static void show(BuildContext context, Map<String, dynamic> podcastItem, Map<String, dynamic> episode) {
+  static void show(BuildContext context, Map<String, dynamic> podcastItem,
+      Map<String, dynamic> episode) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -505,7 +569,8 @@ class EpisodeDetailSheet extends StatefulWidget {
       backgroundColor: Colors.transparent,
       builder: (_) => DraggableScrollableSheet(
         initialChildSize: 0.75,
-        minChildSize: 0.05, snap: true,
+        minChildSize: 0.05,
+        snap: true,
         maxChildSize: 0.95,
         expand: false,
         builder: (_, scrollController) => EpisodeDetailSheet._(
@@ -541,10 +606,12 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
     final af = widget.episode['audioFile'] as Map<String, dynamic>?;
     return (af?['duration'] as num?)?.toDouble() ?? 0;
   }
+
   int get _publishedAt => (widget.episode['publishedAt'] as num?)?.toInt() ?? 0;
   String? get _episodeNumber => widget.episode['episode'] as String?;
   String? get _season => widget.episode['season'] as String?;
-  List<dynamic> get _chapters => widget.episode['chapters'] as List<dynamic>? ?? [];
+  List<dynamic> get _chapters =>
+      widget.episode['chapters'] as List<dynamic>? ?? [];
 
   String get _rawDescription => widget.episode['description'] as String? ?? '';
 
@@ -556,23 +623,36 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
     final cast = ChromecastService();
     if (cast.isConnected) {
       await cast.castItem(
-        api: api, itemId: _itemId, title: _episodeTitle, author: _showTitle,
-        coverUrl: api.getCoverUrl(_itemId), totalDuration: _duration, chapters: _chapters,
+        api: api,
+        itemId: _itemId,
+        title: _episodeTitle,
+        author: _showTitle,
+        coverUrl: api.getCoverUrl(_itemId),
+        totalDuration: _duration,
+        chapters: _chapters,
         episodeId: _episodeId,
       );
-      if (mounted) Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
+      if (mounted)
+        Navigator.of(context, rootNavigator: true)
+            .popUntil((route) => route.isFirst);
       return;
     }
 
     final error = await AudioPlayerService().playItem(
-      api: api, itemId: _itemId, title: _episodeTitle, author: _showTitle,
-      coverUrl: api.getCoverUrl(_itemId), totalDuration: _duration, chapters: _chapters,
+      api: api,
+      itemId: _itemId,
+      title: _episodeTitle,
+      author: _showTitle,
+      coverUrl: api.getCoverUrl(_itemId),
+      totalDuration: _duration,
+      chapters: _chapters,
       episodeId: _episodeId,
       episodeTitle: _episodeTitle,
     );
     if (mounted) {
       if (error != null) showErrorSnackBar(context, error);
-      Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
+      Navigator.of(context, rootNavigator: true)
+          .popUntil((route) => route.isFirst);
     }
   }
 
@@ -590,7 +670,8 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
       episodeId: _episodeId,
     );
     if (error != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error)));
     }
   }
 
@@ -608,7 +689,8 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
       if (isFinished) {
         // Un-finish — keep current position
         await api.updateEpisodeProgress(
-          _itemId, _episodeId,
+          _itemId,
+          _episodeId,
           currentTime: currentTime,
           duration: _duration,
           isFinished: false,
@@ -619,13 +701,15 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
             content: const Text('Marked as not finished'),
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 2),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ));
         }
       } else {
         // Mark finished — update server then local state for instant UI
         await api.updateEpisodeProgress(
-          _itemId, _episodeId,
+          _itemId,
+          _episodeId,
           currentTime: _duration,
           duration: _duration,
           isFinished: true,
@@ -636,14 +720,15 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
             content: const Text('Marked as finished — nice!'),
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 2),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ));
         }
       }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Failed to update — check your connection')));
+            content: Text('Failed to update — check your connection')));
       }
     }
   }
@@ -670,11 +755,16 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
     if (_publishedAt > 0) {
       final date = DateTime.fromMillisecondsSinceEpoch(_publishedAt);
       final diff = DateTime.now().difference(date);
-      if (diff.inDays == 0) dateLabel = 'Today';
-      else if (diff.inDays == 1) dateLabel = 'Yesterday';
-      else if (diff.inDays < 7) dateLabel = '${diff.inDays}d ago';
-      else if (diff.inDays < 30) dateLabel = '${(diff.inDays / 7).floor()}w ago';
-      else dateLabel = '${date.month}/${date.day}/${date.year}';
+      if (diff.inDays == 0)
+        dateLabel = 'Today';
+      else if (diff.inDays == 1)
+        dateLabel = 'Yesterday';
+      else if (diff.inDays < 7)
+        dateLabel = '${diff.inDays}d ago';
+      else if (diff.inDays < 30)
+        dateLabel = '${(diff.inDays / 7).floor()}w ago';
+      else
+        dateLabel = '${date.month}/${date.day}/${date.year}';
     }
 
     String durationLabel = '';
@@ -696,19 +786,25 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
           Positioned.fill(
             child: RepaintBoundary(
               child: CachedNetworkImage(
-                imageUrl: coverUrl, fit: BoxFit.cover,
+                imageUrl: coverUrl,
+                fit: BoxFit.cover,
                 httpHeaders: lib.mediaHeaders,
                 imageBuilder: (_, p) => ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50, tileMode: TileMode.decal),
-                  child: Image(image: p, fit: BoxFit.cover)),
+                    imageFilter: ImageFilter.blur(
+                        sigmaX: 50, sigmaY: 50, tileMode: TileMode.decal),
+                    child: Image(image: p, fit: BoxFit.cover)),
                 placeholder: (_, __) => const SizedBox(),
                 errorWidget: (_, __, ___) => const SizedBox(),
               ),
             ),
           ),
         // Gradient overlay
-        Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
-          begin: Alignment.topCenter, end: Alignment.bottomCenter,
+        Positioned.fill(
+            child: DecoratedBox(
+                decoration: BoxDecoration(
+                    gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
           colors: [
             Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.6),
             Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85),
@@ -718,59 +814,81 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
         // Content
         ListView(
           controller: widget.scrollController,
-          padding: EdgeInsets.fromLTRB(20, 8, 20, 32 + MediaQuery.of(context).viewPadding.bottom),
+          padding: EdgeInsets.fromLTRB(
+              20, 8, 20, 32 + MediaQuery.of(context).viewPadding.bottom),
           children: [
             // Drag handle
-            Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+            Center(
+                child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                        color: cs.onSurface.withValues(alpha: 0.24),
+                        borderRadius: BorderRadius.circular(2)))),
 
             // Episode title (centered)
-            Text(_episodeTitle, textAlign: TextAlign.center,
-              style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
+            Text(_episodeTitle,
+                textAlign: TextAlign.center,
+                style: tt.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w700, color: cs.onSurface)),
             const SizedBox(height: 4),
 
             // Show title
             if (_showTitle.isNotEmpty)
-              Text(_showTitle, textAlign: TextAlign.center,
-                style: tt.bodyMedium?.copyWith(color: cs.onSurface.withValues(alpha: 0.6))),
+              Text(_showTitle,
+                  textAlign: TextAlign.center,
+                  style: tt.bodyMedium
+                      ?.copyWith(color: cs.onSurface.withValues(alpha: 0.6))),
 
             const SizedBox(height: 12),
 
             // Progress bar
             if (progress > 0) ...[
-              ClipRRect(borderRadius: BorderRadius.circular(3),
-                child: LinearProgressIndicator(
-                  value: progress.clamp(0.0, 1.0), minHeight: 4,
-                  backgroundColor: cs.onSurface.withValues(alpha: 0.1),
-                  valueColor: AlwaysStoppedAnimation(
-                    isFinished ? cs.primary.withValues(alpha: 0.4) : cs.primary),
-                )),
+              ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(
+                    value: progress.clamp(0.0, 1.0),
+                    minHeight: 4,
+                    backgroundColor: cs.onSurface.withValues(alpha: 0.1),
+                    valueColor: AlwaysStoppedAnimation(isFinished
+                        ? cs.primary.withValues(alpha: 0.4)
+                        : cs.primary),
+                  )),
               const SizedBox(height: 4),
-              Text('${(progress * 100).toStringAsFixed(1)}% complete', textAlign: TextAlign.center,
-                style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
+              Text('${(progress * 100).toStringAsFixed(1)}% complete',
+                  textAlign: TextAlign.center,
+                  style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
               const SizedBox(height: 12),
             ],
 
             // Play button (full width, matching book detail)
-            SizedBox(height: 52, child: FilledButton.icon(
-              onPressed: _play,
-              icon: Icon(
-                progress > 0 && !isFinished ? Icons.play_arrow_rounded : Icons.podcasts_rounded,
-                size: 24,
-              ),
-              label: Text(
-                progress > 0 && !isFinished ? 'Resume' : 'Play Episode',
-                style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onPrimary),
-              ),
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-            )),
+            SizedBox(
+                height: 52,
+                child: FilledButton.icon(
+                  onPressed: _play,
+                  icon: Icon(
+                    progress > 0 && !isFinished
+                        ? Icons.play_arrow_rounded
+                        : Icons.podcasts_rounded,
+                    size: 24,
+                  ),
+                  label: Text(
+                    progress > 0 && !isFinished ? 'Resume' : 'Play Episode',
+                    style: tt.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600, color: cs.onPrimary),
+                  ),
+                  style: FilledButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                )),
             const SizedBox(height: 12),
 
             // Download + Finished row
             Row(children: [
-              Expanded(child: ListenableBuilder(
+              Expanded(
+                  child: ListenableBuilder(
                 listenable: DownloadService(),
                 builder: (context, _) {
                   final dl = DownloadService();
@@ -784,7 +902,10 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
                   if (downloaded) {
                     icon = Icons.download_done_rounded;
                     label = 'Downloaded';
-                    color = (Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent : Colors.green.shade700).withValues(alpha: 0.7);
+                    color = (Theme.of(context).brightness == Brightness.dark
+                            ? Colors.greenAccent
+                            : Colors.green.shade700)
+                        .withValues(alpha: 0.7);
                   } else if (downloading) {
                     icon = Icons.downloading_rounded;
                     label = '${(dlProgress * 100).toStringAsFixed(0)}%';
@@ -801,9 +922,21 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
                       height: 36,
                       clipBehavior: Clip.antiAlias,
                       decoration: BoxDecoration(
-                        color: downloaded ? (Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent : Colors.green.shade700).withValues(alpha: 0.06) : cs.onSurface.withValues(alpha: 0.06),
+                        color: downloaded
+                            ? (Theme.of(context).brightness == Brightness.dark
+                                    ? Colors.greenAccent
+                                    : Colors.green.shade700)
+                                .withValues(alpha: 0.06)
+                            : cs.onSurface.withValues(alpha: 0.06),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: downloaded ? (Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent : Colors.green.shade700).withValues(alpha: 0.15) : cs.onSurface.withValues(alpha: 0.08)),
+                        border: Border.all(
+                            color: downloaded
+                                ? (Theme.of(context).brightness ==
+                                            Brightness.dark
+                                        ? Colors.greenAccent
+                                        : Colors.green.shade700)
+                                    .withValues(alpha: 0.15)
+                                : cs.onSurface.withValues(alpha: 0.08)),
                       ),
                       child: Stack(children: [
                         if (downloading)
@@ -816,41 +949,61 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
                               ),
                             ),
                           ),
-                        Center(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(icon, size: 16, color: color),
-                          const SizedBox(width: 6),
-                          Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500)),
-                        ])),
+                        Center(
+                            child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                              Icon(icon, size: 16, color: color),
+                              const SizedBox(width: 6),
+                              Text(label,
+                                  style: TextStyle(
+                                      color: color,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500)),
+                            ])),
                       ]),
                     ),
                   );
                 },
               )),
               const SizedBox(width: 10),
-              Expanded(child: GestureDetector(
+              Expanded(
+                  child: GestureDetector(
                 onTap: _toggleFinished,
                 child: Container(
                   height: 36,
                   decoration: BoxDecoration(
-                    color: isFinished ? Colors.green.withValues(alpha: 0.06) : cs.onSurface.withValues(alpha: 0.06),
+                    color: isFinished
+                        ? Colors.green.withValues(alpha: 0.06)
+                        : cs.onSurface.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: isFinished ? Colors.green.withValues(alpha: 0.15) : cs.onSurface.withValues(alpha: 0.08)),
+                    border: Border.all(
+                        color: isFinished
+                            ? Colors.green.withValues(alpha: 0.15)
+                            : cs.onSurface.withValues(alpha: 0.08)),
                   ),
-                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(
-                      isFinished ? Icons.check_circle_rounded : Icons.check_circle_outline_rounded,
-                      size: 16,
-                      color: isFinished ? Colors.green : cs.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      isFinished ? 'Mark Unfinished' : 'Mark Finished',
-                      style: TextStyle(
-                        color: isFinished ? Colors.green : cs.onSurfaceVariant,
-                        fontSize: 12, fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ]),
+                  child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          isFinished
+                              ? Icons.check_circle_rounded
+                              : Icons.check_circle_outline_rounded,
+                          size: 16,
+                          color:
+                              isFinished ? Colors.green : cs.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          isFinished ? 'Mark Unfinished' : 'Mark Finished',
+                          style: TextStyle(
+                            color:
+                                isFinished ? Colors.green : cs.onSurfaceVariant,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ]),
                 ),
               )),
             ]),
@@ -858,41 +1011,46 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
             // Reset Progress
             if (progress > 0 || isFinished) ...[
               const SizedBox(height: 8),
-              _sheetBtn(icon: Icons.restart_alt_rounded,
-                label: 'Reset Progress', onTap: () => _resetProgress(context)),
+              _sheetBtn(
+                  icon: Icons.restart_alt_rounded,
+                  label: 'Reset Progress',
+                  onTap: () => _resetProgress(context)),
             ],
             // Add / Remove from Absorbing
             const SizedBox(height: 8),
             _sheetBtn(
               icon: lib.isOnAbsorbingList(dlKey)
-                ? Icons.remove_circle_outline_rounded
-                : Icons.add_circle_outline_rounded,
+                  ? Icons.remove_circle_outline_rounded
+                  : Icons.add_circle_outline_rounded,
               label: lib.isOnAbsorbingList(dlKey)
-                ? 'Remove from Absorbing'
-                : 'Add to Absorbing',
+                  ? 'Remove from Absorbing'
+                  : 'Add to Absorbing',
               onTap: () async {
                 if (lib.isOnAbsorbingList(dlKey)) {
                   await lib.removeFromAbsorbing(dlKey);
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      duration: const Duration(seconds: 3),
-                      content: const Text('Removed from Absorbing'),
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+                        duration: const Duration(seconds: 3),
+                        content: const Text('Removed from Absorbing'),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12))));
                   }
                 } else {
                   await lib.addToAbsorbingQueue(dlKey);
                   // Populate cache so the absorbing card can render this episode
                   final cached = Map<String, dynamic>.from(widget.podcastItem);
-                  cached['recentEpisode'] = Map<String, dynamic>.from(widget.episode);
+                  cached['recentEpisode'] =
+                      Map<String, dynamic>.from(widget.episode);
                   cached['_absorbingKey'] = dlKey;
                   lib.absorbingItemCache[dlKey] = cached;
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      duration: const Duration(seconds: 3),
-                      content: const Text('Added to Absorbing'),
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+                        duration: const Duration(seconds: 3),
+                        content: const Text('Added to Absorbing'),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12))));
                   }
                 }
               },
@@ -901,10 +1059,14 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
             // Metadata chips
             const SizedBox(height: 16),
             Wrap(spacing: 8, runSpacing: 8, children: [
-              if (dateLabel.isNotEmpty) _chip(Icons.calendar_today_rounded, dateLabel),
-              if (durationLabel.isNotEmpty) _chip(Icons.schedule_rounded, durationLabel),
-              if (_episodeNumber != null) _chip(Icons.tag_rounded, 'Episode $_episodeNumber'),
-              if (_season != null) _chip(Icons.layers_rounded, 'Season $_season'),
+              if (dateLabel.isNotEmpty)
+                _chip(Icons.calendar_today_rounded, dateLabel),
+              if (durationLabel.isNotEmpty)
+                _chip(Icons.schedule_rounded, durationLabel),
+              if (_episodeNumber != null)
+                _chip(Icons.tag_rounded, 'Episode $_episodeNumber'),
+              if (_season != null)
+                _chip(Icons.layers_rounded, 'Season $_season'),
             ]),
 
             // All Episodes button (series-style)
@@ -915,48 +1077,91 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
                 EpisodeListSheet.show(context, widget.podcastItem);
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: cs.primary.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: cs.primary.withValues(alpha: 0.15)),
                 ),
                 child: Row(children: [
-                  Icon(Icons.podcasts_rounded, size: 16, color: cs.primary.withValues(alpha: 0.7)),
+                  Icon(Icons.podcasts_rounded,
+                      size: 16, color: cs.primary.withValues(alpha: 0.7)),
                   const SizedBox(width: 8),
-                  Expanded(child: Text('All Episodes',
-                    style: tt.bodySmall?.copyWith(color: cs.primary.withValues(alpha: 0.9), fontWeight: FontWeight.w500))),
-                  Icon(Icons.chevron_right_rounded, size: 18, color: cs.primary.withValues(alpha: 0.5)),
+                  Expanded(
+                      child: Text('All Episodes',
+                          style: tt.bodySmall?.copyWith(
+                              color: cs.primary.withValues(alpha: 0.9),
+                              fontWeight: FontWeight.w500))),
+                  Icon(Icons.chevron_right_rounded,
+                      size: 18, color: cs.primary.withValues(alpha: 0.5)),
                 ]),
               ),
             ),
 
             // Chapters
-            if (_chapters.isNotEmpty) ...[const SizedBox(height: 16),
-              GestureDetector(onTap: () => setState(() => _chaptersExpanded = !_chaptersExpanded),
-                child: Row(children: [
-                  Text('Chapters (${_chapters.length})', style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
-                  const Spacer(), Icon(_chaptersExpanded ? Icons.expand_less : Icons.expand_more, color: cs.onSurface.withValues(alpha: 0.3), size: 20)])),
-              if (_chaptersExpanded) ...[const SizedBox(height: 8),
+            if (_chapters.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              GestureDetector(
+                  onTap: () =>
+                      setState(() => _chaptersExpanded = !_chaptersExpanded),
+                  child: Row(children: [
+                    Text('Chapters (${_chapters.length})',
+                        style: tt.titleSmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                            fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    Icon(
+                        _chaptersExpanded
+                            ? Icons.expand_less
+                            : Icons.expand_more,
+                        color: cs.onSurface.withValues(alpha: 0.3),
+                        size: 20)
+                  ])),
+              if (_chaptersExpanded) ...[
+                const SizedBox(height: 8),
                 ..._chapters.asMap().entries.map((e) {
                   final ch = e.value as Map<String, dynamic>;
-                  return Padding(padding: const EdgeInsets.symmetric(vertical: 3),
-                    child: Row(children: [
-                      SizedBox(width: 28, child: Text('${e.key + 1}', style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.3)))),
-                      Expanded(child: Text(ch['title'] as String? ?? 'Chapter ${e.key + 1}', maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.6)))),
-                      Text(_fmtDur(((ch['end'] as num?)?.toDouble() ?? 0) - ((ch['start'] as num?)?.toDouble() ?? 0)), style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.3))),
-                    ]));
-                })]],
+                  return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Row(children: [
+                        SizedBox(
+                            width: 28,
+                            child: Text('${e.key + 1}',
+                                style: tt.labelSmall?.copyWith(
+                                    color:
+                                        cs.onSurface.withValues(alpha: 0.3)))),
+                        Expanded(
+                            child: Text(
+                                ch['title'] as String? ??
+                                    'Chapter ${e.key + 1}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: tt.bodySmall?.copyWith(
+                                    color:
+                                        cs.onSurface.withValues(alpha: 0.6)))),
+                        Text(
+                            _fmtDur(((ch['end'] as num?)?.toDouble() ?? 0) -
+                                ((ch['start'] as num?)?.toDouble() ?? 0)),
+                            style: tt.labelSmall?.copyWith(
+                                color: cs.onSurface.withValues(alpha: 0.3))),
+                      ]));
+                })
+              ]
+            ],
 
             // Description
             if (_rawDescription.isNotEmpty) ...[
               const SizedBox(height: 16),
-              Text('About This Episode', style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+              Text('About This Episode',
+                  style: tt.titleSmall?.copyWith(
+                      color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
               const SizedBox(height: 6),
               HtmlDescription(
                 html: _rawDescription,
                 maxLines: 4,
-                style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.7), height: 1.5),
+                style: tt.bodySmall?.copyWith(
+                    color: cs.onSurface.withValues(alpha: 0.7), height: 1.5),
                 linkColor: cs.primary,
               ),
             ],
@@ -966,18 +1171,33 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
     );
   }
 
-  Widget _sheetBtn({required IconData icon, required String label, required VoidCallback onTap}) {
+  Widget _sheetBtn(
+      {required IconData icon,
+      required String label,
+      required VoidCallback onTap}) {
     final cs = Theme.of(context).colorScheme;
-    return GestureDetector(onTap: onTap, child: Container(height: 44,
-      decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: cs.onSurface.withValues(alpha: 0.1))),
-      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(icon, size: 16, color: cs.onSurfaceVariant), const SizedBox(width: 6),
-        Text(label, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500))])));
+    return GestureDetector(
+        onTap: onTap,
+        child: Container(
+            height: 44,
+            decoration: BoxDecoration(
+                color: cs.onSurface.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: cs.onSurface.withValues(alpha: 0.1))),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(icon, size: 16, color: cs.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Text(label,
+                  style: TextStyle(
+                      color: cs.onSurfaceVariant,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500))
+            ])));
   }
 
   String _fmtDur(double s) {
-    final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor();
+    final h = (s / 3600).floor();
+    final m = ((s % 3600) / 60).floor();
     if (h > 0) return '${h}h ${m}m';
     return '${m}m';
   }
@@ -987,12 +1207,17 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Reset Progress?'),
-        content: const Text('This will erase all progress for this episode and set it back to the beginning. This can\'t be undone.'),
+        content: const Text(
+            'This will erase all progress for this episode and set it back to the beginning. This can\'t be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
-            child: const Text('Reset')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(ctx).colorScheme.error),
+              child: const Text('Reset')),
         ],
       ),
     );
@@ -1002,7 +1227,8 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
     if (api == null) return;
     final player = AudioPlayerService();
 
-    if (player.currentItemId == _itemId && player.currentEpisodeId == _episodeId) {
+    if (player.currentItemId == _itemId &&
+        player.currentEpisodeId == _episodeId) {
       await player.stopWithoutSaving();
     }
 
@@ -1011,7 +1237,8 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
     final ok = await api.deleteEpisodeProgress(_itemId, _episodeId);
     // Mark as unfinished with zero progress on the server
     await api.updateEpisodeProgress(
-      _itemId, _episodeId,
+      _itemId,
+      _episodeId,
       currentTime: 0,
       duration: _duration,
       isFinished: false,
@@ -1020,24 +1247,34 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
     if (context.mounted) {
       context.read<LibraryProvider>().resetProgressFor(compoundKey);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        duration: const Duration(seconds: 3),
-        content: Text(ok ? 'Progress reset — fresh start!' : 'Reset may not have synced — check your server'),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+          duration: const Duration(seconds: 3),
+          content: Text(ok
+              ? 'Progress reset — fresh start!'
+              : 'Reset may not have synced — check your server'),
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
     }
   }
 
   Widget _chip(IconData icon, String text) {
     final cs = Theme.of(context).colorScheme;
     return Container(
-      constraints: const BoxConstraints(maxWidth: 200),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: cs.onSurface.withValues(alpha: 0.08))),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 12, color: cs.onSurfaceVariant), const SizedBox(width: 4),
-        Flexible(child: Text(text, overflow: TextOverflow.ellipsis, maxLines: 1,
-          style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11)))]));
+        constraints: const BoxConstraints(maxWidth: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+            color: cs.onSurface.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: cs.onSurface.withValues(alpha: 0.08))),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 12, color: cs.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Flexible(
+              child: Text(text,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11)))
+        ]));
   }
 }
 
@@ -1133,10 +1370,12 @@ class _EpisodeRowState extends State<_EpisodeRow> {
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: isFinished
-                      ? Icon(Icons.check_circle_rounded, size: 18, color: cs.primary.withValues(alpha: 0.6))
+                      ? Icon(Icons.check_circle_rounded,
+                          size: 18, color: cs.primary.withValues(alpha: 0.6))
                       : progress > 0
                           ? SizedBox(
-                              width: 18, height: 18,
+                              width: 18,
+                              height: 18,
                               child: CircularProgressIndicator(
                                 value: progress,
                                 strokeWidth: 2.5,
@@ -1144,8 +1383,10 @@ class _EpisodeRowState extends State<_EpisodeRow> {
                                 color: cs.primary,
                               ),
                             )
-                          : Icon(Icons.circle_outlined, size: 18,
-                              color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
+                          : Icon(Icons.circle_outlined,
+                              size: 18,
+                              color:
+                                  cs.onSurfaceVariant.withValues(alpha: 0.3)),
                 ),
                 const SizedBox(width: 12),
 
@@ -1154,7 +1395,8 @@ class _EpisodeRowState extends State<_EpisodeRow> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title,
+                      Text(
+                        title,
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
@@ -1162,7 +1404,8 @@ class _EpisodeRowState extends State<_EpisodeRow> {
                               ? cs.onSurfaceVariant.withValues(alpha: 0.5)
                               : cs.onSurface,
                         ),
-                        maxLines: 2, overflow: TextOverflow.ellipsis,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       if (episodeNumber != null || season != null) ...[
                         const SizedBox(height: 2),
@@ -1171,36 +1414,58 @@ class _EpisodeRowState extends State<_EpisodeRow> {
                             if (season != null) 'S$season',
                             if (episodeNumber != null) 'E$episodeNumber',
                           ].join(' '),
-                          style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                          style: TextStyle(
+                              fontSize: 11,
+                              color:
+                                  cs.onSurfaceVariant.withValues(alpha: 0.5)),
                         ),
                       ],
                       const SizedBox(height: 4),
                       Row(
                         children: [
                           if (dateLabel.isNotEmpty)
-                            Text(dateLabel,
-                              style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+                            Text(
+                              dateLabel,
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: cs.onSurfaceVariant
+                                      .withValues(alpha: 0.6)),
                             ),
                           if (dateLabel.isNotEmpty && durationLabel.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 6),
-                              child: Text('·',
-                                style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 6),
+                              child: Text(
+                                '·',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: cs.onSurfaceVariant
+                                        .withValues(alpha: 0.4)),
                               ),
                             ),
                           if (durationLabel.isNotEmpty)
-                            Text(durationLabel,
-                              style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+                            Text(
+                              durationLabel,
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: cs.onSurfaceVariant
+                                      .withValues(alpha: 0.6)),
                             ),
                           ListenableBuilder(
                             listenable: DownloadService(),
                             builder: (_, __) {
-                              final downloaded = DownloadService().isDownloaded(dlKey);
+                              final downloaded =
+                                  DownloadService().isDownloaded(dlKey);
                               if (!downloaded) return const SizedBox.shrink();
-                              return Row(mainAxisSize: MainAxisSize.min, children: [
-                                const SizedBox(width: 6),
-                                Icon(Icons.download_done_rounded, size: 12, color: cs.primary.withValues(alpha: 0.6)),
-                              ]);
+                              return Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const SizedBox(width: 6),
+                                    Icon(Icons.download_done_rounded,
+                                        size: 12,
+                                        color:
+                                            cs.primary.withValues(alpha: 0.6)),
+                                  ]);
                             },
                           ),
                         ],
@@ -1225,29 +1490,48 @@ class _EpisodeRowState extends State<_EpisodeRow> {
                         if (downloaded) {
                           return Padding(
                             padding: const EdgeInsets.all(8),
-                            child: Icon(Icons.download_done_rounded, size: 20,
-                              color: (Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent : Colors.green.shade700).withValues(alpha: 0.7)),
+                            child: Icon(Icons.download_done_rounded,
+                                size: 20,
+                                color: (Theme.of(context).brightness ==
+                                            Brightness.dark
+                                        ? Colors.greenAccent
+                                        : Colors.green.shade700)
+                                    .withValues(alpha: 0.7)),
                           );
                         }
                         if (downloading) {
                           return Padding(
                             padding: const EdgeInsets.all(8),
-                            child: SizedBox(width: 20, height: 20,
-                              child: Stack(alignment: Alignment.center, children: [
-                                CircularProgressIndicator(
-                                  value: dlProgress > 0 ? dlProgress : null,
-                                  strokeWidth: 2, color: cs.primary),
-                                Text((dlProgress * 100).toStringAsFixed(0),
-                                  style: TextStyle(fontSize: 7, color: cs.primary, fontWeight: FontWeight.w600)),
-                              ])),
+                            child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      CircularProgressIndicator(
+                                          value: dlProgress > 0
+                                              ? dlProgress
+                                              : null,
+                                          strokeWidth: 2,
+                                          color: cs.primary),
+                                      Text(
+                                          (dlProgress * 100).toStringAsFixed(0),
+                                          style: TextStyle(
+                                              fontSize: 7,
+                                              color: cs.primary,
+                                              fontWeight: FontWeight.w600)),
+                                    ])),
                           );
                         }
                         return IconButton(
                           onPressed: widget.onDownload,
-                          icon: Icon(Icons.download_rounded, size: 20,
-                            color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                          icon: Icon(Icons.download_rounded,
+                              size: 20,
+                              color:
+                                  cs.onSurfaceVariant.withValues(alpha: 0.5)),
                           visualDensity: VisualDensity.compact,
-                          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                          constraints:
+                              const BoxConstraints(minWidth: 36, minHeight: 36),
                         );
                       },
                     ),
@@ -1263,13 +1547,13 @@ class _EpisodeRowState extends State<_EpisodeRow> {
                         color: cs.primary,
                       ),
                       visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                      constraints:
+                          const BoxConstraints(minWidth: 40, minHeight: 40),
                     ),
                   ],
                 ),
               ],
             ),
-
           ],
         ),
       ),
