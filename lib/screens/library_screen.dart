@@ -12,12 +12,29 @@ import '../widgets/absorb_page_header.dart';
 import '../widgets/library_grid_tiles.dart';
 import '../widgets/library_search_results.dart';
 import '../widgets/library_sort_filter_sheet.dart';
+import '../widgets/status_message_view.dart';
 
 // ─── Sort modes ──────────────────────────────────────────────
-enum LibrarySort { recentlyAdded, alphabetical, authorName, publishedYear, duration, random }
+enum LibrarySort {
+  recentlyAdded,
+  alphabetical,
+  authorName,
+  publishedYear,
+  duration,
+  random
+}
 
 // ─── Filter modes ────────────────────────────────────────────
-enum LibraryFilter { none, inProgress, finished, notStarted, downloaded, inASeries, hasEbook, genre }
+enum LibraryFilter {
+  none,
+  inProgress,
+  finished,
+  notStarted,
+  downloaded,
+  inASeries,
+  hasEbook,
+  genre
+}
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -41,6 +58,7 @@ class LibraryScreenState extends State<LibraryScreen> {
     _onSearchChanged('');
     _focusNode.unfocus();
   }
+
   List<dynamic> _searchBookResults = [];
   List<dynamic> _searchSeriesResults = [];
   List<dynamic> _searchAuthorResults = [];
@@ -86,7 +104,8 @@ class LibraryScreenState extends State<LibraryScreen> {
 
   void _onLibraryProviderChanged() {
     final lib = context.read<LibraryProvider>();
-    if (lib.selectedLibraryId != _lastLibraryId && lib.selectedLibraryId != null) {
+    if (lib.selectedLibraryId != _lastLibraryId &&
+        lib.selectedLibraryId != null) {
       _lastLibraryId = lib.selectedLibraryId;
       _loadGeneration++;
       setState(() {
@@ -198,7 +217,11 @@ class LibraryScreenState extends State<LibraryScreen> {
     if (filterData != null && mounted) {
       final genres = filterData['genres'] as List<dynamic>? ?? [];
       setState(() {
-        _availableGenres = genres.map((g) => g is Map ? (g['name'] as String? ?? '') : g.toString()).where((g) => g.isNotEmpty).toList()..sort();
+        _availableGenres = genres
+            .map((g) => g is Map ? (g['name'] as String? ?? '') : g.toString())
+            .where((g) => g.isNotEmpty)
+            .toList()
+          ..sort();
       });
     }
   }
@@ -245,17 +268,29 @@ class LibraryScreenState extends State<LibraryScreen> {
     int desc;
     switch (_sort) {
       case LibrarySort.recentlyAdded:
-        sort = 'addedAt'; desc = _sortAsc ? 0 : 1; break;
+        sort = 'addedAt';
+        desc = _sortAsc ? 0 : 1;
+        break;
       case LibrarySort.alphabetical:
-        sort = 'media.metadata.title'; desc = _sortAsc ? 0 : 1; break;
+        sort = 'media.metadata.title';
+        desc = _sortAsc ? 0 : 1;
+        break;
       case LibrarySort.authorName:
-        sort = 'media.metadata.authorNameLF'; desc = _sortAsc ? 0 : 1; break;
+        sort = 'media.metadata.authorNameLF';
+        desc = _sortAsc ? 0 : 1;
+        break;
       case LibrarySort.publishedYear:
-        sort = 'media.metadata.publishedYear'; desc = _sortAsc ? 0 : 1; break;
+        sort = 'media.metadata.publishedYear';
+        desc = _sortAsc ? 0 : 1;
+        break;
       case LibrarySort.duration:
-        sort = 'media.duration'; desc = _sortAsc ? 0 : 1; break;
+        sort = 'media.duration';
+        desc = _sortAsc ? 0 : 1;
+        break;
       case LibrarySort.random:
-        sort = 'addedAt'; desc = 1; break;
+        sort = 'addedAt';
+        desc = 1;
+        break;
     }
 
     String? filter;
@@ -274,7 +309,8 @@ class LibraryScreenState extends State<LibraryScreen> {
 
     final useClientFilter = _filter == LibraryFilter.downloaded;
     final seriesOnlyFilter = _filter == LibraryFilter.inASeries;
-    final fetchAll = _sort == LibrarySort.random || useClientFilter || seriesOnlyFilter;
+    final fetchAll =
+        _sort == LibrarySort.random || useClientFilter || seriesOnlyFilter;
     final limit = fetchAll ? 1000 : _pageSize;
 
     final result = await api.getLibraryItems(
@@ -284,7 +320,9 @@ class LibraryScreenState extends State<LibraryScreen> {
       sort: sort,
       desc: desc,
       filter: filter,
-      collapseSeries: (_collapseSeries || seriesOnlyFilter) && !useClientFilter && !lib.isPodcastLibrary,
+      collapseSeries: (_collapseSeries || seriesOnlyFilter) &&
+          !useClientFilter &&
+          !lib.isPodcastLibrary,
     );
 
     if (result != null && mounted && gen == _loadGeneration) {
@@ -346,7 +384,9 @@ class LibraryScreenState extends State<LibraryScreen> {
     setState(() {
       _sort = newSort;
       // Smart defaults: A-Z and Length start ascending, others start descending
-      _sortAsc = newSort == LibrarySort.alphabetical || newSort == LibrarySort.authorName || newSort == LibrarySort.duration;
+      _sortAsc = newSort == LibrarySort.alphabetical ||
+          newSort == LibrarySort.authorName ||
+          newSort == LibrarySort.duration;
       _items.clear();
       _page = 0;
       _hasMore = true;
@@ -363,7 +403,9 @@ class LibraryScreenState extends State<LibraryScreen> {
 
   // ── Change filter and reload ──
   void _changeFilter(LibraryFilter newFilter, {String? genre}) {
-    final effective = (newFilter == _filter && genre == _genreFilter) ? LibraryFilter.none : newFilter;
+    final effective = (newFilter == _filter && genre == _genreFilter)
+        ? LibraryFilter.none
+        : newFilter;
     if (effective == _filter && genre == _genreFilter) return;
     _loadGeneration++;
     setState(() {
@@ -412,7 +454,8 @@ class LibraryScreenState extends State<LibraryScreen> {
         _searchBookResults = (result['book'] as List<dynamic>?) ?? [];
         if (_hideEbookOnly) {
           _searchBookResults = _searchBookResults.where((r) {
-            final item = r['libraryItem'] as Map<String, dynamic>? ?? r as Map<String, dynamic>;
+            final item = r['libraryItem'] as Map<String, dynamic>? ??
+                r as Map<String, dynamic>;
             return !PlayerSettings.isEbookOnly(item);
           }).toList();
         }
@@ -429,7 +472,8 @@ class LibraryScreenState extends State<LibraryScreen> {
     }
   }
 
-  void _showLibraryPicker(BuildContext context, ColorScheme cs, TextTheme tt, List<dynamic> allLibraries, LibraryProvider lib) {
+  void _showLibraryPicker(BuildContext context, ColorScheme cs, TextTheme tt,
+      List<dynamic> allLibraries, LibraryProvider lib) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -438,7 +482,8 @@ class LibraryScreenState extends State<LibraryScreen> {
       builder: (ctx) {
         final bottomPad = MediaQuery.of(ctx).viewPadding.bottom;
         return Container(
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.6),
+          constraints:
+              BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.6),
           decoration: BoxDecoration(
             color: cs.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -447,12 +492,19 @@ class LibraryScreenState extends State<LibraryScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 12),
-              Center(child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: cs.onSurfaceVariant.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2)))),
+              Center(
+                  child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: cs.onSurfaceVariant.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 16),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Text('Select Library', style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
+                child: Text('Select Library',
+                    style:
+                        tt.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
               ),
               const SizedBox(height: 12),
               Flexible(
@@ -467,8 +519,11 @@ class LibraryScreenState extends State<LibraryScreen> {
                     final mediaType = library['mediaType'] as String? ?? 'book';
                     final isSelected = id == lib.selectedLibraryId;
                     return ListTile(
-                      leading: Icon(mediaType == 'podcast' ? Icons.podcasts_rounded : Icons.auto_stories_rounded,
-                        color: isSelected ? cs.primary : cs.onSurfaceVariant),
+                      leading: Icon(
+                          mediaType == 'podcast'
+                              ? Icons.podcasts_rounded
+                              : Icons.auto_stories_rounded,
+                          color: isSelected ? cs.primary : cs.onSurfaceVariant),
                       title: Text(name),
                       trailing: isSelected
                           ? Icon(Icons.check_circle_rounded, color: cs.primary)
@@ -490,26 +545,27 @@ class LibraryScreenState extends State<LibraryScreen> {
   }
 
   String get _sortLabel => switch (_sort) {
-    LibrarySort.recentlyAdded => 'Date Added',
-    LibrarySort.alphabetical => 'Title',
-    LibrarySort.authorName => 'Author',
-    LibrarySort.publishedYear => 'Year',
-    LibrarySort.duration => 'Duration',
-    LibrarySort.random => 'Random',
-  };
+        LibrarySort.recentlyAdded => 'Date Added',
+        LibrarySort.alphabetical => 'Title',
+        LibrarySort.authorName => 'Author',
+        LibrarySort.publishedYear => 'Year',
+        LibrarySort.duration => 'Duration',
+        LibrarySort.random => 'Random',
+      };
 
   String get _filterLabel => switch (_filter) {
-    LibraryFilter.inProgress => 'In Progress',
-    LibraryFilter.finished => 'Finished',
-    LibraryFilter.notStarted => 'Not Started',
-    LibraryFilter.downloaded => 'Downloaded',
-    LibraryFilter.inASeries => 'Series',
-    LibraryFilter.hasEbook => 'Has eBook',
-    LibraryFilter.genre => _genreFilter ?? 'Genre',
-    LibraryFilter.none => '',
-  };
+        LibraryFilter.inProgress => 'In Progress',
+        LibraryFilter.finished => 'Finished',
+        LibraryFilter.notStarted => 'Not Started',
+        LibraryFilter.downloaded => 'Downloaded',
+        LibraryFilter.inASeries => 'Series',
+        LibraryFilter.hasEbook => 'Has eBook',
+        LibraryFilter.genre => _genreFilter ?? 'Genre',
+        LibraryFilter.none => '',
+      };
 
-  void _showSortFilterSheet(BuildContext context, ColorScheme cs, TextTheme tt, {int initialTab = 0}) {
+  void _showSortFilterSheet(BuildContext context, ColorScheme cs, TextTheme tt,
+      {int initialTab = 0}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -522,16 +578,32 @@ class LibraryScreenState extends State<LibraryScreen> {
         genreFilter: _genreFilter,
         availableGenres: _availableGenres,
         initialTab: initialTab,
-        cs: cs, tt: tt,
-        onSortChanged: (sort) { Navigator.pop(ctx); _changeSort(sort); },
+        cs: cs,
+        tt: tt,
+        onSortChanged: (sort) {
+          Navigator.pop(ctx);
+          _changeSort(sort);
+        },
         onSortDirectionToggled: () {
-          setState(() { _sortAsc = !_sortAsc; _items.clear(); _page = 0; _hasMore = true; _isLoadingPage = false; });
+          setState(() {
+            _sortAsc = !_sortAsc;
+            _items.clear();
+            _page = 0;
+            _hasMore = true;
+            _isLoadingPage = false;
+          });
           if (_scrollController.hasClients) _scrollController.jumpTo(0);
           _loadPage();
           Navigator.pop(ctx);
         },
-        onFilterChanged: (filter, {String? genre}) { Navigator.pop(ctx); _changeFilter(filter, genre: genre); },
-        onClearFilter: () { Navigator.pop(ctx); _changeFilter(LibraryFilter.none); },
+        onFilterChanged: (filter, {String? genre}) {
+          Navigator.pop(ctx);
+          _changeFilter(filter, genre: genre);
+        },
+        onClearFilter: () {
+          Navigator.pop(ctx);
+          _changeFilter(LibraryFilter.none);
+        },
         collapseSeries: _collapseSeries,
         onCollapseSeriesChanged: (value) {
           Navigator.pop(ctx);
@@ -552,67 +624,98 @@ class LibraryScreenState extends State<LibraryScreen> {
     final libraryName = lib.selectedLibrary?['name'] as String? ?? 'Library';
 
     return Scaffold(
-      floatingActionButton: _isInSearchMode ? null : ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: GestureDetector(
-            onTap: () => _showSortFilterSheet(context, cs, tt),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: cs.surface.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: cs.primary.withValues(alpha: 0.25)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(_filter != LibraryFilter.none ? Icons.filter_list_rounded : Icons.tune_rounded, size: 16, color: cs.primary),
-                  const SizedBox(width: 6),
-                  Text(
-                    _filter != LibraryFilter.none ? 'Sort & Filter ●' : 'Sort & Filter',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: cs.primary),
+      floatingActionButton: _isInSearchMode
+          ? null
+          : ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: GestureDetector(
+                  onTap: () => _showSortFilterSheet(context, cs, tt),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: cs.surface.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(24),
+                      border:
+                          Border.all(color: cs.primary.withValues(alpha: 0.25)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                            _filter != LibraryFilter.none
+                                ? Icons.filter_list_rounded
+                                : Icons.tune_rounded,
+                            size: 16,
+                            color: cs.primary),
+                        const SizedBox(width: 6),
+                        Text(
+                          _filter != LibraryFilter.none
+                              ? 'Sort & Filter ●'
+                              : 'Sort & Filter',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: cs.primary),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
+                ),
               ),
             ),
-          ),
-        ),
-      ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       body: SafeArea(
         child: Column(
           children: [
             AbsorbPageHeader(
               title: 'Library',
-              actions: hasMultipleLibraries ? [
-                GestureDetector(
-                  onTap: () => _showLibraryPicker(context, cs, tt, allLibraries, lib),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: cs.onSurface.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(lib.isPodcastLibrary ? Icons.podcasts_rounded : Icons.auto_stories_rounded, size: 14, color: cs.onSurfaceVariant),
-                        const SizedBox(width: 6),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 140),
-                          child: Text(libraryName, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.onSurfaceVariant),
-                            overflow: TextOverflow.ellipsis, maxLines: 1),
+              actions: hasMultipleLibraries
+                  ? [
+                      GestureDetector(
+                        onTap: () => _showLibraryPicker(
+                            context, cs, tt, allLibraries, lib),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: cs.onSurface.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: cs.onSurface.withValues(alpha: 0.08)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                  lib.isPodcastLibrary
+                                      ? Icons.podcasts_rounded
+                                      : Icons.auto_stories_rounded,
+                                  size: 14,
+                                  color: cs.onSurfaceVariant),
+                              const SizedBox(width: 6),
+                              ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 140),
+                                child: Text(libraryName,
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: cs.onSurfaceVariant),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(Icons.unfold_more_rounded,
+                                  size: 14, color: cs.onSurfaceVariant),
+                            ],
+                          ),
                         ),
-                        const SizedBox(width: 4),
-                        Icon(Icons.unfold_more_rounded, size: 14, color: cs.onSurfaceVariant),
-                      ],
-                    ),
-                  ),
-                ),
-              ] : null,
+                      ),
+                    ]
+                  : null,
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -636,19 +739,21 @@ class LibraryScreenState extends State<LibraryScreen> {
                     ),
                 ],
                 onChanged: _onSearchChanged,
-                padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 8)),
+                padding: const WidgetStatePropertyAll(
+                    EdgeInsets.symmetric(horizontal: 8)),
               ),
             ),
-
             if (!_isInSearchMode)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
                 child: Row(
                   children: [
                     GestureDetector(
-                      onTap: () => _showSortFilterSheet(context, cs, tt, initialTab: 0),
+                      onTap: () =>
+                          _showSortFilterSheet(context, cs, tt, initialTab: 0),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
                           color: cs.primary.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(20),
@@ -656,12 +761,22 @@ class LibraryScreenState extends State<LibraryScreen> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.sort_rounded, size: 14, color: cs.primary),
+                            Icon(Icons.sort_rounded,
+                                size: 14, color: cs.primary),
                             const SizedBox(width: 4),
-                            Text(_sortLabel, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.primary)),
+                            Text(_sortLabel,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: cs.primary)),
                             const SizedBox(width: 2),
                             if (_sort != LibrarySort.random)
-                              Icon(_sortAsc ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, size: 12, color: cs.primary),
+                              Icon(
+                                  _sortAsc
+                                      ? Icons.arrow_upward_rounded
+                                      : Icons.arrow_downward_rounded,
+                                  size: 12,
+                                  color: cs.primary),
                           ],
                         ),
                       ),
@@ -670,9 +785,11 @@ class LibraryScreenState extends State<LibraryScreen> {
                       const SizedBox(width: 8),
                       Flexible(
                         child: GestureDetector(
-                          onTap: () => _showSortFilterSheet(context, cs, tt, initialTab: 1),
+                          onTap: () => _showSortFilterSheet(context, cs, tt,
+                              initialTab: 1),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
                               color: cs.tertiary.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(20),
@@ -680,15 +797,24 @@ class LibraryScreenState extends State<LibraryScreen> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.filter_list_rounded, size: 14, color: cs.tertiary),
+                                Icon(Icons.filter_list_rounded,
+                                    size: 14, color: cs.tertiary),
                                 const SizedBox(width: 4),
                                 Flexible(
-                                  child: Text(_filterLabel, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.tertiary), overflow: TextOverflow.ellipsis, maxLines: 1),
+                                  child: Text(_filterLabel,
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: cs.tertiary),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1),
                                 ),
                                 const SizedBox(width: 4),
                                 GestureDetector(
-                                  onTap: () => _changeFilter(LibraryFilter.none),
-                                  child: Icon(Icons.close_rounded, size: 14, color: cs.tertiary),
+                                  onTap: () =>
+                                      _changeFilter(LibraryFilter.none),
+                                  child: Icon(Icons.close_rounded,
+                                      size: 14, color: cs.tertiary),
                                 ),
                               ],
                             ),
@@ -701,7 +827,8 @@ class LibraryScreenState extends State<LibraryScreen> {
                       GestureDetector(
                         onTap: () => PlayerSettings.setCollapseSeries(false),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
                           decoration: BoxDecoration(
                             color: cs.secondary.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(20),
@@ -709,23 +836,30 @@ class LibraryScreenState extends State<LibraryScreen> {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.auto_stories_rounded, size: 14, color: cs.secondary),
+                              Icon(Icons.auto_stories_rounded,
+                                  size: 14, color: cs.secondary),
                               const SizedBox(width: 4),
-                              Text('Series Collapsed', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.secondary)),
+                              Text('Series Collapsed',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: cs.secondary)),
                               const SizedBox(width: 4),
-                              Icon(Icons.close_rounded, size: 14, color: cs.secondary),
+                              Icon(Icons.close_rounded,
+                                  size: 14, color: cs.secondary),
                             ],
                           ),
                         ),
                       ),
                     ],
                     const Spacer(),
-                    Text('${_items.length}${_totalItems > 0 ? '/$_totalItems' : ''} ${_collapseSeries ? 'items' : 'books'}',
-                      style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
+                    Text(
+                        '${_items.length}${_totalItems > 0 ? '/$_totalItems' : ''} ${_collapseSeries ? 'items' : 'books'}',
+                        style: tt.labelSmall?.copyWith(
+                            color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
                   ],
                 ),
               ),
-
             Expanded(
               child: _isInSearchMode
                   ? _buildSearchResults(cs, tt)
@@ -760,15 +894,33 @@ class LibraryScreenState extends State<LibraryScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_items.isEmpty && !_isLoadingPage) {
-      final filterMsg = switch (_filter) {
-        LibraryFilter.inProgress => 'No books in progress',
-        LibraryFilter.finished => 'No finished books',
-        LibraryFilter.notStarted => 'All books have been started',
-        LibraryFilter.downloaded => 'No downloaded books',
-        LibraryFilter.inASeries => 'No series found',
+      final filterTitle = switch (_filter) {
+        LibraryFilter.inProgress => 'Nothing is in progress',
+        LibraryFilter.finished => 'No finished books yet',
+        LibraryFilter.notStarted => 'Everything here has already been started',
+        LibraryFilter.downloaded => 'No downloaded books yet',
+        LibraryFilter.inASeries => 'No series titles found',
         LibraryFilter.hasEbook => 'No books with eBooks',
-        LibraryFilter.genre => 'No books in "${_genreFilter ?? 'genre'}"',
-        LibraryFilter.none => 'No books found',
+        LibraryFilter.genre => 'Nothing matches this genre',
+        LibraryFilter.none => 'No books found in this library',
+      };
+      final filterMessage = switch (_filter) {
+        LibraryFilter.inProgress =>
+          'Books move here after you start them or resume them from Home.',
+        LibraryFilter.finished =>
+          'Completed books appear here after you finish them.',
+        LibraryFilter.notStarted =>
+          'Try another filter if you want to browse titles you have already begun.',
+        LibraryFilter.downloaded =>
+          'Save a book for offline listening and it will appear here.',
+        LibraryFilter.inASeries =>
+          'Series entries appear here when the current library has series metadata.',
+        LibraryFilter.hasEbook =>
+          'Only titles that include an eBook companion appear in this filter.',
+        LibraryFilter.genre =>
+          'No books from "${_genreFilter ?? 'this genre'}" are available right now. Try a different genre or clear the filter.',
+        LibraryFilter.none =>
+          'Add books in Audiobookshelf or pull to refresh if something was just added.',
       };
       return RefreshIndicator(
         onRefresh: _refreshAll,
@@ -776,25 +928,15 @@ class LibraryScreenState extends State<LibraryScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverFillRemaining(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.library_books_outlined,
-                        size: 56, color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
-                    const SizedBox(height: 12),
-                    Text(filterMsg,
-                        style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
-                    if (_filter != LibraryFilter.none) ...[
-                      const SizedBox(height: 8),
-                      GestureDetector(
-                        onTap: () => _changeFilter(LibraryFilter.none),
-                        child: Text('Clear filter',
-                            style: tt.bodySmall?.copyWith(color: cs.primary)),
-                      ),
-                    ],
-                  ],
-                ),
+              child: StatusMessageView(
+                icon: Icons.library_books_outlined,
+                title: filterTitle,
+                message: filterMessage,
+                actionLabel:
+                    _filter != LibraryFilter.none ? 'Clear filter' : null,
+                onAction: _filter != LibraryFilter.none
+                    ? () => _changeFilter(LibraryFilter.none)
+                    : null,
               ),
             ),
           ],
@@ -814,24 +956,24 @@ class LibraryScreenState extends State<LibraryScreen> {
           crossAxisSpacing: 10,
           mainAxisSpacing: 10,
         ),
-      itemCount: _items.length + (_hasMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index >= _items.length) {
-          // Loading indicator at the end
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          );
-        }
-        final item = _items[index];
-        if (item.containsKey('collapsedSeries')) {
-          return GridSeriesTile(item: item);
-        }
-        return GridBookTile(item: item);
-      },
-    ),
+        itemCount: _items.length + (_hasMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index >= _items.length) {
+            // Loading indicator at the end
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
+          }
+          final item = _items[index];
+          if (item.containsKey('collapsedSeries')) {
+            return GridSeriesTile(item: item);
+          }
+          return GridBookTile(item: item);
+        },
+      ),
     );
   }
 
@@ -845,17 +987,17 @@ class LibraryScreenState extends State<LibraryScreen> {
     if (!_hasSearched) {
       return const SizedBox.shrink();
     }
-    if (_searchBookResults.isEmpty && _searchSeriesResults.isEmpty && _searchAuthorResults.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.search_off_rounded, size: 48, color: cs.onSurfaceVariant),
-            const SizedBox(height: 12),
-            Text('No results found',
-                style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
-          ],
-        ),
+    if (_searchBookResults.isEmpty &&
+        _searchSeriesResults.isEmpty &&
+        _searchAuthorResults.isEmpty) {
+      final query = _searchController.text.trim();
+      return StatusMessageView(
+        icon: Icons.search_off_rounded,
+        title:
+            query.isEmpty ? 'No search results yet' : 'No matches for "$query"',
+        message: query.isEmpty
+            ? 'Search by title, author, narrator, or series to browse your library faster.'
+            : 'Try a different title, author, narrator, or series keyword.',
       );
     }
 
@@ -902,12 +1044,11 @@ class LibraryScreenState extends State<LibraryScreen> {
             padding: EdgeInsets.fromLTRB(
                 4, _searchBookResults.isNotEmpty ? 20 : 8, 4, 8),
             child: Text('Series',
-                style: tt.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600, color: cs.primary)),
+                style: tt.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w600, color: cs.primary)),
           ),
           ..._searchSeriesResults.map((result) {
-            final seriesData =
-                result['series'] as Map<String, dynamic>? ?? {};
+            final seriesData = result['series'] as Map<String, dynamic>? ?? {};
             final books = result['books'] as List<dynamic>? ?? [];
             return SeriesResultCard(
               series: seriesData,
@@ -922,14 +1063,20 @@ class LibraryScreenState extends State<LibraryScreen> {
         if (_searchAuthorResults.isNotEmpty) ...[
           Padding(
             padding: EdgeInsets.fromLTRB(
-                4, (_searchBookResults.isNotEmpty || _searchSeriesResults.isNotEmpty) ? 20 : 8, 4, 8),
+                4,
+                (_searchBookResults.isNotEmpty ||
+                        _searchSeriesResults.isNotEmpty)
+                    ? 20
+                    : 8,
+                4,
+                8),
             child: Text('Authors',
-                style: tt.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600, color: cs.primary)),
+                style: tt.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w600, color: cs.primary)),
           ),
           ..._searchAuthorResults.map((result) {
-            final authorData =
-                result['author'] as Map<String, dynamic>? ?? result as Map<String, dynamic>;
+            final authorData = result['author'] as Map<String, dynamic>? ??
+                result as Map<String, dynamic>;
             return AuthorResultTile(
               author: authorData,
               serverUrl: auth.serverUrl,

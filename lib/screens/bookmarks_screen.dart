@@ -10,6 +10,7 @@ import '../services/bookmark_service.dart';
 import '../widgets/card_buttons.dart';
 import '../services/download_service.dart';
 import '../widgets/absorb_page_header.dart';
+import '../widgets/status_message_view.dart';
 
 class BookmarksScreen extends StatefulWidget {
   const BookmarksScreen({super.key});
@@ -32,7 +33,11 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
 
   Future<void> _load() async {
     final all = await BookmarkService().getAllBookmarks();
-    if (mounted) setState(() { _allBookmarks = all; _loading = false; });
+    if (mounted)
+      setState(() {
+        _allBookmarks = all;
+        _loading = false;
+      });
   }
 
   String _selKey(String itemId, String bookmarkId) => '$itemId::$bookmarkId';
@@ -110,7 +115,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
 
     for (final entry in grouped.entries) {
       for (final bmId in entry.value) {
-        await BookmarkService().deleteBookmark(itemId: entry.key, bookmarkId: bmId);
+        await BookmarkService()
+            .deleteBookmark(itemId: entry.key, bookmarkId: bmId);
       }
     }
 
@@ -140,7 +146,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     return itemId.length > 12 ? '${itemId.substring(0, 12)}…' : itemId;
   }
 
-  Future<void> _jumpToBookmark(String itemId, Bookmark bookmark, String bookTitle) async {
+  Future<void> _jumpToBookmark(
+      String itemId, Bookmark bookmark, String bookTitle) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -205,7 +212,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     final author = metadata['authorName'] as String? ?? '';
     final coverUrl = lib.getCoverUrl(itemId);
     final duration = (media['duration'] is num)
-        ? (media['duration'] as num).toDouble() : 0.0;
+        ? (media['duration'] as num).toDouble()
+        : 0.0;
     final chapters = (media['chapters'] as List<dynamic>?) ?? [];
 
     final error = await player.playItem(
@@ -240,22 +248,28 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 12, 8, 0),
                     child: Row(children: [
-                      const Expanded(child: AbsorbPageHeader(title: 'All Bookmarks', padding: EdgeInsets.zero)),
+                      const Expanded(
+                          child: AbsorbPageHeader(
+                              title: 'All Bookmarks',
+                              padding: EdgeInsets.zero)),
                       if (_selecting)
                         IconButton(
-                          icon: Icon(Icons.close_rounded, color: cs.onSurfaceVariant),
+                          icon: Icon(Icons.close_rounded,
+                              color: cs.onSurfaceVariant),
                           tooltip: 'Cancel selection',
                           onPressed: _exitSelection,
                         )
                       else ...[
                         if (_allBookmarks.isNotEmpty)
                           IconButton(
-                            icon: Icon(Icons.checklist_rounded, color: cs.onSurfaceVariant),
+                            icon: Icon(Icons.checklist_rounded,
+                                color: cs.onSurfaceVariant),
                             tooltip: 'Select',
                             onPressed: () => setState(() => _selecting = true),
                           ),
                         IconButton(
-                          icon: Icon(Icons.close_rounded, color: cs.onSurfaceVariant),
+                          icon: Icon(Icons.close_rounded,
+                              color: cs.onSurfaceVariant),
                           onPressed: () => Navigator.pop(context),
                         ),
                       ],
@@ -266,15 +280,11 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                   // Content
                   if (_allBookmarks.isEmpty)
                     Expanded(
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.bookmark_border_rounded, size: 48, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
-                            const SizedBox(height: 12),
-                            Text('No bookmarks yet', style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
-                          ],
-                        ),
+                      child: const StatusMessageView(
+                        icon: Icons.bookmark_border_rounded,
+                        title: 'No bookmarks saved yet',
+                        message:
+                            'Bookmarks help you jump back to important moments. Save one while listening and it will appear here.',
                       ),
                     )
                   else
@@ -299,7 +309,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                             selecting: _selecting,
                             selected: _selected,
                             onToggle: _toggleSelect,
-                            onToggleGroup: () => _toggleBookGroup(itemId, bookmarks),
+                            onToggleGroup: () =>
+                                _toggleBookGroup(itemId, bookmarks),
                             onLongPress: _enterSelection,
                             onJump: (id, bm) => _jumpToBookmark(id, bm, title),
                           );
@@ -313,7 +324,10 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                       padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
                       decoration: BoxDecoration(
                         color: cs.surfaceContainerHigh,
-                        border: Border(top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.3))),
+                        border: Border(
+                            top: BorderSide(
+                                color:
+                                    cs.outlineVariant.withValues(alpha: 0.3))),
                       ),
                       child: SafeArea(
                         top: false,
@@ -324,7 +338,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                           ),
                           const Spacer(),
                           FilledButton.tonalIcon(
-                            icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                            icon: const Icon(Icons.delete_outline_rounded,
+                                size: 18),
                             label: const Text('Delete'),
                             style: FilledButton.styleFrom(
                               backgroundColor: cs.errorContainer,
@@ -399,9 +414,13 @@ class _BookGroup extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(right: 10),
                       child: Icon(
-                        allSelected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                        allSelected
+                            ? Icons.check_circle_rounded
+                            : Icons.circle_outlined,
                         size: 22,
-                        color: allSelected ? cs.primary : cs.onSurfaceVariant.withValues(alpha: 0.5),
+                        color: allSelected
+                            ? cs.primary
+                            : cs.onSurfaceVariant.withValues(alpha: 0.5),
                       ),
                     ),
                   ClipRRect(
@@ -416,7 +435,8 @@ class _BookGroup extends StatelessWidget {
                   Expanded(
                     child: Text(
                       title,
-                      style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                      style:
+                          tt.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -430,7 +450,12 @@ class _BookGroup extends StatelessWidget {
               const SizedBox(height: 8),
               // Bookmark rows
               for (var j = 0; j < bookmarks.length; j++) ...[
-                if (j > 0) Divider(height: 1, indent: selecting ? 32 : 28, endIndent: 0, color: cs.outlineVariant.withValues(alpha: 0.3)),
+                if (j > 0)
+                  Divider(
+                      height: 1,
+                      indent: selecting ? 32 : 28,
+                      endIndent: 0,
+                      color: cs.outlineVariant.withValues(alpha: 0.3)),
                 _BookmarkRow(
                   itemId: itemId,
                   bookmark: bookmarks[j],
@@ -456,7 +481,8 @@ class _BookGroup extends StatelessWidget {
     if (coverUrl!.startsWith('/')) {
       final file = File(coverUrl!);
       if (file.existsSync()) {
-        return Image.file(file, fit: BoxFit.cover,
+        return Image.file(file,
+            fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => _coverPlaceholder());
       }
       return _coverPlaceholder();
@@ -475,8 +501,8 @@ class _BookGroup extends StatelessWidget {
     return Container(
       color: cs.surfaceContainerHighest,
       child: Center(
-        child: Icon(Icons.headphones_rounded, size: 20,
-            color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+        child: Icon(Icons.headphones_rounded,
+            size: 20, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
       ),
     );
   }
@@ -509,7 +535,9 @@ class _BookmarkRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: selecting ? () => onToggle(itemId, bookmark.id) : () => onJump(itemId, bookmark),
+      onTap: selecting
+          ? () => onToggle(itemId, bookmark.id)
+          : () => onJump(itemId, bookmark),
       onLongPress: !selecting ? () => onLongPress(itemId, bookmark.id) : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -519,13 +547,18 @@ class _BookmarkRow extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(right: 10),
                 child: Icon(
-                  isSelected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                  isSelected
+                      ? Icons.check_circle_rounded
+                      : Icons.circle_outlined,
                   size: 20,
-                  color: isSelected ? cs.primary : cs.onSurfaceVariant.withValues(alpha: 0.4),
+                  color: isSelected
+                      ? cs.primary
+                      : cs.onSurfaceVariant.withValues(alpha: 0.4),
                 ),
               )
             else
-              Icon(Icons.bookmark_rounded, size: 18, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+              Icon(Icons.bookmark_rounded,
+                  size: 18, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -542,7 +575,8 @@ class _BookmarkRow extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
                         bookmark.note!,
-                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                        style:
+                            tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),

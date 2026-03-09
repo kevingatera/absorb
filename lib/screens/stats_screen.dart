@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/absorb_wave_icon.dart';
+import '../widgets/status_message_view.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -155,22 +156,23 @@ class _StatsScreenState extends State<StatsScreen>
   }
 
   Widget _errorState(TextTheme tt, ColorScheme cs) {
-    return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.signal_wifi_off_rounded,
-          size: 48, color: cs.onSurface.withValues(alpha: 0.15)),
-      const SizedBox(height: 12),
-      Text('Couldn\'t load stats',
-          style: tt.bodyMedium
-              ?.copyWith(color: cs.onSurface.withValues(alpha: 0.38))),
-      const SizedBox(height: 8),
-      TextButton(
-          onPressed: () {
-            setState(() => _isLoading = true);
-            _loadStats();
-          },
-          child: const Text('Retry')),
-    ]));
+    final lib = context.read<LibraryProvider>();
+    return StatusMessageView(
+      icon: lib.isOffline
+          ? Icons.signal_wifi_off_rounded
+          : Icons.bar_chart_rounded,
+      title: lib.isOffline
+          ? 'Stats are unavailable offline'
+          : 'Listening stats did not load',
+      message: lib.isOffline
+          ? 'Stats come from your Audiobookshelf listening history. Reconnect to your server, then open Stats again.'
+          : 'Absorb could not fetch your latest listening stats from Audiobookshelf. Try again in a moment.',
+      actionLabel: 'Retry',
+      onAction: () {
+        setState(() => _isLoading = true);
+        _loadStats();
+      },
+    );
   }
 
   Widget _buildContent(ColorScheme cs, TextTheme tt) {
