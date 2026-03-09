@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/library_provider.dart';
 import '../services/download_service.dart';
 import '../widgets/absorb_page_header.dart';
+import '../widgets/status_message_view.dart';
 
 class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
@@ -74,7 +75,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.delete_outline_rounded),
         title: Text('Delete $count download${count == 1 ? '' : 's'}?'),
-        content: const Text('Downloaded files will be removed from this device.'),
+        content:
+            const Text('Downloaded files will be removed from this device.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -181,8 +183,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                             icon: Icon(Icons.checklist_rounded,
                                 color: cs.onSurfaceVariant),
                             tooltip: 'Select',
-                            onPressed: () =>
-                                setState(() => _selecting = true),
+                            onPressed: () => setState(() => _selecting = true),
                           ),
                         IconButton(
                           icon: Icon(Icons.close_rounded,
@@ -203,23 +204,16 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                         final active = ds.activeDownloads;
                         final queued = ds.queuedDownloads;
                         final completed = ds.downloadedItems;
-                        final hasAny = active.isNotEmpty || queued.isNotEmpty || completed.isNotEmpty;
+                        final hasAny = active.isNotEmpty ||
+                            queued.isNotEmpty ||
+                            completed.isNotEmpty;
 
                         if (!hasAny) {
-                          return Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.download_done_rounded,
-                                    size: 48,
-                                    color: cs.onSurfaceVariant
-                                        .withValues(alpha: 0.4)),
-                                const SizedBox(height: 12),
-                                Text('No downloads',
-                                    style: tt.bodyLarge?.copyWith(
-                                        color: cs.onSurfaceVariant)),
-                              ],
-                            ),
+                          return const StatusMessageView(
+                            icon: Icons.download_done_rounded,
+                            title: 'No downloads on this device',
+                            message:
+                                'Saved books and episodes appear here after you download them for offline listening.',
                           );
                         }
 
@@ -229,7 +223,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                             // Active downloads
                             if (active.isNotEmpty) ...[
                               Padding(
-                                padding: const EdgeInsets.only(left: 4, bottom: 8),
+                                padding:
+                                    const EdgeInsets.only(left: 4, bottom: 8),
                                 child: Text('Downloading',
                                     style: tt.labelMedium?.copyWith(
                                         color: cs.primary,
@@ -240,14 +235,18 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                                   info: info,
                                   cs: cs,
                                   tt: tt,
-                                  onCancel: () => ds.cancelDownload(info.itemId),
-                                  mediaHeaders: context.read<LibraryProvider>().mediaHeaders,
+                                  onCancel: () =>
+                                      ds.cancelDownload(info.itemId),
+                                  mediaHeaders: context
+                                      .read<LibraryProvider>()
+                                      .mediaHeaders,
                                 ),
                             ],
                             // Queued downloads
                             if (queued.isNotEmpty) ...[
                               Padding(
-                                padding: const EdgeInsets.only(left: 4, top: 4, bottom: 8),
+                                padding: const EdgeInsets.only(
+                                    left: 4, top: 4, bottom: 8),
                                 child: Text('Queued',
                                     style: tt.labelMedium?.copyWith(
                                         color: cs.onSurfaceVariant,
@@ -259,15 +258,19 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                                   cs: cs,
                                   tt: tt,
                                   isQueued: true,
-                                  onCancel: () => ds.cancelDownload(info.itemId),
-                                  mediaHeaders: context.read<LibraryProvider>().mediaHeaders,
+                                  onCancel: () =>
+                                      ds.cancelDownload(info.itemId),
+                                  mediaHeaders: context
+                                      .read<LibraryProvider>()
+                                      .mediaHeaders,
                                 ),
                             ],
                             // Completed downloads
                             if (completed.isNotEmpty) ...[
                               if (active.isNotEmpty || queued.isNotEmpty)
                                 Padding(
-                                  padding: const EdgeInsets.only(left: 4, top: 4, bottom: 8),
+                                  padding: const EdgeInsets.only(
+                                      left: 4, top: 4, bottom: 8),
                                   child: Text('Completed',
                                       style: tt.labelMedium?.copyWith(
                                           color: cs.onSurfaceVariant,
@@ -282,10 +285,13 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                                   selecting: _selecting,
                                   isSelected: _selected.contains(info.itemId),
                                   onToggle: () => _toggleSelect(info.itemId),
-                                  onLongPress: () => _enterSelection(info.itemId),
+                                  onLongPress: () =>
+                                      _enterSelection(info.itemId),
                                   onDelete: () => _deleteSingle(info),
                                   formatBytes: _formatBytes,
-                                  mediaHeaders: context.read<LibraryProvider>().mediaHeaders,
+                                  mediaHeaders: context
+                                      .read<LibraryProvider>()
+                                      .mediaHeaders,
                                 ),
                             ],
                           ],
@@ -302,8 +308,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                         color: cs.surfaceContainerHigh,
                         border: Border(
                           top: BorderSide(
-                            color: cs.outlineVariant
-                                .withValues(alpha: 0.3),
+                            color: cs.outlineVariant.withValues(alpha: 0.3),
                           ),
                         ),
                       ),
@@ -312,13 +317,11 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                         child: Row(children: [
                           Text(
                             '${_selected.length} selected',
-                            style: tt.bodyMedium
-                                ?.copyWith(color: cs.onSurface),
+                            style: tt.bodyMedium?.copyWith(color: cs.onSurface),
                           ),
                           const Spacer(),
                           FilledButton.tonalIcon(
-                            icon: const Icon(
-                                Icons.delete_outline_rounded,
+                            icon: const Icon(Icons.delete_outline_rounded,
                                 size: 18),
                             label: const Text('Delete'),
                             style: FilledButton.styleFrom(
@@ -433,8 +436,7 @@ class _DownloadCard extends StatelessWidget {
                           child: Text(
                             formatBytes(fileSize),
                             style: tt.labelSmall?.copyWith(
-                              color:
-                                  cs.onSurfaceVariant.withValues(alpha: 0.7),
+                              color: cs.onSurfaceVariant.withValues(alpha: 0.7),
                             ),
                           ),
                         ),
@@ -550,15 +552,16 @@ class _ActiveDownloadCard extends StatelessWidget {
                   children: [
                     Text(
                       info.title ?? 'Unknown',
-                      style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                      style:
+                          tt.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
                     if (isQueued)
                       Text('Waiting...',
-                          style: tt.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant))
+                          style: tt.bodySmall
+                              ?.copyWith(color: cs.onSurfaceVariant))
                     else ...[
                       Row(
                         children: [
