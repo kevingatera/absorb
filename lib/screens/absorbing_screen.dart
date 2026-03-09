@@ -8,8 +8,9 @@ import '../services/chromecast_service.dart';
 import '../services/download_service.dart';
 import '../services/scoped_prefs.dart';
 import '../widgets/absorb_page_header.dart';
-import '../main.dart' show oledNotifier;
 import '../widgets/absorbing_card.dart';
+import '../widgets/author_name_link.dart';
+import '../widgets/status_message_view.dart';
 
 class AbsorbingScreen extends StatefulWidget {
   const AbsorbingScreen({super.key});
@@ -114,6 +115,67 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   // slide to the beginning rather than the list instantly reordering underneath them.
   bool _suppressReorder = false;
   bool _mergeLibraries = false;
+  int? _pendingIndicatorSelection;
+  Duration _pendingIndicatorDuration = const Duration(milliseconds: 220);
+  bool _pendingIndicatorHaptics = true;
+  int? _activeIndicatorSelection;
+  bool _isProcessingIndicatorSelection = false;
+
+  Future<void> _switchToAbsorbingPage(
+    int index, {
+    Duration duration = const Duration(milliseconds: 220),
+    bool withHaptics = true,
+  }) async {
+    if (!_pageController.hasClients) return;
+
+    final currentPage =
+        (_pageController.page ?? _pageController.initialPage).round();
+    if (!_isProcessingIndicatorSelection && index == currentPage) return;
+    if (_activeIndicatorSelection == index ||
+        _pendingIndicatorSelection == index) {
+      return;
+    }
+
+    _pendingIndicatorSelection = index;
+    _pendingIndicatorDuration = duration;
+    _pendingIndicatorHaptics = withHaptics;
+    if (_isProcessingIndicatorSelection) return;
+
+    _isProcessingIndicatorSelection = true;
+    try {
+      while (mounted && _pageController.hasClients) {
+        final target = _pendingIndicatorSelection;
+        if (target == null) break;
+
+        final targetDuration = _pendingIndicatorDuration;
+        final useHaptics = _pendingIndicatorHaptics;
+        _pendingIndicatorSelection = null;
+
+        final visiblePage =
+            (_pageController.page ?? _pageController.initialPage).round();
+        if (target == visiblePage) continue;
+
+        _activeIndicatorSelection = target;
+        if (useHaptics) {
+          await HapticFeedback.selectionClick();
+        }
+
+        await _pageController.animateToPage(
+          target,
+          duration: targetDuration,
+          curve: Curves.easeOutCubic,
+        );
+      }
+    } finally {
+      _activeIndicatorSelection = null;
+      _isProcessingIndicatorSelection = false;
+    }
+  }
+
+  void _clearIndicatorSelectionState() {
+    _activeIndicatorSelection = null;
+  }
+
   bool? _lastSeenHasBook;
   bool? _lastSeenIsPlaying;
 
@@ -363,13 +425,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     final removes = lib.manualAbsorbRemoves;
     final cache = lib.absorbingItemCache;
 
-    // Quick lookup of fresh data — only from the in-progress sections.
-    // For podcast episodes, key by compound "itemId-episodeId".
-    const allowedSections = {
-      'continue-listening',
-      'continue-series',
-      'downloaded-books'
-    };
+    // Quick lookup of fresh data — only from in-progress sections.
+    final allowedSections = <String>{'continue-listening', 'continue-series'};
     final sectionLookup = <String, Map<String, dynamic>>{};
     for (final section in lib.personalizedSections) {
       final sectionId = section['id'] as String? ?? '';
@@ -549,8 +606,6 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-    final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
-    final lowerFade = Color.lerp(cs.surface, scaffoldBg, 0.55) ?? scaffoldBg;
     final lib = context.read<LibraryProvider>();
     final libState = context
         .select<LibraryProvider, _AbsorbingLibrarySnapshot>(_snapshotLibrary);
@@ -600,307 +655,296 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     final subtleBorder = cs.onSurface.withValues(alpha: 0.08);
 
     return Scaffold(
-      backgroundColor: scaffoldBg,
-      body: Container(
-        decoration: oledNotifier.value
-            ? null
-            : BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: const [0.0, 0.22, 0.72, 1.0],
-                  colors: [
-                    cs.primary.withValues(alpha: 0.06),
-                    cs.surface,
-                    lowerFade,
-                    scaffoldBg,
-                  ],
-                ),
-              ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // ── Header ──
-              AbsorbPageHeader(
-                title: 'Absorbing',
-                brandingColor: muted,
-                titleColor: cs.onSurface,
-                padding: const EdgeInsets.fromLTRB(20, 12, 12, 0),
-                actions: [
-                  // Offline mode toggle
-                  GestureDetector(
-                    onTap: () {
-                      final newVal = !lib.isManualOffline;
-                      lib.setManualOffline(newVal);
-                      if (newVal) {
-                        // Only stop playback if the current item isn't downloaded
-                        final dl = DownloadService();
-                        final itemId = _player.currentItemId;
-                        final epId = _player.currentEpisodeId;
-                        final dlKey = epId != null && itemId != null
-                            ? '$itemId-$epId'
-                            : itemId;
-                        if (dlKey == null || !dl.isDownloaded(dlKey)) {
-                          _stopAndRefresh(lib);
-                        }
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ── Header ──
+            AbsorbPageHeader(
+              title: 'Absorbing',
+              brandingColor: muted,
+              titleColor: cs.onSurface,
+              padding: const EdgeInsets.fromLTRB(20, 12, 12, 0),
+              actions: [
+                // Offline mode toggle
+                GestureDetector(
+                  onTap: () {
+                    final newVal = !lib.isManualOffline;
+                    lib.setManualOffline(newVal);
+                    if (newVal) {
+                      // Only stop playback if the current item isn't downloaded
+                      final dl = DownloadService();
+                      final itemId = _player.currentItemId;
+                      final epId = _player.currentEpisodeId;
+                      final dlKey = epId != null && itemId != null
+                          ? '$itemId-$epId'
+                          : itemId;
+                      if (dlKey == null || !dl.isDownloaded(dlKey)) {
+                        _stopAndRefresh(lib);
                       }
-                    },
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: effectiveOffline
+                          ? Colors.orange.withValues(alpha: 0.15)
+                          : subtleBg,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                          color: effectiveOffline
+                              ? Colors.orange.withValues(alpha: 0.3)
+                              : subtleBorder),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          effectiveOffline
+                              ? Icons.airplanemode_active_rounded
+                              : Icons.airplanemode_inactive_rounded,
+                          size: 14,
+                          color: effectiveOffline ? Colors.orange : muted,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          effectiveOffline ? 'Offline' : 'Online',
+                          style: TextStyle(
+                            color: effectiveOffline ? Colors.orange : muted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Unified button: "Sync" when idle, "Stop & Sync" when playing
+                if (!effectiveOffline)
+                  GestureDetector(
+                    onTap: _isSyncing
+                        ? null
+                        : () {
+                            if (_player.hasBook) {
+                              _stopAndRefresh(lib);
+                            } else {
+                              _confirmAndSync(lib);
+                            }
+                          },
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOutCubic,
+                      duration: const Duration(milliseconds: 200),
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: effectiveOffline
-                            ? Colors.orange.withValues(alpha: 0.15)
-                            : subtleBg,
+                        color: subtleBg,
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: effectiveOffline
-                                ? Colors.orange.withValues(alpha: 0.3)
-                                : subtleBorder),
+                        border: Border.all(color: subtleBorder),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            effectiveOffline
-                                ? Icons.airplanemode_active_rounded
-                                : Icons.airplanemode_inactive_rounded,
-                            size: 14,
-                            color: effectiveOffline ? Colors.orange : muted,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            effectiveOffline ? 'Offline' : 'Online',
-                            style: TextStyle(
-                              color: effectiveOffline ? Colors.orange : muted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                          if (_isSyncing) ...[
+                            SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 1.5, color: muted)),
+                            const SizedBox(width: 6),
+                            Text('Syncing…',
+                                style: TextStyle(
+                                    color: muted,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500)),
+                          ] else if (_player.hasBook) ...[
+                            Icon(Icons.stop_rounded, size: 14, color: muted),
+                            const SizedBox(width: 4),
+                            Text('Stop & Sync',
+                                style: TextStyle(
+                                    color: muted,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500)),
+                          ] else ...[
+                            Icon(Icons.sync_rounded, size: 14, color: muted),
+                            const SizedBox(width: 4),
+                            Text('Sync',
+                                style: TextStyle(
+                                    color: muted,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500)),
+                          ],
                         ],
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Unified button: "Sync" when idle, "Stop & Sync" when playing
-                  if (!effectiveOffline)
-                    GestureDetector(
-                      onTap: _isSyncing
-                          ? null
-                          : () {
-                              if (_player.hasBook) {
-                                _stopAndRefresh(lib);
-                              } else {
-                                _confirmAndSync(lib);
-                              }
-                            },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: subtleBg,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: subtleBorder),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (_isSyncing) ...[
-                              SizedBox(
-                                  width: 12,
-                                  height: 12,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 1.5, color: muted)),
-                              const SizedBox(width: 6),
-                              Text('Syncing…',
-                                  style: TextStyle(
-                                      color: muted,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500)),
-                            ] else if (_player.hasBook) ...[
+                  )
+                else
+                  // Offline: just stop button (no sync)
+                  AnimatedOpacity(
+                    opacity: _player.hasBook ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: IgnorePointer(
+                      ignoring: !_player.hasBook,
+                      child: GestureDetector(
+                        onTap: () => _stopAndRefresh(lib),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: subtleBg,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: subtleBorder),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
                               Icon(Icons.stop_rounded, size: 14, color: muted),
                               const SizedBox(width: 4),
-                              Text('Stop & Sync',
-                                  style: TextStyle(
-                                      color: muted,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500)),
-                            ] else ...[
-                              Icon(Icons.sync_rounded, size: 14, color: muted),
-                              const SizedBox(width: 4),
-                              Text('Sync',
+                              Text('Stop',
                                   style: TextStyle(
                                       color: muted,
                                       fontSize: 11,
                                       fontWeight: FontWeight.w500)),
                             ],
-                          ],
-                        ),
-                      ),
-                    )
-                  else
-                    // Offline: just stop button (no sync)
-                    AnimatedOpacity(
-                      opacity: _player.hasBook ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 300),
-                      child: IgnorePointer(
-                        ignoring: !_player.hasBook,
-                        child: GestureDetector(
-                          onTap: () => _stopAndRefresh(lib),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: subtleBg,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: subtleBorder),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.stop_rounded,
-                                    size: 14, color: muted),
-                                const SizedBox(width: 4),
-                                Text('Stop',
-                                    style: TextStyle(
-                                        color: muted,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w500)),
-                              ],
-                            ),
                           ),
                         ),
                       ),
                     ),
-                  if (books.length > 1) ...[
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: () => _showReorderSheet(context, lib, books),
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: subtleBg,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: subtleBorder),
-                        ),
-                        child:
-                            Icon(Icons.reorder_rounded, size: 14, color: muted),
+                  ),
+                if (books.length > 1) ...[
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => _showReorderSheet(context, lib, books),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: subtleBg,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: subtleBorder),
                       ),
+                      child:
+                          Icon(Icons.reorder_rounded, size: 14, color: muted),
                     ),
-                  ],
+                  ),
                 ],
-              ),
-              // ── Page Dots ──
-              if (books.length > 1)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8, bottom: 4),
-                  child: _PageDots(
-                      count: books.length, controller: _pageController),
+              ],
+            ),
+            // ── Page Dots ──
+            if (books.length > 1)
+              Padding(
+                padding: const EdgeInsets.only(top: 9, bottom: 0),
+                child: _PageDots(
+                  count: books.length,
+                  controller: _pageController,
+                  onSelected: (index) => _switchToAbsorbingPage(index),
+                  onScrubSelected: (index) => _switchToAbsorbingPage(
+                    index,
+                    duration: const Duration(milliseconds: 110),
+                    withHaptics: true,
+                  ),
                 ),
-              // ── Cards (refreshable) ──
-              Expanded(
-                child: showBlockingLoader
-                    ? Center(
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: cs.onSurface.withValues(alpha: 0.24)))
-                    : books.isEmpty
-                        ? _emptyState(cs, tt, effectiveOffline)
-                        : books.length == 1
-                            ? LayoutBuilder(
+              ),
+            // ── Cards (refreshable) ──
+            Expanded(
+              child: showBlockingLoader
+                  ? Center(
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: cs.onSurface.withValues(alpha: 0.24)))
+                  : books.isEmpty
+                      ? _emptyState(cs, tt, effectiveOffline)
+                      : books.length == 1
+                          ? LayoutBuilder(
+                              builder: (context, constraints) {
+                                final vPad = (constraints.maxHeight * 0.04)
+                                    .clamp(12.0, 40.0);
+                                return Padding(
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: vPad),
+                                  child: RepaintBoundary(
+                                      child: AbsorbingCard(
+                                          key:
+                                              ValueKey(_absorbingKey(books[0])),
+                                          item: books[0],
+                                          player: _player)),
+                                );
+                              },
+                            )
+                          : PageView.builder(
+                              controller: _pageController,
+                              onPageChanged: (_) =>
+                                  _clearIndicatorSelectionState(),
+                              scrollDirection: Axis.horizontal,
+                              clipBehavior: Clip.none,
+                              physics: const PageScrollPhysics(
+                                  parent: ClampingScrollPhysics()),
+                              itemCount: books.length,
+                              itemBuilder: (_, i) => LayoutBuilder(
                                 builder: (context, constraints) {
-                                  final vPad = (constraints.maxHeight * 0.04)
-                                      .clamp(12.0, 40.0);
-                                  return Padding(
-                                    padding: EdgeInsets.symmetric(
-                                        horizontal: 4, vertical: vPad),
+                                  final cardWidth = constraints.maxWidth;
+                                  final vPad = (constraints.maxHeight * 0.03)
+                                      .clamp(8.0, 32.0);
+                                  return AnimatedBuilder(
+                                    animation: _pageController,
+                                    builder: (context, child) {
+                                      double distFromCenter = 0.0;
+                                      double rawDist = 0.0;
+                                      if (_pageController
+                                          .position.haveDimensions) {
+                                        final page = _pageController.page ??
+                                            _pageController.initialPage
+                                                .toDouble();
+                                        rawDist = page - i;
+                                        distFromCenter = rawDist.abs();
+                                      }
+
+                                      final double scaleX;
+                                      if (distFromCenter >= 1.0) {
+                                        scaleX = 0.85;
+                                      } else {
+                                        final t = Curves.easeOut
+                                            .transform(1.0 - distFromCenter);
+                                        scaleX = 0.85 + (t * 0.15);
+                                      }
+
+                                      final squeezedWidth = cardWidth * scaleX;
+                                      final freedSpace =
+                                          cardWidth - squeezedWidth;
+                                      final direction = rawDist > 0
+                                          ? 1.0
+                                          : (rawDist < 0 ? -1.0 : 0.0);
+                                      final translateX =
+                                          direction * freedSpace * 0.45;
+
+                                      return Transform(
+                                        alignment: Alignment.center,
+                                        transform: Matrix4.identity()
+                                          ..translate(translateX, 0.0, 0.0)
+                                          ..scale(scaleX, 1.0, 1.0),
+                                        child: Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal: 4, vertical: vPad),
+                                          child: child,
+                                        ),
+                                      );
+                                    },
                                     child: RepaintBoundary(
-                                        child: AbsorbingCard(
-                                            key: ValueKey(
-                                                _absorbingKey(books[0])),
-                                            item: books[0],
-                                            player: _player)),
+                                      child: AbsorbingCard(
+                                        key: ValueKey(_absorbingKey(books[i])),
+                                        item: books[i],
+                                        player: _player,
+                                      ),
+                                    ),
                                   );
                                 },
-                              )
-                            : PageView.builder(
-                                controller: _pageController,
-                                scrollDirection: Axis.horizontal,
-                                clipBehavior: Clip.none,
-                                physics: const PageScrollPhysics(
-                                    parent: ClampingScrollPhysics()),
-                                itemCount: books.length,
-                                itemBuilder: (_, i) => LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    final cardWidth = constraints.maxWidth;
-                                    final vPad = (constraints.maxHeight * 0.04)
-                                        .clamp(12.0, 40.0);
-                                    return AnimatedBuilder(
-                                      animation: _pageController,
-                                      builder: (context, child) {
-                                        double distFromCenter = 0.0;
-                                        double rawDist = 0.0;
-                                        if (_pageController
-                                            .position.haveDimensions) {
-                                          final page = _pageController.page ??
-                                              _pageController.initialPage
-                                                  .toDouble();
-                                          rawDist = page -
-                                              i; // negative = card is to the right
-                                          distFromCenter = rawDist.abs();
-                                        }
-                                        final double scaleX;
-                                        if (distFromCenter >= 1.0) {
-                                          scaleX = 0.85;
-                                        } else {
-                                          // Use easeOut curve for smoother transition
-                                          final t = Curves.easeOut
-                                              .transform(1.0 - distFromCenter);
-                                          scaleX =
-                                              0.85 + (t * 0.15); // 0.85 → 1.0
-                                        }
-                                        // Calculate how much space the squeeze frees up, then translate toward center
-                                        final squeezedWidth =
-                                            cardWidth * scaleX;
-                                        final freedSpace =
-                                            cardWidth - squeezedWidth;
-                                        // Pull card toward center by half the freed space
-                                        final direction = rawDist > 0
-                                            ? 1.0
-                                            : (rawDist < 0 ? -1.0 : 0.0);
-                                        final translateX =
-                                            direction * freedSpace * 0.45;
-
-                                        return Transform(
-                                          alignment: Alignment.center,
-                                          transform: Matrix4.identity()
-                                            ..translate(translateX, 0.0, 0.0)
-                                            ..scale(scaleX, 1.0, 1.0),
-                                          child: Padding(
-                                            padding: EdgeInsets.symmetric(
-                                                horizontal: 4, vertical: vPad),
-                                            child: child,
-                                          ),
-                                        );
-                                      },
-                                      child: RepaintBoundary(
-                                          child: AbsorbingCard(
-                                              key: ValueKey(
-                                                  _absorbingKey(books[i])),
-                                              item: books[i],
-                                              player: _player)),
-                                    );
-                                  },
-                                ),
                               ),
-              ),
-            ],
-          ),
+                            ),
+            ),
+          ],
         ),
       ),
     );
@@ -909,37 +953,23 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   Widget _emptyState(ColorScheme cs, TextTheme tt, bool isOffline) {
     final lib = context.read<LibraryProvider>();
     final isPod = lib.isPodcastLibrary;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-              isOffline
-                  ? Icons.cloud_off_rounded
-                  : isPod
-                      ? Icons.podcasts_rounded
-                      : Icons.headphones_rounded,
-              size: 64,
-              color: cs.onSurface.withValues(alpha: 0.15)),
-          const SizedBox(height: 16),
-          Text(
-              isOffline
-                  ? (isPod ? 'No downloaded episodes' : 'No downloaded books')
-                  : (isPod ? 'Nothing playing yet' : 'Nothing absorbing yet'),
-              style: tt.titleMedium?.copyWith(color: cs.onSurfaceVariant)),
-          const SizedBox(height: 8),
-          Text(
-              isOffline
-                  ? (isPod
-                      ? 'Download episodes to listen offline'
-                      : 'Download books to listen offline')
-                  : (isPod
-                      ? 'Start an episode from the Shows tab'
-                      : 'Start a book from the Library tab'),
-              style: tt.bodySmall
-                  ?.copyWith(color: cs.onSurface.withValues(alpha: 0.24))),
-        ],
-      ),
+    final hasDownloads = DownloadService().downloadedItems.isNotEmpty;
+    return StatusMessageView(
+      icon: isOffline
+          ? Icons.download_for_offline_outlined
+          : isPod
+              ? Icons.podcasts_rounded
+              : Icons.headphones_rounded,
+      title: isOffline
+          ? (hasDownloads
+              ? 'No offline listening in progress'
+              : 'No offline downloads yet')
+          : 'Nothing is queued in Absorbing',
+      message: isOffline
+          ? (hasDownloads
+              ? 'Your downloaded library is still available on Home. Start a downloaded ${isPod ? 'episode' : 'book'} there and it will appear here.'
+              : 'Download ${isPod ? 'episodes' : 'books'} while online, then start one to keep it handy here for offline listening.')
+          : 'Start a ${isPod ? 'show episode from Shows or Home' : 'book from Home or Library'} and Absorbing will keep it within easy reach.',
     );
   }
 
@@ -970,9 +1000,28 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 // ─── PAGE DOTS ──────────────────────────────────────────────
 
 class _PageDots extends StatelessWidget {
+  static const double _slotWidth = 20;
+  static const double _trackHeight = 12;
+
   final int count;
   final PageController controller;
-  const _PageDots({required this.count, required this.controller});
+  final ValueChanged<int> onSelected;
+  final ValueChanged<int> onScrubSelected;
+
+  const _PageDots({
+    required this.count,
+    required this.controller,
+    required this.onSelected,
+    required this.onScrubSelected,
+  });
+
+  int _indexForPosition(double dx) {
+    if (count <= 1) return 0;
+
+    final trackWidth = count * _slotWidth;
+    final clampedDx = dx.clamp(0.0, trackWidth - 0.001);
+    return (clampedDx / _slotWidth).floor().clamp(0, count - 1);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -981,24 +1030,43 @@ class _PageDots extends StatelessWidget {
       listenable: controller,
       builder: (_, __) {
         final page = controller.hasClients ? (controller.page ?? 0).round() : 0;
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(count, (i) {
-            final active = i == page;
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: active ? 20 : 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: active
-                    ? cs.onSurface.withValues(alpha: 0.54)
-                    : cs.onSurface.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(3),
+
+        return Center(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (details) =>
+                onSelected(_indexForPosition(details.localPosition.dx)),
+            onHorizontalDragStart: (details) =>
+                onScrubSelected(_indexForPosition(details.localPosition.dx)),
+            onHorizontalDragUpdate: (details) =>
+                onScrubSelected(_indexForPosition(details.localPosition.dx)),
+            child: SizedBox(
+              width: count * _slotWidth,
+              height: _trackHeight,
+              child: Row(
+                children: List.generate(count, (i) {
+                  final active = i == page;
+                  return SizedBox(
+                    width: _slotWidth,
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        width: active ? 21 : 11,
+                        height: active ? 7 : 5,
+                        decoration: BoxDecoration(
+                          color: active
+                              ? cs.onSurface.withValues(alpha: 0.62)
+                              : cs.onSurface.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
               ),
-            );
-          }),
+            ),
+          ),
         );
       },
     );
@@ -1158,29 +1226,15 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
                                     : cs.primary,
                                 fontWeight: FontWeight.w700,
                               ))),
-                      // Progress indicator
+                      // Finished indicator
                       if (isFinished)
                         Icon(Icons.check_circle_rounded,
                             size: 16,
                             color: Colors.green.withValues(alpha: 0.5))
-                      else ...[
-                        () {
-                          final progress = widget.lib.getProgress(key);
-                          return progress > 0
-                              ? SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    value: progress,
-                                    strokeWidth: 2.5,
-                                    backgroundColor: cs.surfaceContainerHighest,
-                                    color: cs.primary,
-                                  ))
-                              : Icon(Icons.circle_outlined,
-                                  size: 16,
-                                  color: cs.onSurface.withValues(alpha: 0.2));
-                        }(),
-                      ],
+                      else
+                        Icon(Icons.circle_outlined,
+                            size: 16,
+                            color: cs.onSurface.withValues(alpha: 0.2)),
                       const SizedBox(width: 8),
                       // Title + subtitle
                       Expanded(
@@ -1203,7 +1257,9 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
                                 style: tt.bodySmall
                                     ?.copyWith(color: cs.onSurfaceVariant)),
                           if (author.isNotEmpty && epTitle == null)
-                            Text(author,
+                            AuthorNameLink(
+                                item: book,
+                                authorName: author,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: tt.bodySmall
