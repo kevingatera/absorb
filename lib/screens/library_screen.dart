@@ -44,6 +44,7 @@ class LibraryScreenState extends State<LibraryScreen> {
   List<dynamic> _searchBookResults = [];
   List<dynamic> _searchSeriesResults = [];
   List<dynamic> _searchAuthorResults = [];
+  List<Map<String, dynamic>> _searchEpisodeResults = [];
   bool _isSearching = false;
   bool _hasSearched = false;
   bool get _isInSearchMode => _searchController.text.trim().isNotEmpty;
@@ -388,6 +389,7 @@ class LibraryScreenState extends State<LibraryScreen> {
         _searchBookResults = [];
         _searchSeriesResults = [];
         _searchAuthorResults = [];
+        _searchEpisodeResults = [];
         _hasSearched = false;
         _isSearching = false;
       });
@@ -406,26 +408,79 @@ class LibraryScreenState extends State<LibraryScreen> {
 
     setState(() => _isSearching = true);
 
+    final isPodcast = lib.isPodcastLibrary;
     final result = await api.searchLibrary(lib.selectedLibraryId!, query);
     if (result != null && mounted) {
       setState(() {
-        _searchBookResults = (result['book'] as List<dynamic>?) ?? [];
-        if (_hideEbookOnly) {
-          _searchBookResults = _searchBookResults.where((r) {
-            final item = r['libraryItem'] as Map<String, dynamic>? ?? r as Map<String, dynamic>;
-            return !PlayerSettings.isEbookOnly(item);
-          }).toList();
+        if (isPodcast) {
+          _searchBookResults = (result['podcast'] as List<dynamic>?) ?? [];
+        } else {
+          _searchBookResults = (result['book'] as List<dynamic>?) ?? [];
+          if (_hideEbookOnly) {
+            _searchBookResults = _searchBookResults.where((r) {
+              final item = r['libraryItem'] as Map<String, dynamic>? ?? r as Map<String, dynamic>;
+              return !PlayerSettings.isEbookOnly(item);
+            }).toList();
+          }
         }
         _searchSeriesResults = (result['series'] as List<dynamic>?) ?? [];
         _searchAuthorResults = (result['authors'] as List<dynamic>?) ?? [];
         _isSearching = false;
         _hasSearched = true;
       });
+
+      // For podcast libraries, also search episode titles client-side
+      if (isPodcast) {
+        _searchEpisodes(query, lib.selectedLibraryId!, api);
+      }
     } else if (mounted) {
       setState(() {
         _isSearching = false;
         _hasSearched = true;
       });
+    }
+  }
+
+  List<Map<String, dynamic>>? _cachedShowsWithEpisodes;
+  String? _cachedShowsLibraryId;
+
+  Future<void> _searchEpisodes(String query, String libraryId, dynamic api) async {
+    final lowerQuery = query.toLowerCase();
+
+    // Cache all shows with episodes so subsequent searches are instant
+    if (_cachedShowsWithEpisodes == null || _cachedShowsLibraryId != libraryId) {
+      final items = await api.getLibraryItems(libraryId, limit: 100);
+      if (items == null || !mounted) return;
+      final results = items['results'] as List<dynamic>? ?? [];
+
+      final shows = <Map<String, dynamic>>[];
+      final futures = <Future>[];
+      for (final r in results) {
+        final show = (r['libraryItem'] ?? r) as Map<String, dynamic>;
+        final showId = show['id'] as String?;
+        if (showId == null) continue;
+        futures.add(api.getLibraryItem(showId).then((fullItem) {
+          if (fullItem != null) shows.add(fullItem);
+        }));
+      }
+      await Future.wait(futures);
+      _cachedShowsWithEpisodes = shows;
+      _cachedShowsLibraryId = libraryId;
+    }
+
+    final episodeMatches = <Map<String, dynamic>>[];
+    for (final show in _cachedShowsWithEpisodes!) {
+      final media = show['media'] as Map<String, dynamic>? ?? {};
+      final episodes = media['episodes'] as List<dynamic>? ?? [];
+      for (final ep in episodes) {
+        final title = (ep['title'] as String? ?? '').toLowerCase();
+        if (title.contains(lowerQuery)) {
+          episodeMatches.add({'show': show, 'episode': ep});
+        }
+      }
+    }
+    if (mounted && _searchController.text.trim().toLowerCase() == lowerQuery) {
+      setState(() => _searchEpisodeResults = episodeMatches);
     }
   }
 
@@ -619,7 +674,9 @@ class LibraryScreenState extends State<LibraryScreen> {
               child: SearchBar(
                 controller: _searchController,
                 focusNode: _focusNode,
-                hintText: 'Search books, series, and authors...',
+                hintText: context.read<LibraryProvider>().isPodcastLibrary
+                    ? 'Search shows and episodes...'
+                    : 'Search books, series, and authors...',
                 leading: const Padding(
                   padding: EdgeInsets.only(left: 8),
                   child: Icon(Icons.search_rounded),
@@ -845,7 +902,7 @@ class LibraryScreenState extends State<LibraryScreen> {
     if (!_hasSearched) {
       return const SizedBox.shrink();
     }
-    if (_searchBookResults.isEmpty && _searchSeriesResults.isEmpty && _searchAuthorResults.isEmpty) {
+    if (_searchBookResults.isEmpty && _searchSeriesResults.isEmpty && _searchAuthorResults.isEmpty && _searchEpisodeResults.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -860,11 +917,12 @@ class LibraryScreenState extends State<LibraryScreen> {
     }
 
     final auth = context.read<AuthProvider>();
+    final isPodcast = context.read<LibraryProvider>().isPodcastLibrary;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
       children: [
-        // ─── BOOKS (only title matches) ───
+        // ─── BOOKS / SHOWS (only title matches) ───
         if (_searchBookResults.isNotEmpty) ...[
           ...() {
             final query = _searchController.text.trim().toLowerCase();
@@ -879,7 +937,7 @@ class LibraryScreenState extends State<LibraryScreen> {
             return <Widget>[
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
-                child: Text('Books',
+                child: Text(isPodcast ? 'Shows' : 'Books',
                     style: tt.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600, color: cs.primary)),
               ),
@@ -894,6 +952,25 @@ class LibraryScreenState extends State<LibraryScreen> {
               }),
             ];
           }(),
+        ],
+
+        // ─── EPISODES ───
+        if (_searchEpisodeResults.isNotEmpty) ...[
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+                4, _searchBookResults.isNotEmpty ? 20 : 8, 4, 8),
+            child: Text('Episodes',
+                style: tt.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600, color: cs.primary)),
+          ),
+          ..._searchEpisodeResults.map((result) {
+            return EpisodeResultTile(
+              show: result['show']!,
+              episode: result['episode']!,
+              serverUrl: auth.serverUrl,
+              token: auth.token,
+            );
+          }),
         ],
 
         // ─── SERIES ───

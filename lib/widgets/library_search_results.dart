@@ -208,6 +208,110 @@ class SeriesResultCard extends StatelessWidget {
   }
 }
 
+class EpisodeResultTile extends StatelessWidget {
+  final Map<String, dynamic> show;
+  final Map<String, dynamic> episode;
+  final String? serverUrl;
+  final String? token;
+
+  const EpisodeResultTile({
+    super.key,
+    required this.show,
+    required this.episode,
+    required this.serverUrl,
+    required this.token,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    final episodeTitle = episode['title'] as String? ?? 'Unknown Episode';
+    final showMedia = show['media'] as Map<String, dynamic>? ?? {};
+    final showMeta = showMedia['metadata'] as Map<String, dynamic>? ?? {};
+    final showTitle = showMeta['title'] as String? ?? '';
+    final showId = show['id'] as String?;
+
+    String? coverUrl;
+    if (showId != null && serverUrl != null && token != null) {
+      final cleanUrl = serverUrl!.endsWith('/')
+          ? serverUrl!.substring(0, serverUrl!.length - 1)
+          : serverUrl!;
+      coverUrl = '$cleanUrl/api/items/$showId/cover?width=200&token=$token';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Card(
+        elevation: 0,
+        color: cs.surfaceContainerHigh,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () {
+            FocusManager.instance.primaryFocus?.unfocus();
+            EpisodeDetailSheet.show(context, show, episode);
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 56,
+                height: 56,
+                child: coverUrl != null
+                    ? CachedNetworkImage(
+                        imageUrl: coverUrl,
+                        fit: BoxFit.cover,
+                        httpHeaders: context.read<LibraryProvider>().mediaHeaders,
+                        placeholder: (_, __) => _ph(cs),
+                        errorWidget: (_, __, ___) => _ph(cs),
+                      )
+                    : _ph(cs),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(episodeTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: tt.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: cs.onSurface)),
+                      if (showTitle.isNotEmpty)
+                        Text(showTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Icon(Icons.chevron_right_rounded,
+                    color: cs.onSurfaceVariant, size: 20),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _ph(ColorScheme cs) {
+    return Container(
+      color: cs.surfaceContainerHighest,
+      child: Icon(Icons.podcasts_rounded,
+          size: 20, color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
+    );
+  }
+}
+
 class AuthorResultTile extends StatelessWidget {
   final Map<String, dynamic> author;
   final String? serverUrl;
