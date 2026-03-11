@@ -264,17 +264,15 @@ class _ExpandedCardState extends State<ExpandedCard> {
     widget.player.removeListener(_onPlayerChanged);
     ChromecastService().removeListener(_onCastChanged);
     _chapterTrackSub?.cancel();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final nav = Navigator.of(context, rootNavigator: true);
-      // Pop all routes above us (e.g. open modals/sheets) plus our own route
-      if (_ownRoute != null) {
-        nav.popUntil((route) => route == _ownRoute);
-        nav.pop();
-      } else {
-        nav.pop();
-      }
-    });
+    if (!mounted) return;
+
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+      return;
+    }
+
+    Navigator.of(context, rootNavigator: true).pop();
   }
 
   void _handleItemChange(String newItemId, String? newEpisodeId) {
