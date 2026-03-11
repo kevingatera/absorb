@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
-import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import 'author_books_sheet.dart';
 import 'book_detail_sheet.dart';
@@ -70,7 +69,8 @@ class BookResultTile extends StatelessWidget {
                     ? CachedNetworkImage(
                         imageUrl: coverUrl,
                         fit: BoxFit.cover,
-                        httpHeaders: context.read<LibraryProvider>().mediaHeaders,
+                        httpHeaders:
+                            context.read<LibraryProvider>().mediaHeaders,
                         placeholder: (_, __) => _ph(cs),
                         errorWidget: (_, __, ___) => _ph(cs),
                       )
@@ -164,7 +164,8 @@ class SeriesResultCard extends StatelessWidget {
                   ),
                   child: Center(
                     child: Icon(Icons.auto_stories_rounded,
-                        size: 22, color: cs.onSecondaryContainer.withValues(alpha: 0.7)),
+                        size: 22,
+                        color: cs.onSecondaryContainer.withValues(alpha: 0.7)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -263,7 +264,8 @@ class EpisodeResultTile extends StatelessWidget {
                     ? CachedNetworkImage(
                         imageUrl: coverUrl,
                         fit: BoxFit.cover,
-                        httpHeaders: context.read<LibraryProvider>().mediaHeaders,
+                        httpHeaders:
+                            context.read<LibraryProvider>().mediaHeaders,
                         placeholder: (_, __) => _ph(cs),
                         errorWidget: (_, __, ___) => _ph(cs),
                       )
@@ -271,7 +273,8 @@ class EpisodeResultTile extends StatelessWidget {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -286,7 +289,8 @@ class EpisodeResultTile extends StatelessWidget {
                         Text(showTitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                            style: tt.bodySmall
+                                ?.copyWith(color: cs.onSurfaceVariant)),
                     ],
                   ),
                 ),
@@ -338,8 +342,7 @@ class AuthorResultTile extends StatelessWidget {
       final cleanUrl = serverUrl!.endsWith('/')
           ? serverUrl!.substring(0, serverUrl!.length - 1)
           : serverUrl!;
-      imageUrl =
-          '$cleanUrl/api/authors/$authorId/image?width=200&token=$token';
+      imageUrl = '$cleanUrl/api/authors/$authorId/image?width=200&token=$token';
       final ts = author['updatedAt'] as num?;
       if (ts != null) imageUrl = '$imageUrl&ts=${ts.toInt()}';
     }
@@ -371,7 +374,8 @@ class AuthorResultTile extends StatelessWidget {
                       ? CachedNetworkImage(
                           imageUrl: imageUrl,
                           fit: BoxFit.cover,
-                          httpHeaders: context.read<LibraryProvider>().mediaHeaders,
+                          httpHeaders:
+                              context.read<LibraryProvider>().mediaHeaders,
                           placeholder: (_, __) => _ph(cs),
                           errorWidget: (_, __, ___) => _ph(cs),
                         )
@@ -390,8 +394,7 @@ class AuthorResultTile extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                               color: cs.onSurface)),
                       if (numBooks != null)
-                        Text(
-                            '$numBooks book${numBooks != 1 ? 's' : ''}',
+                        Text('$numBooks book${numBooks != 1 ? 's' : ''}',
                             style: tt.bodySmall
                                 ?.copyWith(color: cs.onSurfaceVariant)),
                     ],
@@ -416,30 +419,6 @@ class AuthorResultTile extends StatelessWidget {
 
   void _showAuthorBooks(
       BuildContext context, String authorId, String authorName) {
-    FocusManager.instance.primaryFocus?.unfocus();
-    final auth = context.read<AuthProvider>();
-    final lib = context.read<LibraryProvider>();
-    final api = auth.apiService;
-    if (api == null || lib.selectedLibraryId == null) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.05, snap: true,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (ctx, scrollController) => AuthorBooksSheet(
-          libraryId: lib.selectedLibraryId!,
-          authorId: authorId,
-          authorName: authorName,
-          serverUrl: auth.serverUrl,
-          token: auth.token,
-          scrollController: scrollController,
-        ),
-      ),
-    );
+    showAuthorBooksSheet(context, authorId: authorId, authorName: authorName);
   }
 }

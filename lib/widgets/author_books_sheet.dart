@@ -3,8 +3,39 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/library_provider.dart';
 import 'library_search_results.dart';
 import 'status_message_view.dart';
+
+void showAuthorBooksSheet(BuildContext context,
+    {required String authorId, required String authorName}) {
+  FocusManager.instance.primaryFocus?.unfocus();
+  final auth = context.read<AuthProvider>();
+  final lib = context.read<LibraryProvider>();
+  final api = auth.apiService;
+  if (api == null || lib.selectedLibraryId == null) return;
+
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => DraggableScrollableSheet(
+      initialChildSize: 0.7,
+      minChildSize: 0.05,
+      snap: true,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (ctx, scrollController) => AuthorBooksSheet(
+        libraryId: lib.selectedLibraryId!,
+        authorId: authorId,
+        authorName: authorName,
+        serverUrl: auth.serverUrl,
+        token: auth.token,
+        scrollController: scrollController,
+      ),
+    ),
+  );
+}
 
 class AuthorBooksSheet extends StatefulWidget {
   final String libraryId;
