@@ -113,6 +113,32 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   // slide to the beginning rather than the list instantly reordering underneath them.
   bool _suppressReorder = false;
   bool _mergeLibraries = false;
+  int? _lastIndicatorSelection;
+
+  Future<void> _switchToAbsorbingPage(int index, {bool animate = true}) async {
+    if (!_pageController.hasClients) return;
+
+    final currentPage =
+        (_pageController.page ?? _pageController.initialPage).round();
+    if (index == currentPage) return;
+    if (_lastIndicatorSelection == index) return;
+
+    _lastIndicatorSelection = index;
+
+    await HapticFeedback.selectionClick();
+    if (animate) {
+      await _pageController.animateToPage(
+        index,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _pageController.jumpToPage(index);
+    }
+
+    _lastIndicatorSelection = null;
+  }
+
   bool? _lastSeenHasBook;
   bool? _lastSeenIsPlaying;
 
@@ -779,8 +805,13 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             if (books.length > 1)
               Padding(
                 padding: const EdgeInsets.only(top: 8, bottom: 4),
-                child:
-                    _PageDots(count: books.length, controller: _pageController),
+                child: _PageDots(
+                  count: books.length,
+                  controller: _pageController,
+                  onSelected: (index) => _switchToAbsorbingPage(index),
+                  onScrubSelected: (index) =>
+                      _switchToAbsorbingPage(index, animate: false),
+                ),
               ),
             // ── Cards (refreshable) ──
             Expanded(
@@ -817,11 +848,54 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                               itemCount: books.length,
                               itemBuilder: (_, i) => LayoutBuilder(
                                 builder: (context, constraints) {
+                                  final cardWidth = constraints.maxWidth;
                                   final vPad = (constraints.maxHeight * 0.04)
                                       .clamp(12.0, 40.0);
-                                  return Padding(
-                                    padding: EdgeInsets.symmetric(
-                                        horizontal: 4, vertical: vPad),
+                                  return AnimatedBuilder(
+                                    animation: _pageController,
+                                    builder: (context, child) {
+                                      double distFromCenter = 0.0;
+                                      double rawDist = 0.0;
+                                      if (_pageController
+                                          .position.haveDimensions) {
+                                        final page = _pageController.page ??
+                                            _pageController.initialPage
+                                                .toDouble();
+                                        rawDist = page -
+                                            i; // negative = card is to the right
+                                        distFromCenter = rawDist.abs();
+                                      }
+
+                                      final double scaleX;
+                                      if (distFromCenter >= 1.0) {
+                                        scaleX = 0.85;
+                                      } else {
+                                        final t = Curves.easeOut
+                                            .transform(1.0 - distFromCenter);
+                                        scaleX = 0.85 + (t * 0.15);
+                                      }
+
+                                      final squeezedWidth = cardWidth * scaleX;
+                                      final freedSpace =
+                                          cardWidth - squeezedWidth;
+                                      final direction = rawDist > 0
+                                          ? 1.0
+                                          : (rawDist < 0 ? -1.0 : 0.0);
+                                      final translateX =
+                                          direction * freedSpace * 0.45;
+
+                                      return Transform(
+                                        alignment: Alignment.center,
+                                        transform: Matrix4.identity()
+                                          ..translate(translateX, 0.0, 0.0)
+                                          ..scale(scaleX, 1.0, 1.0),
+                                        child: Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal: 4, vertical: vPad),
+                                          child: child,
+                                        ),
+                                      );
+                                    },
                                     child: RepaintBoundary(
                                       child: AbsorbingCard(
                                         key: ValueKey(_absorbingKey(books[i])),
@@ -906,33 +980,68 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 class _PageDots extends StatelessWidget {
   final int count;
   final PageController controller;
-  const _PageDots({required this.count, required this.controller});
+  final ValueChanged<int> onSelected;
+  final ValueChanged<int> onScrubSelected;
+
+  const _PageDots({
+    required this.count,
+    required this.controller,
+    required this.onSelected,
+    required this.onScrubSelected,
+  });
+
+  int _indexForPosition(double dx, double width) {
+    if (count <= 1 || width <= 0) return 0;
+
+    final clampedDx = dx.clamp(0.0, width);
+    final ratio = (clampedDx / width).clamp(0.0, 0.999999);
+    return (ratio * count).floor().clamp(0, count - 1);
+  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return ListenableBuilder(
-      listenable: controller,
-      builder: (_, __) {
-        final page = controller.hasClients ? (controller.page ?? 0).round() : 0;
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(count, (i) {
-            final active = i == page;
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: active ? 20 : 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: active
-                    ? cs.onSurface.withValues(alpha: 0.54)
-                    : cs.onSurface.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(3),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return ListenableBuilder(
+          listenable: controller,
+          builder: (_, __) {
+            final page =
+                controller.hasClients ? (controller.page ?? 0).round() : 0;
+            final width = constraints.maxWidth;
+
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (details) => onSelected(
+                  _indexForPosition(details.localPosition.dx, width)),
+              onHorizontalDragStart: (details) => onScrubSelected(
+                  _indexForPosition(details.localPosition.dx, width)),
+              onHorizontalDragUpdate: (details) => onScrubSelected(
+                  _indexForPosition(details.localPosition.dx, width)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(count, (i) {
+                  final active = i == page;
+                  return Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOutCubic,
+                      width: active ? 20 : 10,
+                      height: active ? 8 : 6,
+                      decoration: BoxDecoration(
+                        color: active
+                            ? cs.onSurface.withValues(alpha: 0.54)
+                            : cs.onSurface.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  );
+                }),
               ),
             );
-          }),
+          },
         );
       },
     );
