@@ -34,6 +34,36 @@ void showAuthorDetailSheet(BuildContext context, {
   );
 }
 
+void showAuthorBooksSheet(BuildContext context,
+    {required String authorId, required String authorName}) {
+  FocusManager.instance.primaryFocus?.unfocus();
+  final auth = context.read<AuthProvider>();
+  final lib = context.read<LibraryProvider>();
+  final api = auth.apiService;
+  if (api == null || lib.selectedLibraryId == null) return;
+
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => DraggableScrollableSheet(
+      initialChildSize: 0.7,
+      minChildSize: 0.05,
+      snap: true,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (ctx, scrollController) => AuthorBooksSheet(
+        libraryId: lib.selectedLibraryId!,
+        authorId: authorId,
+        authorName: authorName,
+        serverUrl: auth.serverUrl,
+        token: auth.token,
+        scrollController: scrollController,
+      ),
+    ),
+  );
+}
+
 class AuthorBooksSheet extends StatefulWidget {
   final String libraryId;
   final String authorId;
