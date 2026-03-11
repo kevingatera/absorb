@@ -835,7 +835,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             // ── Page Dots ──
             if (books.length > 1)
               Padding(
-                padding: const EdgeInsets.only(top: 4, bottom: 0),
+                padding: const EdgeInsets.only(top: 8, bottom: 0),
                 child: _PageDots(
                   count: books.length,
                   controller: _pageController,
@@ -843,7 +843,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                   onScrubSelected: (index) => _switchToAbsorbingPage(
                     index,
                     duration: const Duration(milliseconds: 110),
-                    withHaptics: false,
+                    withHaptics: true,
                   ),
                 ),
               ),
@@ -1000,7 +1000,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
 class _PageDots extends StatelessWidget {
   static const double _slotWidth = 20;
-  static const double _trackHeight = 16;
+  static const double _trackHeight = 14;
 
   final int count;
   final PageController controller;
@@ -1051,12 +1051,12 @@ class _PageDots extends StatelessWidget {
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 220),
                         curve: Curves.easeOutCubic,
-                        width: active ? 18 : 8,
-                        height: active ? 6 : 4,
+                        width: active ? 20 : 10,
+                        height: active ? 7 : 5,
                         decoration: BoxDecoration(
                           color: active
-                              ? cs.onSurface.withValues(alpha: 0.54)
-                              : cs.onSurface.withValues(alpha: 0.15),
+                              ? cs.onSurface.withValues(alpha: 0.62)
+                              : cs.onSurface.withValues(alpha: 0.18),
                           borderRadius: BorderRadius.circular(999),
                         ),
                       ),
