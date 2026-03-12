@@ -118,7 +118,8 @@ class ProgressSyncService {
 
     final currentTime = (data['currentTime'] as num?)?.toDouble() ?? 0;
     final duration = (data['duration'] as num?)?.toDouble() ?? 0;
-    debugPrint('[Sync] Syncing $itemId: currentTime=$currentTime, duration=$duration, sessionId=$sessionId');
+    debugPrint(
+        '[Sync] Syncing $itemId: currentTime=$currentTime, duration=$duration, sessionId=$sessionId');
 
     try {
       if (sessionId != null) {
@@ -147,6 +148,74 @@ class ProgressSyncService {
     }
   }
 
+  Future<Map<String, dynamic>?> reconcileItemWithServer({
+    required ApiService api,
+    required String itemId,
+  }) async {
+    if (!_isOnline) {
+      return await api.getItemProgress(itemId);
+    }
+
+    final local = await getLocal(itemId);
+    final serverProgress = await api.getItemProgress(itemId);
+
+    if (local == null) return serverProgress;
+
+    final localTime = (local['currentTime'] as num?)?.toDouble() ?? 0;
+    final localDuration = (local['duration'] as num?)?.toDouble() ?? 0;
+    final localTimestamp = (local['timestamp'] as num?)?.toInt() ?? 0;
+
+    if (localTime <= 0) return serverProgress;
+
+    final serverTimestamp =
+        (serverProgress?['lastUpdate'] as num?)?.toInt() ?? 0;
+    final serverTime =
+        (serverProgress?['currentTime'] as num?)?.toDouble() ?? 0;
+
+    if (serverProgress != null && serverTimestamp > localTimestamp) {
+      await cacheServerProgress(
+        itemId: itemId,
+        currentTime: serverTime,
+        duration:
+            (serverProgress['duration'] as num?)?.toDouble() ?? localDuration,
+      );
+      final pendingList = await ScopedPrefs.getStringList('pending_syncs');
+      pendingList.remove(itemId);
+      await ScopedPrefs.setStringList('pending_syncs', pendingList);
+      return serverProgress;
+    }
+
+    final isCompound = itemId.length > 36;
+    final apiItemId = isCompound ? itemId.substring(0, 36) : itemId;
+    final episodeId = isCompound ? itemId.substring(37) : null;
+
+    if (episodeId != null) {
+      await api.updateEpisodeProgress(
+        apiItemId,
+        episodeId,
+        currentTime: localTime,
+        duration: localDuration,
+      );
+    } else {
+      await api.updateProgress(
+        apiItemId,
+        currentTime: localTime,
+        duration: localDuration,
+      );
+    }
+
+    final pendingList = await ScopedPrefs.getStringList('pending_syncs');
+    pendingList.remove(itemId);
+    await ScopedPrefs.setStringList('pending_syncs', pendingList);
+
+    return await api.getItemProgress(itemId) ??
+        {
+          'currentTime': localTime,
+          'duration': localDuration,
+          'lastUpdate': localTimestamp,
+        };
+  }
+
   /// Flush all pending syncs (call when coming back online).
   /// Compares local vs server timestamps — last-write-wins.
   Future<void> flushPendingSync({ApiService? api, int maxItems = 5}) async {
@@ -159,13 +228,14 @@ class ProgressSyncService {
 
     _isFlushing = true;
     try {
-      final pendingList = List<String>.from(
-          await ScopedPrefs.getStringList('pending_syncs'));
+      final pendingList =
+          List<String>.from(await ScopedPrefs.getStringList('pending_syncs'));
 
       if (pendingList.isEmpty) return;
 
       final batch = pendingList.take(maxItems).toList();
-      debugPrint('[Sync] Flushing ${batch.length}/${pendingList.length} pending syncs');
+      debugPrint(
+          '[Sync] Flushing ${batch.length}/${pendingList.length} pending syncs');
 
       for (final itemId in batch) {
         final data = await getLocal(itemId);
@@ -189,11 +259,14 @@ class ProgressSyncService {
         try {
           final serverProgress = await api.getItemProgress(itemId);
           if (serverProgress != null) {
-            final serverTimestamp = (serverProgress['lastUpdate'] as num?)?.toInt() ?? 0;
-            final serverTime = (serverProgress['currentTime'] as num?)?.toDouble() ?? 0;
+            final serverTimestamp =
+                (serverProgress['lastUpdate'] as num?)?.toInt() ?? 0;
+            final serverTime =
+                (serverProgress['currentTime'] as num?)?.toDouble() ?? 0;
 
             if (serverTimestamp > localTimestamp) {
-              debugPrint('[Sync] Server is newer for $itemId: server=$serverTime s ($serverTimestamp) vs local=$localTime s ($localTimestamp) — pulling');
+              debugPrint(
+                  '[Sync] Server is newer for $itemId: server=$serverTime s ($serverTimestamp) vs local=$localTime s ($localTimestamp) — pulling');
               await cacheServerProgress(
                 itemId: itemId,
                 currentTime: serverTime,
@@ -204,7 +277,8 @@ class ProgressSyncService {
               await ScopedPrefs.setStringList('pending_syncs', updated);
               continue;
             }
-            debugPrint('[Sync] Local is newer for $itemId: local=$localTime s ($localTimestamp) vs server=$serverTime s ($serverTimestamp) — pushing');
+            debugPrint(
+                '[Sync] Local is newer for $itemId: local=$localTime s ($localTimestamp) vs server=$serverTime s ($serverTimestamp) — pushing');
           }
 
           // Use the direct progress endpoint instead of creating a new
@@ -217,7 +291,8 @@ class ProgressSyncService {
 
           if (episodeId != null) {
             await api.updateEpisodeProgress(
-              apiItemId, episodeId,
+              apiItemId,
+              episodeId,
               currentTime: localTime,
               duration: localDuration,
             );
@@ -228,7 +303,8 @@ class ProgressSyncService {
               duration: localDuration,
             );
           }
-          debugPrint('[Sync] Flushed $itemId via progress update: ${localTime}s');
+          debugPrint(
+              '[Sync] Flushed $itemId via progress update: ${localTime}s');
 
           final updated = await ScopedPrefs.getStringList('pending_syncs');
           updated.remove(itemId);

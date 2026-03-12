@@ -8,7 +8,6 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
-import '../services/playback_history_service.dart';
 import '../services/chromecast_service.dart';
 import '../services/progress_sync_service.dart';
 import 'book_detail_sheet.dart';
@@ -18,8 +17,8 @@ import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
 import 'card_buttons.dart';
 import 'chromecast_button.dart';
+import 'playback_history_sheet.dart';
 import 'sleep_timer_sheet.dart';
-import 'status_message_view.dart';
 
 // ─── Custom route: slide-up + fade ────────────────────────────
 
@@ -1251,16 +1250,6 @@ class _ExpandedCardState extends State<ExpandedCard> {
     );
   }
 
-  String _fmtTime(double s) {
-    if (s < 0) s = 0;
-    final h = (s / 3600).floor();
-    final m = ((s % 3600) / 60).floor();
-    final sec = (s % 60).floor();
-    if (h > 0)
-      return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
-    return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
-  }
-
   String _fmtDur(double s) {
     final h = (s / 3600).floor();
     final m = ((s % 3600) / 60).floor();
@@ -1838,134 +1827,22 @@ class _ExpandedCardState extends State<ExpandedCard> {
   }
 
   void _showHistory(BuildContext context, Color accent, TextTheme tt) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.6,
-        minChildSize: 0.05,
-        snap: true,
-        maxChildSize: 0.9,
-        builder: (_, sc) => Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).bottomSheetTheme.backgroundColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border(
-                top:
-                    BorderSide(color: accent.withValues(alpha: 0.2), width: 1)),
-          ),
-          child: Column(children: [
-            Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.24),
-                        borderRadius: BorderRadius.circular(2)))),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(children: [
-                const Spacer(),
-                Text('Playback History',
-                    style:
-                        tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-                const Spacer(),
-                IconButton(
-                  icon: Icon(Icons.delete_outline_rounded,
-                      size: 20,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  onPressed: () async {
-                    await PlaybackHistoryService().clearHistory(_itemId);
-                    if (ctx.mounted) Navigator.pop(ctx);
-                  },
-                  tooltip: 'Clear history',
-                ),
-              ]),
-            ),
-            if (_isActive)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Text('Tap an event to jump to that position',
-                    style: tt.bodySmall?.copyWith(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurfaceVariant
-                            .withValues(alpha: 0.6),
-                        fontStyle: FontStyle.italic)),
-              )
-            else
-              const SizedBox(height: 8),
-            Expanded(
-                child: FutureBuilder<List<PlaybackEvent>>(
-              future: PlaybackHistoryService().getHistory(_itemId),
-              builder: (ctx, snap) {
-                if (!snap.hasData)
-                  return const Center(
-                      child: CircularProgressIndicator(strokeWidth: 2));
-                final events = snap.data!;
-                if (events.isEmpty) {
-                  return const StatusMessageView(
-                    icon: Icons.history_rounded,
-                    title: 'No playback history yet',
-                    message:
-                        'Your recent play, pause, and seek events for this item will appear here.',
-                    padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  );
-                }
-                return ListView.builder(
-                  controller: sc,
-                  itemCount: events.length,
-                  itemBuilder: (_, i) {
-                    final e = events[i];
-                    final posLabel = _fmtTime(e.positionSeconds);
-                    final timeAgo = _timeAgo(e.timestamp);
-                    return ListTile(
-                      dense: true,
-                      leading: Icon(_historyIcon(e.type),
-                          size: 18, color: accent.withValues(alpha: 0.7)),
-                      title: Text(e.label,
-                          style: tt.bodySmall?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withValues(alpha: 0.7))),
-                      subtitle: Text('at $posLabel',
-                          style: tt.labelSmall?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant)),
-                      trailing: Text(timeAgo,
-                          style: tt.labelSmall?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withValues(alpha: 0.3))),
-                      onTap: _isActive
-                          ? () {
-                              widget.player.seekTo(
-                                  Duration(seconds: e.positionSeconds.round()));
-                              Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      duration: const Duration(seconds: 3),
-                                      content: Text('Jumped to $posLabel')));
-                            }
-                          : null,
-                    );
-                  },
-                );
-              },
-            )),
-          ]),
-        ),
-      ),
+    final historyKey = _episodeId != null ? '$_itemId-$_episodeId' : _itemId;
+    showPlaybackHistorySheet(
+      context,
+      itemId: historyKey,
+      accent: accent,
+      canSeek: _isActive || _isCastingThis,
+      livePositionSeconds: _isActive && !_isCastingThis
+          ? widget.player.position.inMilliseconds / 1000.0
+          : null,
+      onSeek: (position) {
+        if (_isCastingThis) {
+          ChromecastService().seekTo(position);
+        } else {
+          widget.player.seekTo(position);
+        }
+      },
     );
   }
 
@@ -1986,36 +1863,5 @@ class _ExpandedCardState extends State<ExpandedCard> {
         },
       ),
     );
-  }
-
-  IconData _historyIcon(PlaybackEventType type) {
-    switch (type) {
-      case PlaybackEventType.play:
-        return Icons.play_arrow_rounded;
-      case PlaybackEventType.pause:
-        return Icons.pause_rounded;
-      case PlaybackEventType.seek:
-        return Icons.swap_horiz_rounded;
-      case PlaybackEventType.syncLocal:
-        return Icons.save_rounded;
-      case PlaybackEventType.syncServer:
-        return Icons.cloud_done_rounded;
-      case PlaybackEventType.autoRewind:
-        return Icons.replay_rounded;
-      case PlaybackEventType.skipForward:
-        return Icons.forward_30_rounded;
-      case PlaybackEventType.skipBackward:
-        return Icons.replay_10_rounded;
-      case PlaybackEventType.speedChange:
-        return Icons.speed_rounded;
-    }
-  }
-
-  String _timeAgo(DateTime dt) {
-    final diff = DateTime.now().difference(dt);
-    if (diff.inSeconds < 60) return 'just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    return '${diff.inDays}d ago';
   }
 }
