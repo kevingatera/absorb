@@ -16,6 +16,7 @@ import 'episode_list_sheet.dart';
 import '../services/upcoming_releases_service.dart';
 import 'series_books_sheet.dart';
 import 'author_books_sheet.dart';
+import 'author_name_link.dart';
 
 // ═══════════════════════════════════════════════════════════════
 // Grid book tile (cover + title + author)
@@ -296,8 +297,9 @@ class _GridBookTileState extends State<GridBookTile> {
             ),
           // Author
           if (author.isNotEmpty)
-            Text(
-              author,
+            AuthorNameLink(
+              item: widget.item,
+              authorName: author,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: tt.labelSmall?.copyWith(
@@ -599,8 +601,9 @@ class GridSeriesTile extends StatelessWidget {
             ),
           ),
           if (author.isNotEmpty)
-            Text(
-              author,
+            AuthorNameLink(
+              item: item,
+              authorName: author,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: tt.labelSmall?.copyWith(
@@ -655,8 +658,10 @@ class GridSeriesTileDirect extends StatelessWidget {
 
     // Get author from first book
     String author = '';
+    Map<String, dynamic> firstBookItem = const {};
     if (books.isNotEmpty) {
       final firstBook = books.first as Map<String, dynamic>? ?? {};
+      firstBookItem = firstBook;
       final media = firstBook['media'] as Map<String, dynamic>? ?? {};
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
       author = metadata['authorName'] as String? ?? '';
@@ -721,8 +726,9 @@ class GridSeriesTileDirect extends StatelessWidget {
             ),
           ),
           if (author.isNotEmpty)
-            Text(
-              author,
+            AuthorNameLink(
+              item: firstBookItem,
+              authorName: author,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: tt.labelSmall?.copyWith(
