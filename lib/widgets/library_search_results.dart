@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../providers/library_provider.dart';
+import 'author_name_link.dart';
 import 'author_books_sheet.dart';
 import 'book_detail_sheet.dart';
 import 'episode_list_sheet.dart';
@@ -91,7 +92,9 @@ class BookResultTile extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                               color: cs.onSurface)),
                       if (authorName.isNotEmpty)
-                        Text(authorName,
+                        AuthorNameLink(
+                            item: item,
+                            authorName: authorName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: tt.bodySmall

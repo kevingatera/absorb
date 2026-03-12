@@ -15,6 +15,7 @@ import '../services/audio_player_service.dart';
 import 'card_buttons.dart';
 import '../services/api_service.dart';
 import '../services/download_service.dart';
+import 'author_name_link.dart';
 import '../services/progress_sync_service.dart';
 import '../services/metadata_override_service.dart';
 import '../services/scoped_prefs.dart';
@@ -277,7 +278,9 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
               style: tt.headlineSmall
                   ?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
           const SizedBox(height: 4),
-          Text(authorName,
+          AuthorNameLink(
+              item: _item!,
+              authorName: authorName,
               textAlign: TextAlign.center,
               style: tt.bodyMedium
                   ?.copyWith(color: cs.onSurface.withValues(alpha: 0.6))),

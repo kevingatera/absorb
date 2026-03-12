@@ -9,6 +9,7 @@ import '../services/download_service.dart';
 import '../services/scoped_prefs.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/absorbing_card.dart';
+import '../widgets/author_name_link.dart';
 import '../widgets/status_message_view.dart';
 
 class AbsorbingScreen extends StatefulWidget {
@@ -1256,7 +1257,9 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
                                 style: tt.bodySmall
                                     ?.copyWith(color: cs.onSurfaceVariant)),
                           if (author.isNotEmpty && epTitle == null)
-                            Text(author,
+                            AuthorNameLink(
+                                item: book,
+                                authorName: author,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: tt.bodySmall
