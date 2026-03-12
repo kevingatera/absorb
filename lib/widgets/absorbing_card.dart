@@ -43,6 +43,8 @@ class AbsorbingCardState extends State<AbsorbingCard>
   int _lastChapterIdx = -1;
   ui.Image? _blurredCover; // Precached blurred background
   String? _blurredCoverUrl; // URL the blur was built from
+  String? _blurLoadingUrl;
+  int _blurRequestId = 0;
   List<String> _buttonOrder = PlayerSettings.defaultButtonOrder;
   bool _autoRemoveFinished = false;
 
@@ -263,6 +265,9 @@ class AbsorbingCardState extends State<AbsorbingCard>
       _coverProvider = null;
       _blurredCover?.dispose();
       _blurredCover = null;
+      _blurredCoverUrl = null;
+      _blurLoadingUrl = null;
+      _blurRequestId++;
       _fetchedChapters = null;
       _lastChapterIdx = -1;
       _fetchChaptersIfNeeded();
@@ -283,11 +288,13 @@ class AbsorbingCardState extends State<AbsorbingCard>
   void _onCoverLoaded(ImageProvider provider) {
     _coverProvider = provider;
     _rederiveCoverScheme();
-    // Precache the blurred version of the cover
-    if (_blurredCover == null) {
-      _blurredCoverUrl = _coverUrl;
-      _precacheBlur(provider);
+    final coverUrl = _coverUrl;
+    if (coverUrl == null ||
+        _blurredCover != null ||
+        _blurLoadingUrl == coverUrl) {
+      return;
     }
+    _precacheBlur(provider, coverUrl);
   }
 
   void _rederiveCoverScheme() {
@@ -307,7 +314,9 @@ class AbsorbingCardState extends State<AbsorbingCard>
   }
 
   /// Resolve the image, render it blurred to an offscreen canvas, cache the result.
-  Future<void> _precacheBlur(ImageProvider provider) async {
+  Future<void> _precacheBlur(ImageProvider provider, String sourceUrl) async {
+    final requestId = ++_blurRequestId;
+    _blurLoadingUrl = sourceUrl;
     try {
       final completer = Completer<ui.Image>();
       final stream = provider.resolve(ImageConfiguration.empty);
@@ -332,7 +341,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
           Rect.fromLTWH(0, 0, targetWidth.toDouble(), targetHeight.toDouble()));
       final paint = Paint()
         ..imageFilter = ui.ImageFilter.blur(
-            sigmaX: 30, sigmaY: 30, tileMode: TileMode.decal);
+            sigmaX: 30, sigmaY: 30, tileMode: TileMode.clamp);
       canvas.drawImageRect(
         srcImage,
         Rect.fromLTWH(
@@ -344,13 +353,20 @@ class AbsorbingCardState extends State<AbsorbingCard>
       final blurred = await picture.toImage(targetWidth, targetHeight);
       picture.dispose();
 
-      if (mounted) {
-        setState(() => _blurredCover = blurred);
-      } else {
+      if (!mounted || requestId != _blurRequestId || sourceUrl != _coverUrl) {
         blurred.dispose();
+        return;
       }
+
+      final previous = _blurredCover;
+      setState(() {
+        _blurredCover = blurred;
+        _blurredCoverUrl = sourceUrl;
+        _blurLoadingUrl = null;
+      });
+      if (!identical(previous, blurred)) previous?.dispose();
     } catch (_) {
-      // Fallback: card will show without blurred background, which is fine
+      if (requestId == _blurRequestId) _blurLoadingUrl = null;
     }
   }
 
@@ -407,6 +423,9 @@ class AbsorbingCardState extends State<AbsorbingCard>
     if (_blurredCover != null && _blurredCoverUrl != _coverUrl) {
       _blurredCover?.dispose();
       _blurredCover = null;
+      _blurredCoverUrl = null;
+      _blurLoadingUrl = null;
+      _blurRequestId++;
     }
 
     return Container(

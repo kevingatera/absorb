@@ -88,6 +88,9 @@ class _ExpandedCardState extends State<ExpandedCard> {
   Brightness? _coverBrightness;
   ImageProvider? _coverProvider;
   ui.Image? _blurredCover;
+  String? _blurredCoverUrl;
+  String? _blurLoadingUrl;
+  int _blurRequestId = 0;
   List<dynamic>? _fetchedChapters;
   bool _isStarting = false;
   StreamSubscription<Duration>? _chapterTrackSub;
@@ -324,6 +327,9 @@ class _ExpandedCardState extends State<ExpandedCard> {
     // Dispose old blur and regenerate
     _blurredCover?.dispose();
     _blurredCover = null;
+    _blurredCoverUrl = null;
+    _blurLoadingUrl = null;
+    _blurRequestId++;
     _generateBlur();
     _fetchChaptersIfNeeded();
     _startChapterTracking();
@@ -441,7 +447,11 @@ class _ExpandedCardState extends State<ExpandedCard> {
   /// Generate our own blurred cover from the current cover URL.
   Future<void> _generateBlur() async {
     final url = _coverUrl;
-    if (url == null) return;
+    if (url == null || _blurLoadingUrl == url || _blurredCoverUrl == url)
+      return;
+
+    final requestId = ++_blurRequestId;
+    _blurLoadingUrl = url;
 
     try {
       final ImageProvider provider;
@@ -474,7 +484,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
           Rect.fromLTWH(0, 0, targetWidth.toDouble(), targetHeight.toDouble()));
       final paint = Paint()
         ..imageFilter = ui.ImageFilter.blur(
-            sigmaX: 30, sigmaY: 30, tileMode: TileMode.decal);
+            sigmaX: 30, sigmaY: 30, tileMode: TileMode.clamp);
       canvas.drawImageRect(
         srcImage,
         Rect.fromLTWH(
@@ -486,15 +496,24 @@ class _ExpandedCardState extends State<ExpandedCard> {
       final blurred = await picture.toImage(targetWidth, targetHeight);
       picture.dispose();
 
-      if (mounted) {
-        setState(() => _blurredCover = blurred);
-      } else {
+      if (!mounted || requestId != _blurRequestId || url != _coverUrl) {
         blurred.dispose();
+        return;
       }
+
+      final previous = _blurredCover;
+      setState(() {
+        _blurredCover = blurred;
+        _blurredCoverUrl = url;
+        _blurLoadingUrl = null;
+      });
+      if (!identical(previous, blurred)) previous?.dispose();
 
       // Also derive cover scheme if needed
       if (_coverScheme == null) _onCoverLoaded(provider);
-    } catch (_) {}
+    } catch (_) {
+      if (requestId == _blurRequestId) _blurLoadingUrl = null;
+    }
   }
 
   @override
