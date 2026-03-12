@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import 'author_name_link.dart';
 import 'author_books_sheet.dart';
@@ -319,7 +320,7 @@ class EpisodeResultTile extends StatelessWidget {
   }
 }
 
-class AuthorResultTile extends StatelessWidget {
+class AuthorResultTile extends StatefulWidget {
   final Map<String, dynamic> author;
   final String? serverUrl;
   final String? token;
@@ -332,20 +333,65 @@ class AuthorResultTile extends StatelessWidget {
   });
 
   @override
+  State<AuthorResultTile> createState() => _AuthorResultTileState();
+}
+
+class _AuthorResultTileState extends State<AuthorResultTile> {
+  int? _resolvedCount;
+
+  @override
+  void initState() {
+    super.initState();
+    final count = _extractBookCount(widget.author);
+    _resolvedCount = count > 0 ? count : null;
+    if (_resolvedCount == null) _loadAuthorCount();
+  }
+
+  int _extractBookCount(Map<String, dynamic> author) {
+    final direct = (author['numBooks'] as num?)?.toInt();
+    if (direct != null && direct > 0) return direct;
+    final total = (author['totalItems'] as num?)?.toInt();
+    if (total != null && total > 0) return total;
+    final items = author['items'] as List<dynamic>?;
+    if (items != null && items.isNotEmpty) return items.length;
+    return 0;
+  }
+
+  Future<void> _loadAuthorCount() async {
+    final authorId = widget.author['id'] as String? ?? '';
+    if (authorId.isEmpty) return;
+    final auth = context.read<AuthProvider>();
+    final api = auth.apiService;
+    final libraryId = context.read<LibraryProvider>().selectedLibraryId;
+    if (api == null) return;
+
+    final fullAuthor = await api.getAuthorById(authorId, libraryId: libraryId);
+    if (!mounted || fullAuthor == null) return;
+    final count = _extractBookCount(fullAuthor);
+    if (count > 0) {
+      setState(() => _resolvedCount = count);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
 
+    final author = widget.author;
     final name = author['name'] as String? ?? 'Unknown';
     final authorId = author['id'] as String? ?? '';
-    final numBooks = author['numBooks'] as int?;
+    final numBooks = _resolvedCount;
 
     String? imageUrl;
-    if (authorId.isNotEmpty && serverUrl != null && token != null) {
-      final cleanUrl = serverUrl!.endsWith('/')
-          ? serverUrl!.substring(0, serverUrl!.length - 1)
-          : serverUrl!;
-      imageUrl = '$cleanUrl/api/authors/$authorId/image?width=200&token=$token';
+    if (authorId.isNotEmpty &&
+        widget.serverUrl != null &&
+        widget.token != null) {
+      final cleanUrl = widget.serverUrl!.endsWith('/')
+          ? widget.serverUrl!.substring(0, widget.serverUrl!.length - 1)
+          : widget.serverUrl!;
+      imageUrl =
+          '$cleanUrl/api/authors/$authorId/image?width=200&token=${widget.token}';
       final ts = author['updatedAt'] as num?;
       if (ts != null) imageUrl = '$imageUrl&ts=${ts.toInt()}';
     }
