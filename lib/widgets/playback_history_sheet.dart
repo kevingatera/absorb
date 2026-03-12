@@ -222,26 +222,38 @@ class _PlaybackHistorySheetState extends State<PlaybackHistorySheet> {
                               padding: const EdgeInsets.only(top: 3),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 7,
-                                  vertical: 2,
+                                  horizontal: 8,
+                                  vertical: 3,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: _sourceColor(event.source, cs)
-                                      .withValues(alpha: 0.12),
+                                  color: cs.surfaceContainerHighest
+                                      .withValues(alpha: 0.7),
                                   borderRadius: BorderRadius.circular(999),
                                   border: Border.all(
                                     color: _sourceColor(event.source, cs)
-                                        .withValues(alpha: 0.2),
+                                        .withValues(alpha: 0.16),
                                   ),
                                 ),
-                                child: Text(
-                                  event.sourceLabel,
-                                  style: tt.labelSmall?.copyWith(
-                                    color: _sourceColor(event.source, cs)
-                                        .withValues(alpha: 0.9),
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _sourceIcon(event.source),
+                                      size: 11,
+                                      color: _sourceColor(event.source, cs)
+                                          .withValues(alpha: 0.82),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      _sourceText(event.source),
+                                      style: tt.labelSmall?.copyWith(
+                                        color: _sourceColor(event.source, cs)
+                                            .withValues(alpha: 0.85),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -289,9 +301,31 @@ class _PlaybackHistorySheetState extends State<PlaybackHistorySheet> {
       case PlaybackEventSource.local:
         return cs.primary;
       case PlaybackEventSource.server:
-        return Colors.teal;
+        return cs.tertiary;
       case PlaybackEventSource.both:
-        return Colors.indigo;
+        return cs.secondary;
+    }
+  }
+
+  IconData _sourceIcon(PlaybackEventSource source) {
+    switch (source) {
+      case PlaybackEventSource.local:
+        return Icons.phone_android_rounded;
+      case PlaybackEventSource.server:
+        return Icons.language_rounded;
+      case PlaybackEventSource.both:
+        return Icons.sync_rounded;
+    }
+  }
+
+  String _sourceText(PlaybackEventSource source) {
+    switch (source) {
+      case PlaybackEventSource.local:
+        return 'App';
+      case PlaybackEventSource.server:
+        return 'Web';
+      case PlaybackEventSource.both:
+        return 'Both';
     }
   }
 

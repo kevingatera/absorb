@@ -224,7 +224,6 @@ class LibraryProvider extends ChangeNotifier {
         if (_api != null) {
           debugPrint('[Library] Manual offline off — flushing pending syncs');
           ProgressSyncService().flushPendingSync(api: _api!, maxItems: 3);
-          ProgressSyncService().flushOfflineListeningTime(api: _api!);
         }
         if (_selectedLibraryId == null) {
           loadLibraries();
@@ -1007,6 +1006,9 @@ class LibraryProvider extends ChangeNotifier {
   void _onRemoteItemUpdated(Map<String, dynamic> data) {
     // Refresh the personalized view so new/updated items appear
     loadPersonalizedView(force: true);
+    if (_api != null && !isOffline) {
+      unawaited(DownloadService().enrichMetadata(_api!));
+    }
     // Check if a subscribed podcast has new episodes
     _checkSubscribedPodcastUpdate(data);
   }
@@ -2420,57 +2422,8 @@ class LibraryProvider extends ChangeNotifier {
     if (DownloadService().isDownloaded(itemId)) {
       PlayerSettings.getRollingDownloadDeleteFinished().then((delete) {
         if (!delete) return;
-        bool optedIn = false;
-        if (itemId.length > 36) {
-          optedIn = _rollingDownloadSeries.contains(itemId.substring(0, 36));
-        } else {
-          final data = _itemDataWithSeries(itemId);
-          if (data != null) {
-            final (seriesId, _) = _extractSeries(data);
-            optedIn =
-                seriesId != null && _rollingDownloadSeries.contains(seriesId);
-          }
-        }
-        if (optedIn) {
-          DownloadService().deleteDownload(itemId, skipStopCheck: true);
-          _showRollingSnackBar('Deleted finished download');
-        }
-      });
-    }
-
-    // Auto-delete for queue-based downloads (manual queue + queueAutoDownload)
-    if (DownloadService().isDownloaded(itemId)) {
-      final isPodcastItem = itemId.length > 36;
-      Future.wait([
-        isPodcastItem
-            ? PlayerSettings.getPodcastQueueMode()
-            : PlayerSettings.getBookQueueMode(),
-        PlayerSettings.getQueueAutoDownload(),
-        PlayerSettings.getRollingDownloadDeleteFinished(),
-      ]).then((results) {
-        final qMode = results[0] as String;
-        final qAutoDl = results[1] as bool;
-        final deleteFin = results[2] as bool;
-        if (qMode != 'manual' || !qAutoDl || !deleteFin) return;
-        // Skip if already handled by series-based block above
-        bool handledBySeries = false;
-        if (_rollingDownloadSeries.isNotEmpty) {
-          if (itemId.length > 36) {
-            handledBySeries =
-                _rollingDownloadSeries.contains(itemId.substring(0, 36));
-          } else {
-            final data = _itemDataWithSeries(itemId);
-            if (data != null) {
-              final (seriesId, _) = _extractSeries(data);
-              handledBySeries =
-                  seriesId != null && _rollingDownloadSeries.contains(seriesId);
-            }
-          }
-        }
-        if (!handledBySeries) {
-          DownloadService().deleteDownload(itemId, skipStopCheck: true);
-          _showRollingSnackBar('Deleted finished download');
-        }
+        DownloadService().deleteDownload(itemId, skipStopCheck: true);
+        _showRollingSnackBar('Deleted finished download');
       });
     }
 

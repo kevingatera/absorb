@@ -9,13 +9,13 @@ import '../services/download_service.dart';
 import '../widgets/home_section.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/shimmer.dart';
+import '../widgets/book_card.dart';
+import '../widgets/status_message_view.dart';
 import '../widgets/book_detail_sheet.dart';
+import '../widgets/author_name_link.dart';
 import '../widgets/card_buttons.dart';
 import '../widgets/episode_list_sheet.dart';
 import '../main.dart' show oledNotifier;
-import '../widgets/home_customize_sheet.dart';
-import '../widgets/playlist_detail_sheet.dart';
-import '../widgets/collection_detail_sheet.dart';
 import 'app_shell.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -28,16 +28,11 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _player = AudioPlayerService();
   bool _hideEbookOnly = false;
-  bool _rectangleCovers = false;
 
   // Cached filtered sections — invalidated when source data or settings change.
-  List<Map<String, dynamic>>? _cachedSections;
+  List<dynamic>? _cachedSections;
   List<dynamic>? _cachedClItems;
   List<dynamic>? _lastSectionsRef;
-  List<dynamic>? _lastPlaylistsRef;
-  List<dynamic>? _lastCollectionsRef;
-  List<String>? _lastSectionOrder;
-  Set<String>? _lastHiddenIds;
   bool _lastHideEbook = false;
   bool _lastIsPodcast = false;
 
@@ -49,7 +44,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _player.addListener(_onPlayerChanged);
-    PlayerSettings.settingsChanged.addListener(_loadSettings);
     _loadSettings();
     Future.microtask(() {
       final lib = context.read<LibraryProvider>();
@@ -59,14 +53,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadSettings() async {
-    final results = await Future.wait([
-      PlayerSettings.getHideEbookOnly(),
-      PlayerSettings.getRectangleCovers(),
-    ]);
-    if (mounted) setState(() {
-      _hideEbookOnly = results[0];
-      _rectangleCovers = results[1];
-    });
+    final hide = await PlayerSettings.getHideEbookOnly();
+    if (mounted) setState(() => _hideEbookOnly = hide);
   }
 
   @override
@@ -93,26 +81,14 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Recompute cached filtered sections only when input data changes.
   void _refreshFilteredCache(LibraryProvider lib) {
     final sections = lib.personalizedSections;
-    final playlists = lib.playlists;
-    final collections = lib.collections;
     final isPod = lib.isPodcastLibrary;
-    final sectionOrder = lib.sectionOrder;
-    final hiddenIds = lib.hiddenSectionIds;
     if (identical(sections, _lastSectionsRef) &&
-        identical(playlists, _lastPlaylistsRef) &&
-        identical(collections, _lastCollectionsRef) &&
-        identical(sectionOrder, _lastSectionOrder) &&
-        identical(hiddenIds, _lastHiddenIds) &&
         _hideEbookOnly == _lastHideEbook &&
         isPod == _lastIsPodcast &&
         _cachedSections != null) {
       return; // cache is still valid
     }
     _lastSectionsRef = sections;
-    _lastPlaylistsRef = playlists;
-    _lastCollectionsRef = collections;
-    _lastSectionOrder = sectionOrder;
-    _lastHiddenIds = hiddenIds;
     _lastHideEbook = _hideEbookOnly;
     _lastIsPodcast = isPod;
 
@@ -133,13 +109,12 @@ class _HomeScreenState extends State<HomeScreen> {
       }).toList();
     }
     _cachedClItems = clItems;
-    _cachedSections = lib.getOrderedHomeSections();
+    _cachedSections = _sortSections(sections);
   }
 
   @override
   void dispose() {
     _player.removeListener(_onPlayerChanged);
-    PlayerSettings.settingsChanged.removeListener(_loadSettings);
     super.dispose();
   }
 
@@ -240,6 +215,17 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  static const _prioritySections = [
+    'continue-listening',
+    'continue-series',
+    'episodes-recently-added',
+    'recently-added',
+    'discover',
+    'listen-again',
+  ];
+
+  static const _hiddenSections = {'newest-authors', 'recent-series'};
+
   static const _sectionLabels = {
     'continue-listening': 'Continue Listening',
     'continue-series': 'Continue Series',
@@ -259,6 +245,16 @@ class _HomeScreenState extends State<HomeScreen> {
     'episodes-recently-added': Icons.podcasts_rounded,
     'downloaded-books': Icons.download_done_rounded,
   };
+
+  List<dynamic> _sortSections(List<dynamic> sections) {
+    final sorted = List<dynamic>.from(sections);
+    sorted.sort((a, b) {
+      final aIdx = _prioritySections.indexOf(a['id'] ?? '');
+      final bIdx = _prioritySections.indexOf(b['id'] ?? '');
+      return (aIdx == -1 ? 999 : aIdx).compareTo(bIdx == -1 ? 999 : bIdx);
+    });
+    return sorted;
+  }
 
   String _titleCase(String s) {
     return s
@@ -290,19 +286,21 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       body: Container(
-        decoration: oledNotifier.value ? null : BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            stops: const [0.0, 0.22, 0.72, 1.0],
-            colors: [
-              cs.primary.withValues(alpha: 0.06),
-              cs.surface,
-              lowerFade,
-              scaffoldBg,
-            ],
-          ),
-        ),
+        decoration: oledNotifier.value
+            ? null
+            : BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: const [0.0, 0.22, 0.72, 1.0],
+                  colors: [
+                    cs.primary.withValues(alpha: 0.06),
+                    cs.surface,
+                    lowerFade,
+                    scaffoldBg,
+                  ],
+                ),
+              ),
         child: SafeArea(
           child: RefreshIndicator(
             onRefresh: () async {
@@ -332,12 +330,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         }
                       },
                       child: Icon(
-                        lib.isOffline ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
-                        size: 20, color: lib.isOffline ? Colors.orange : Colors.green,
+                        lib.isOffline
+                            ? Icons.cloud_off_rounded
+                            : Icons.cloud_done_rounded,
+                        size: 20,
+                        color: lib.isOffline ? Colors.orange : Colors.green,
                       ),
                     ),
                     actions: [
-                      if (allLibraries.length > 1)
+                      if (!lib.isOffline && allLibraries.length > 1)
                         Material(
                           color: cs.onSurface.withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(20),
@@ -384,24 +385,68 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ),
-                      if (!lib.isOffline)
-                        GestureDetector(
-                          onTap: () => HomeCustomizeSheet.show(context),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: cs.onSurface.withValues(alpha: 0.06),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
-                            ),
-                            child: Icon(Icons.tune_rounded, size: 14, color: cs.onSurfaceVariant),
-                          ),
-                        ),
                     ],
                   ),
                 ),
 
-                // (Continue Listening is now rendered in the generic sections loop below)
+                // ── Currently Absorbing section ──
+                if (!lib.isLoading)
+                  ...() {
+                    final clItems = _cachedClItems ?? [];
+                    if (clItems.isEmpty) return <Widget>[];
+                    return <Widget>[
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                          child: Row(
+                            children: [
+                              Icon(Icons.play_circle_outline_rounded,
+                                  size: 16,
+                                  color: cs.primary.withValues(alpha: 0.7)),
+                              const SizedBox(width: 8),
+                              Text('Continue Listening',
+                                  style: tt.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w500,
+                                    color: cs.onSurface.withValues(alpha: 0.8),
+                                    letterSpacing: 0.3,
+                                  )),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                  child: Container(
+                                      height: 0.5,
+                                      color: cs.outlineVariant
+                                          .withValues(alpha: 0.2))),
+                            ],
+                          ),
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: SizedBox(
+                            height: 92,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 20),
+                              physics: const BouncingScrollPhysics(),
+                              itemCount: clItems.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(width: 10),
+                              itemBuilder: (context, i) {
+                                final item = clItems[i] as Map<String, dynamic>;
+                                return _ContinueListeningCard(
+                                  item: item,
+                                  lib: lib,
+                                  player: _player,
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ];
+                  }(),
 
                 // ── Loading shimmer ──
                 if (lib.isLoading) ...[
@@ -418,21 +463,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     lib.errorMessage != null &&
                     lib.personalizedSections.isEmpty)
                   SliverFillRemaining(
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.cloud_off_rounded,
-                              size: 48, color: cs.error),
-                          const SizedBox(height: 12),
-                          Text(lib.errorMessage!,
-                              style: tt.bodyLarge?.copyWith(color: cs.error)),
-                          const SizedBox(height: 16),
-                          FilledButton.tonal(
-                              onPressed: lib.refresh,
-                              child: const Text('Retry')),
-                        ],
-                      ),
+                    child: StatusMessageView(
+                      icon: Icons.cloud_off_rounded,
+                      accentColor: cs.error,
+                      title: lib.errorMessage == 'Failed to load libraries'
+                          ? 'Your libraries did not load'
+                          : 'Home could not refresh',
+                      message: lib.errorMessage == 'Failed to load libraries'
+                          ? 'Absorb could not fetch your libraries from Audiobookshelf. Check the server connection, then try again.'
+                          : 'Absorb could not fetch your latest Home shelves from Audiobookshelf. Pull to refresh or try again in a moment.',
+                      actionLabel: 'Retry',
+                      onAction: lib.refresh,
                     ),
                   ),
 
@@ -442,136 +483,60 @@ class _HomeScreenState extends State<HomeScreen> {
                     lib.personalizedSections.isEmpty &&
                     (lib.libraries.isNotEmpty || lib.isOffline))
                   SliverFillRemaining(
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            lib.isOffline
-                                ? Icons.download_for_offline_outlined
-                                : Icons.library_music_outlined,
-                            size: 48,
-                            color: cs.onSurfaceVariant,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            lib.isOffline
-                                ? 'No downloaded books'
-                                : 'Your library is empty',
-                            style: tt.bodyLarge?.copyWith(
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                          if (lib.isOffline) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              'Download books while online to listen offline',
-                              style: tt.bodySmall?.copyWith(
-                                color:
-                                    cs.onSurfaceVariant.withValues(alpha: 0.6),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
+                    child: StatusMessageView(
+                      icon: lib.isOffline
+                          ? Icons.download_for_offline_outlined
+                          : Icons.library_music_outlined,
+                      title: lib.isOffline
+                          ? 'No offline library yet'
+                          : 'Nothing is ready for Home yet',
+                      message: lib.isOffline
+                          ? 'This device does not have any downloaded ${lib.isPodcastLibrary ? 'episodes' : 'books'} yet. Download something while online and it will show up here for offline listening.'
+                          : 'The selected library does not have any ${lib.isPodcastLibrary ? 'shows or episodes' : 'books'} to show yet. Add content in Audiobookshelf or pull to refresh if something was just added.',
                     ),
                   ),
 
-                // ── All sections (including Continue Listening) ──
+                // ── Other sections ──
                 if (!lib.isLoading)
-                  ...(_cachedSections ?? []).expand((section) {
-                    final id = section['id'] as String? ?? '';
-                    final isPlaylist = id.startsWith('playlist:');
-                    final isCollection = id.startsWith('collection:');
-
-                    // Playlists/collections are server-only; hide when offline
-                    if ((isPlaylist || isCollection) && lib.isOffline) return <Widget>[];
-
-                    // Continue Listening gets its own compact card layout
-                    if (id == 'continue-listening') {
-                      final clItems = _cachedClItems ?? [];
-                      if (clItems.isEmpty) return <Widget>[];
-                      return <Widget>[
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-                            child: Row(children: [
-                              Icon(Icons.play_circle_outline_rounded,
-                                  size: 16, color: cs.primary.withValues(alpha: 0.7)),
-                              const SizedBox(width: 8),
-                              Text('Continue Listening',
-                                  style: tt.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w500,
-                                    color: cs.onSurface.withValues(alpha: 0.8),
-                                    letterSpacing: 0.3,
-                                  )),
-                              const SizedBox(width: 12),
-                              Expanded(child: Container(height: 0.5,
-                                  color: cs.outlineVariant.withValues(alpha: 0.2))),
-                            ]),
-                          ),
-                        ),
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: SizedBox(
-                              height: 96,
-                              child: ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                padding: const EdgeInsets.symmetric(horizontal: 20),
-                                physics: const BouncingScrollPhysics(),
-                                itemCount: clItems.length,
-                                separatorBuilder: (_, __) => const SizedBox(width: 10),
-                                itemBuilder: (context, i) {
-                                  final item = clItems[i] as Map<String, dynamic>;
-                                  return _ContinueListeningCard(
-                                    item: item, lib: lib, player: _player,
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        ),
-                      ];
+                  ...(_cachedSections ?? []).map((section) {
+                    final id = section['id'] ?? '';
+                    if (id == 'continue-listening' ||
+                        _hiddenSections.contains(id)) {
+                      return const SliverToBoxAdapter();
                     }
-
                     final label = section['label'] ??
                         _sectionLabels[id] ??
                         _titleCase(id);
                     final entities = _filterEbookOnly(
                         (section['entities'] as List<dynamic>?) ?? []);
-                    final type = isPlaylist ? 'playlist'
-                        : isCollection ? 'collection'
-                        : (section['type'] ?? 'book');
-                    if (entities.isEmpty) return <Widget>[];
+                    final type = section['type'] ?? 'book';
+                    if (entities.isEmpty) return const SliverToBoxAdapter();
 
-                    VoidCallback? titleTap;
-                    IconData sectionIcon;
-                    if (isPlaylist) {
-                      titleTap = () => PlaylistDetailSheet.show(
-                          context, section['_playlistId'] as String);
-                      sectionIcon = Icons.playlist_play_rounded;
-                    } else if (isCollection) {
-                      titleTap = () => CollectionDetailSheet.show(
-                          context, section['_collectionId'] as String);
-                      sectionIcon = Icons.collections_bookmark_rounded;
-                    } else {
-                      sectionIcon = _sectionIcons[id] ?? Icons.album_outlined;
+                    if (lib.isOffline && id == 'downloaded-books') {
+                      return SliverToBoxAdapter(
+                        child: _OfflineDownloadsSection(
+                          title: label,
+                          icon: _sectionIcons[id] ?? Icons.album_outlined,
+                          entities: entities,
+                        ),
+                      );
                     }
 
-                    return <Widget>[
-                      SliverToBoxAdapter(
-                        child: HomeSection(
-                          title: label,
-                          icon: sectionIcon,
-                          entities: entities,
-                          sectionType: type,
+                    return SliverToBoxAdapter(
+                      child: HomeSection(
+                        title: label,
+                        icon: _sectionIcons[id] ?? Icons.album_outlined,
+                        entities: entities,
+                        sectionType: type,
+                        sectionId: id,
+                        onHeaderTap: () => AppShell.goToLibraryPreset(
+                          context,
                           sectionId: id,
-                          onTitleTap: titleTap,
-                          coverAspectRatio: _rectangleCovers ? 2 / 3 : 1.0,
+                          sectionType: type,
+                          sectionTitle: label,
                         ),
                       ),
-                    ];
+                    );
                   }),
 
                 const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
@@ -579,6 +544,85 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _OfflineDownloadsSection extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final List<dynamic> entities;
+
+  const _OfflineDownloadsSection({
+    required this.title,
+    required this.icon,
+    required this.entities,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final items = entities.whereType<Map<String, dynamic>>().toList();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: cs.primary.withValues(alpha: 0.7)),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: tt.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: cs.onSurface.withValues(alpha: 0.8),
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Container(
+                    height: 0.5,
+                    color: cs.outlineVariant.withValues(alpha: 0.2),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth;
+                final crossAxisCount =
+                    width >= 720 ? 4 : (width >= 520 ? 3 : 2);
+                final totalSpacing = 12.0 * (crossAxisCount - 1);
+                final cellWidth = (width - totalSpacing) / crossAxisCount;
+                final cellHeight = cellWidth + 52;
+
+                return GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: items.length,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: crossAxisCount,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 12,
+                    mainAxisExtent: cellHeight,
+                  ),
+                  itemBuilder: (context, index) => BookCard(item: items[index]),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -674,120 +718,156 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
           }
         },
         borderRadius: BorderRadius.circular(14),
-        child: SizedBox(
-          width: 260,
-          child: Column(children: [
-            // Main content row
-            Expanded(
-              child: Row(children: [
-                // Cover with play overlay
-                AspectRatio(
-                  aspectRatio: 1,
-                  child: Stack(children: [
-                    Positioned.fill(
-                      child: coverUrl != null
-                          ? coverUrl.startsWith('/')
-                              ? Image.file(File(coverUrl), fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
-                                      color: cs.surfaceContainerHighest,
-                                      child: Icon(Icons.headphones_rounded,
-                                          size: 22, color: cs.onSurfaceVariant)))
-                              : CachedNetworkImage(
-                                  imageUrl: coverUrl, fit: BoxFit.cover,
-                                  httpHeaders: lib.mediaHeaders,
-                                  fadeInDuration: const Duration(milliseconds: 300),
-                                  placeholder: (_, __) => Container(
-                                      color: cs.surfaceContainerHighest,
-                                      child: Icon(Icons.headphones_rounded,
-                                          size: 22, color: cs.onSurfaceVariant)),
-                                  errorWidget: (_, __, ___) => Container(
-                                      color: cs.surfaceContainerHighest,
-                                      child: Icon(Icons.headphones_rounded,
-                                          size: 22, color: cs.onSurfaceVariant)))
-                          : Container(
-                              color: cs.surfaceContainerHighest,
-                              child: Icon(Icons.headphones_rounded,
-                                  size: 22, color: cs.onSurfaceVariant)),
+        child: Container(
+          width: 280,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: isCurrentItem
+                ? Border.all(color: cs.primary.withValues(alpha: 0.2))
+                : null,
+          ),
+          child: Row(
+            children: [
+              // Cover
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 52,
+                  height: 52,
+                  child: coverUrl != null
+                      ? coverUrl.startsWith('/')
+                          ? Image.file(File(coverUrl),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                  color: cs.surfaceContainerHighest,
+                                  child: Icon(Icons.headphones_rounded,
+                                      size: 18, color: cs.onSurfaceVariant)))
+                          : CachedNetworkImage(
+                              imageUrl: coverUrl,
+                              fit: BoxFit.cover,
+                              httpHeaders: lib.mediaHeaders,
+                              fadeInDuration: const Duration(milliseconds: 300),
+                              placeholder: (_, __) => Container(
+                                  color: cs.surfaceContainerHighest,
+                                  child: Icon(Icons.headphones_rounded,
+                                      size: 18, color: cs.onSurfaceVariant)),
+                              errorWidget: (_, __, ___) => Container(
+                                  color: cs.surfaceContainerHighest,
+                                  child: Icon(Icons.headphones_rounded,
+                                      size: 18, color: cs.onSurfaceVariant)))
+                      : Container(
+                          color: cs.surfaceContainerHighest,
+                          child: Icon(Icons.headphones_rounded,
+                              size: 18, color: cs.onSurfaceVariant)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Title + author + progress
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: tt.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w600, color: cs.onSurface)),
+                    if (author.isNotEmpty)
+                      AuthorNameLink(
+                          item: item,
+                          authorName: author,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: tt.labelSmall?.copyWith(
+                              color: cs.onSurfaceVariant, fontSize: 11)),
+                    const SizedBox(height: 4),
+                    // Percentage + listened time
+                    Text.rich(
+                      TextSpan(children: [
+                        TextSpan(
+                            text: '${(progress * 100).round()}%',
+                            style: tt.labelSmall?.copyWith(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: cs.primary)),
+                        if (totalDuration > 0) ...[
+                          TextSpan(
+                              text: '  ·  ',
+                              style: tt.labelSmall?.copyWith(
+                                  fontSize: 10,
+                                  color: cs.onSurfaceVariant
+                                      .withValues(alpha: 0.5))),
+                          TextSpan(
+                              text:
+                                  '${_fmtTime(currentTime)} / ${_fmtTime(totalDuration)}',
+                              style: tt.labelSmall?.copyWith(
+                                  fontSize: 10, color: cs.onSurfaceVariant)),
+                        ],
+                      ]),
                     ),
-                    // Play button
-                    Positioned(
-                      right: 4, bottom: 4,
-                      child: GestureDetector(
-                        onTap: _isLoading
-                            ? null
-                            : () {
-                                if (isCurrentItem) {
-                                  player.togglePlayPause();
-                                } else {
-                                  _startBook(context, itemId);
-                                }
-                              },
-                        child: Container(
-                          width: 30, height: 30,
-                          decoration: BoxDecoration(
-                            color: cs.primary,
-                            shape: BoxShape.circle,
-                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 4)],
-                          ),
-                          child: _isLoading
-                              ? Padding(
-                                  padding: const EdgeInsets.all(7),
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2, color: cs.onPrimary))
-                              : Icon(
-                                  isCurrentItem && player.isPlaying
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  size: 16, color: cs.onPrimary),
-                        ),
+                    const SizedBox(height: 4),
+                    // Thin progress bar
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: progress.clamp(0.0, 1.0),
+                        minHeight: 3,
+                        backgroundColor:
+                            cs.outlineVariant.withValues(alpha: 0.2),
+                        valueColor: AlwaysStoppedAnimation(cs.primary),
                       ),
                     ),
-                  ]),
+                  ],
                 ),
-                // Info
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(title, maxLines: 2, overflow: TextOverflow.ellipsis,
-                            style: tt.bodySmall?.copyWith(
-                                fontWeight: FontWeight.w600, color: cs.onSurface, height: 1.2)),
-                        const SizedBox(height: 2),
-                        if (author.isNotEmpty)
-                          Text(author, maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: tt.labelSmall?.copyWith(
-                                  color: cs.onSurfaceVariant)),
-                        const Spacer(),
-                        Text.rich(TextSpan(children: [
-                          TextSpan(
-                              text: '${(totalDuration > 0 ? (currentTime / totalDuration * 100).round() : (progress * 100).round())}%',
-                              style: tt.labelSmall?.copyWith(
-                                  fontWeight: FontWeight.w700, color: cs.primary, fontSize: 11)),
-                          if (totalDuration > 0)
-                            TextSpan(
-                                text: '  ${_fmtTime(currentTime)} / ${_fmtTime(totalDuration)}',
-                                style: tt.labelSmall?.copyWith(
-                                    color: cs.onSurfaceVariant.withValues(alpha: 0.6), fontSize: 10)),
-                        ])),
-                      ],
+              ),
+              // Play button (48x48 hit area, 34x34 visual)
+              InkWell(
+                onTap: _isLoading
+                    ? null
+                    : () {
+                        if (isCurrentItem) {
+                          player.togglePlayPause();
+                        } else {
+                          _startBook(context, itemId);
+                        }
+                      },
+                customBorder: const CircleBorder(),
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: Center(
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: cs.primary
+                            .withValues(alpha: isCurrentItem ? 1.0 : 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: _isLoading
+                          ? Padding(
+                              padding: const EdgeInsets.all(9),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color:
+                                    isCurrentItem ? cs.onPrimary : cs.primary,
+                              ),
+                            )
+                          : Icon(
+                              isCurrentItem && player.isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              size: 18,
+                              color: isCurrentItem ? cs.onPrimary : cs.primary,
+                            ),
                     ),
                   ),
                 ),
-              ]),
-            ),
-            // Progress bar flush at bottom
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
-              child: LinearProgressIndicator(
-                value: (totalDuration > 0 ? currentTime / totalDuration : progress).clamp(0.0, 1.0), minHeight: 3,
-                backgroundColor: Colors.transparent,
-                valueColor: AlwaysStoppedAnimation(cs.primary),
               ),
-            ),
-          ]),
+            ],
+          ),
         ),
       ),
     );

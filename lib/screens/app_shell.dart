@@ -34,6 +34,20 @@ class AppShell extends StatefulWidget {
     _AppShellState._instance?._switchToAbsorbing();
   }
 
+  static void goToLibraryPreset(
+    BuildContext context, {
+    required String sectionId,
+    required String sectionType,
+    required String sectionTitle,
+  }) {
+    final state = context.findAncestorStateOfType<_AppShellState>();
+    state?._switchToLibraryPreset(
+      sectionId: sectionId,
+      sectionType: sectionType,
+      sectionTitle: sectionTitle,
+    );
+  }
+
   /// Track when expanded card is opened/closed externally (e.g. chevron tap).
   static void setExpandedOpen(bool open) {
     _AppShellState._instance?._expandedIsOpen = open;
@@ -43,11 +57,12 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> with WidgetsBindingObserver, TickerProviderStateMixin {
+class _AppShellState extends State<AppShell>
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   static _AppShellState? _instance;
 
   // Tabs: 0=Home, 1=Library, 2=Absorbing (default), 3=Stats, 4=Settings
-  int _currentIndex = 2; // overridden by user preference in initState
+  int _currentIndex = 2;
   final _libraryKey = GlobalKey<LibraryScreenState>();
   final _player = AudioPlayerService();
   final _cast = ChromecastService();
@@ -57,7 +72,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
   bool _expandedIsOpen = false;
   bool _wasCasting = false;
   DateTime? _lastBackPress;
-  String? _lastCoverItemId; // tracks which item's cover we derived the scheme from
+  String?
+      _lastCoverItemId; // tracks which item's cover we derived the scheme from
 
   // Lazily build tabs so startup on Absorbing does not initialize Home/Library
   // work until the user actually visits those tabs.
@@ -94,6 +110,24 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
         _fadeController.forward();
       });
     }
+  }
+
+  void _switchToLibraryPreset({
+    required String sectionId,
+    required String sectionType,
+    required String sectionTitle,
+  }) {
+    _ensurePageBuilt(1);
+    if (_currentIndex != 1) {
+      _navigateTo(1);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _libraryKey.currentState?.applyHomeSectionPreset(
+        sectionId: sectionId,
+        sectionType: sectionType,
+        sectionTitle: sectionTitle,
+      );
+    });
   }
 
   void _ensurePageBuilt(int index) {
@@ -142,7 +176,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     _wasPlaying = _player.isPlaying;
     _lastItemId = _player.currentItemId;
     WidgetsBinding.instance.addObserver(this);
-    AudioPlayerService.setOnEpisodePlayStartedCallback(AppShell.goToAbsorbingGlobal);
+    AudioPlayerService.setOnEpisodePlayStartedCallback(
+        AppShell.goToAbsorbingGlobal);
     _player.addListener(_onPlayerChanged);
     _wasCasting = _cast.isCasting;
     _cast.addListener(_onCastChanged);
@@ -157,7 +192,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     _fadeController.dispose();
     _player.removeListener(_onPlayerChanged);
     _cast.removeListener(_onCastChanged);
-    try { context.read<LibraryProvider>().removeListener(_onLibraryChanged); } catch (_) {}
+    try {
+      context.read<LibraryProvider>().removeListener(_onLibraryChanged);
+    } catch (_) {}
     if (_instance == this) _instance = null;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -186,7 +223,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     if (itemId == null) {
       return false;
     }
-    if (itemId == _lastCoverItemId && coverSchemeNotifier.value != null) return true;
+    if (itemId == _lastCoverItemId && coverSchemeNotifier.value != null)
+      return true;
 
     final lib = context.read<LibraryProvider>();
     final coverUrl = lib.getCoverUrl(itemId, width: 400);
@@ -199,7 +237,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     if (coverUrl.startsWith('/')) {
       provider = FileImage(File(coverUrl));
     } else {
-      provider = CachedNetworkImageProvider(coverUrl, headers: lib.mediaHeaders);
+      provider =
+          CachedNetworkImageProvider(coverUrl, headers: lib.mediaHeaders);
     }
 
     final brightness = Theme.of(context).brightness;
@@ -328,7 +367,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     }
 
     // Only do a full server refresh if enough time has passed
-    if (_lastRefresh == null || now.difference(_lastRefresh!) > _refreshCooldown) {
+    if (_lastRefresh == null ||
+        now.difference(_lastRefresh!) > _refreshCooldown) {
       _lastRefresh = now;
       lib.refresh();
       // Keep Android Auto browse tree in sync
@@ -353,17 +393,20 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
         // If already on Absorbing tab, require double-back to exit
         if (_currentIndex == 2) {
           final now = DateTime.now();
-          if (_lastBackPress != null && now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
+          if (_lastBackPress != null &&
+              now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
             SystemChannels.platform.invokeMethod('SystemNavigator.pop', true);
             return;
           }
           _lastBackPress = now;
           ScaffoldMessenger.of(context).clearSnackBars();
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(AppLocalizations.of(context)!.appShellPressBackToExit),
+            content:
+                Text(AppLocalizations.of(context)!.appShellPressBackToExit),
             duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ));
           return;
         }
@@ -372,39 +415,40 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
         _switchToAbsorbing();
       },
       child: Scaffold(
-      body: FadeTransition(
-        opacity: _fadeController,
-        child: IndexedStack(
-          index: _currentIndex,
-          children: List<Widget>.generate(
-            _pages.length,
-            (i) => _pages[i] ?? const SizedBox.shrink(),
+        body: FadeTransition(
+          opacity: _fadeController,
+          child: IndexedStack(
+            index: _currentIndex,
+            children: List<Widget>.generate(
+              _pages.length,
+              (i) => _pages[i] ?? const SizedBox.shrink(),
+            ),
           ),
         ),
+        bottomNavigationBar: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            NavigationBar(
+              selectedIndex: _currentIndex,
+              onDestinationSelected: (i) {
+                // If tapping Library while already on Library, clear search
+                if (i == 1 &&
+                    _currentIndex == 1 &&
+                    _libraryKey.currentState?.isSearchActive == true) {
+                  _libraryKey.currentState?.clearSearch();
+                  return;
+                }
+                _navigateTo(i);
+                // Refresh data on switching to Library, Home, Absorbing, or Stats
+                if (i == 0 || i == 1 || i == 2 || i == 3) {
+                  _refreshDataForTab(i);
+                }
+              },
+              destinations: _buildDestinations(context),
+            ),
+          ],
+        ),
       ),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          NavigationBar(
-            selectedIndex: _currentIndex,
-            onDestinationSelected: (i) {
-              // If tapping Library while already on Library, clear search
-              if (i == 1 && _currentIndex == 1 &&
-                  _libraryKey.currentState?.isSearchActive == true) {
-                _libraryKey.currentState?.clearSearch();
-                return;
-              }
-              _navigateTo(i);
-              // Refresh data on switching to Library, Home, Absorbing, or Stats
-              if (i == 0 || i == 1 || i == 2 || i == 3) {
-                _refreshDataForTab(i);
-              }
-            },
-            destinations: _buildDestinations(context),
-          ),
-        ],
-      ),
-    ),
     );
   }
 
@@ -416,12 +460,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     return [
       NavigationDestination(
         icon: Icon(isPodcast ? Icons.explore_outlined : Icons.home_outlined),
-        selectedIcon: Icon(isPodcast ? Icons.explore_rounded : Icons.home_rounded),
+        selectedIcon:
+            Icon(isPodcast ? Icons.explore_rounded : Icons.home_rounded),
         label: isPodcast ? 'Discover' : l.appShellHomeTab,
       ),
       NavigationDestination(
-        icon: Icon(isPodcast ? Icons.podcasts_outlined : Icons.library_books_outlined),
-        selectedIcon: Icon(isPodcast ? Icons.podcasts_rounded : Icons.library_books_rounded),
+        icon: Icon(
+            isPodcast ? Icons.podcasts_outlined : Icons.library_books_outlined),
+        selectedIcon: Icon(
+            isPodcast ? Icons.podcasts_rounded : Icons.library_books_rounded),
         label: isPodcast ? 'Shows' : l.appShellLibraryTab,
       ),
       NavigationDestination(
@@ -514,7 +561,8 @@ class _NavWavePainter extends CustomPainter {
   final Color color;
   final bool playing;
 
-  _NavWavePainter({required this.phase, required this.color, required this.playing});
+  _NavWavePainter(
+      {required this.phase, required this.color, required this.playing});
 
   static const _barHeights = [0.35, 0.6, 1.0, 0.6, 0.35];
   static const _barCount = 5;
@@ -538,7 +586,8 @@ class _NavWavePainter extends CustomPainter {
 
       if (playing) {
         final barPhase = phase * 2 * math.pi + i * 1.2;
-        final ratio = (baseRatio * (0.5 + 0.5 * math.sin(barPhase))).clamp(0.2, 1.0);
+        final ratio =
+            (baseRatio * (0.5 + 0.5 * math.sin(barPhase))).clamp(0.2, 1.0);
         final half = maxHalf * ratio;
         canvas.drawLine(Offset(x, midY - half), Offset(x, midY + half), paint);
       } else {
