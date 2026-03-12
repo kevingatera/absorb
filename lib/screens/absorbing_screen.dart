@@ -835,7 +835,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             // ── Page Dots ──
             if (books.length > 1)
               Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 0),
+                padding: const EdgeInsets.only(top: 9, bottom: 0),
                 child: _PageDots(
                   count: books.length,
                   controller: _pageController,
@@ -1000,7 +1000,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
 class _PageDots extends StatelessWidget {
   static const double _slotWidth = 20;
-  static const double _trackHeight = 14;
+  static const double _trackHeight = 12;
 
   final int count;
   final PageController controller;
@@ -1051,7 +1051,7 @@ class _PageDots extends StatelessWidget {
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 220),
                         curve: Curves.easeOutCubic,
-                        width: active ? 20 : 10,
+                        width: active ? 21 : 11,
                         height: active ? 7 : 5,
                         decoration: BoxDecoration(
                           color: active
