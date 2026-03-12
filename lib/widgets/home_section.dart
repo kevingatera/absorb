@@ -13,6 +13,7 @@ class HomeSection extends StatelessWidget {
   final List<dynamic> entities;
   final String sectionType;
   final String sectionId;
+  final VoidCallback? onHeaderTap;
 
   const HomeSection({
     super.key,
@@ -21,6 +22,7 @@ class HomeSection extends StatelessWidget {
     required this.entities,
     required this.sectionType,
     required this.sectionId,
+    this.onHeaderTap,
   });
 
   @override
@@ -34,15 +36,19 @@ class HomeSection extends StatelessWidget {
     final isEpisodeSection = sectionType == 'episode';
 
     // Check if any entities have recentEpisode (podcast episode sections)
-    final hasEpisodeEntities = !isEpisodeSection && entities.isNotEmpty &&
+    final hasEpisodeEntities = !isEpisodeSection &&
+        entities.isNotEmpty &&
         entities.first is Map<String, dynamic> &&
         (entities.first as Map<String, dynamic>)['recentEpisode'] != null;
     final effectiveEpisode = isEpisodeSection || hasEpisodeEntities;
 
     final double cardWidth =
         isContinueListening ? 300 : (isAuthorSection ? 120 : 140);
-    final double cardHeight =
-        isContinueListening ? 120 : effectiveEpisode ? 200 : (isAuthorSection ? 170 : 200);
+    final double cardHeight = isContinueListening
+        ? 120
+        : effectiveEpisode
+            ? 200
+            : (isAuthorSection ? 170 : 200);
 
     return Padding(
       padding: const EdgeInsets.only(top: 24),
@@ -52,26 +58,40 @@ class HomeSection extends StatelessWidget {
           // Section header
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Icon(icon, size: 16, color: cs.primary.withValues(alpha: 0.7)),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: tt.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w500,
-                    color: cs.onSurface.withValues(alpha: 0.8),
-                    letterSpacing: 0.3,
-                  ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onHeaderTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Icon(icon,
+                        size: 16, color: cs.primary.withValues(alpha: 0.7)),
+                    const SizedBox(width: 8),
+                    Text(
+                      title,
+                      style: tt.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w500,
+                        color: cs.onSurface.withValues(alpha: 0.8),
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Container(
+                        height: 0.5,
+                        color: cs.outlineVariant.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    if (onHeaderTap != null) ...[
+                      const SizedBox(width: 10),
+                      Icon(Icons.chevron_right_rounded,
+                          size: 18,
+                          color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
+                    ],
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Container(
-                    height: 0.5,
-                    color: cs.outlineVariant.withValues(alpha: 0.2),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 12),
@@ -173,8 +193,8 @@ class _SnapScrollListState extends State<_SnapScrollList> {
       onNotification: (notification) {
         final offset = _controller.offset;
         final targetIndex = (offset / itemExtent).round();
-        final targetOffset =
-            (targetIndex * itemExtent).clamp(0.0, _controller.position.maxScrollExtent);
+        final targetOffset = (targetIndex * itemExtent)
+            .clamp(0.0, _controller.position.maxScrollExtent);
         if ((offset - targetOffset).abs() > 1) {
           Future.microtask(() {
             if (_controller.hasClients) {
@@ -252,22 +272,29 @@ class _EpisodeCard extends StatelessWidget {
                 children: [
                   if (coverUrl != null)
                     coverUrl.startsWith('/')
-                        ? Image.file(File(coverUrl), fit: BoxFit.cover,
+                        ? Image.file(File(coverUrl),
+                            fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => Container(
-                              color: cs.surfaceContainerHigh,
-                              child: Icon(Icons.podcasts_rounded, size: 32,
-                                color: cs.onSurfaceVariant.withValues(alpha: 0.3))))
-                        : Image.network(coverUrl, fit: BoxFit.cover,
+                                color: cs.surfaceContainerHigh,
+                                child: Icon(Icons.podcasts_rounded,
+                                    size: 32,
+                                    color: cs.onSurfaceVariant
+                                        .withValues(alpha: 0.3))))
+                        : Image.network(coverUrl,
+                            fit: BoxFit.cover,
                             headers: lib.mediaHeaders,
                             errorBuilder: (_, __, ___) => Container(
-                              color: cs.surfaceContainerHigh,
-                              child: Icon(Icons.podcasts_rounded, size: 32,
-                                color: cs.onSurfaceVariant.withValues(alpha: 0.3))))
+                                color: cs.surfaceContainerHigh,
+                                child: Icon(Icons.podcasts_rounded,
+                                    size: 32,
+                                    color: cs.onSurfaceVariant
+                                        .withValues(alpha: 0.3))))
                   else
                     Container(
                       color: cs.surfaceContainerHigh,
-                      child: Icon(Icons.podcasts_rounded, size: 32,
-                        color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
+                      child: Icon(Icons.podcasts_rounded,
+                          size: 32,
+                          color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
                     ),
                 ],
               ),

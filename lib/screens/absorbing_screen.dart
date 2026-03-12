@@ -886,8 +886,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                               itemBuilder: (_, i) => LayoutBuilder(
                                 builder: (context, constraints) {
                                   final cardWidth = constraints.maxWidth;
-                                  final vPad = (constraints.maxHeight * 0.04)
-                                      .clamp(12.0, 40.0);
+                                  final vPad = (constraints.maxHeight * 0.03)
+                                      .clamp(8.0, 32.0);
                                   return AnimatedBuilder(
                                     animation: _pageController,
                                     builder: (context, child) {

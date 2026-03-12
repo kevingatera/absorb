@@ -286,9 +286,21 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                   ?.copyWith(color: cs.onSurface.withValues(alpha: 0.6))),
           if (narrator.isNotEmpty) ...[
             const SizedBox(height: 2),
-            Text('Narrated by $narrator',
-                textAlign: TextAlign.center,
-                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant))
+            Wrap(
+              alignment: WrapAlignment.center,
+              children: [
+                Text(
+                  'Narrated by ',
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                ),
+                NarratorNameLink(
+                  item: _item!,
+                  narratorName: narrator,
+                  textAlign: TextAlign.center,
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                ),
+              ],
+            )
           ],
           // ─── AUDIBLE RATING (space always reserved) ─────────
           const SizedBox(height: 8),

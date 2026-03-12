@@ -59,6 +59,74 @@ class LibraryScreenState extends State<LibraryScreen> {
     _focusNode.unfocus();
   }
 
+  void applyHomeSectionPreset({
+    required String sectionId,
+    required String sectionType,
+    required String sectionTitle,
+  }) {
+    clearSearch();
+
+    LibrarySort nextSort = _sort;
+    LibraryFilter nextFilter = LibraryFilter.none;
+    String? nextGenre;
+
+    switch (sectionId) {
+      case 'continue-listening':
+        nextFilter = LibraryFilter.inProgress;
+        nextSort = LibrarySort.recentlyAdded;
+        break;
+      case 'continue-series':
+        nextFilter = LibraryFilter.inASeries;
+        nextSort = LibrarySort.recentlyAdded;
+        break;
+      case 'listen-again':
+        nextFilter = LibraryFilter.finished;
+        nextSort = LibrarySort.recentlyAdded;
+        break;
+      case 'downloaded-books':
+        nextFilter = LibraryFilter.downloaded;
+        nextSort = LibrarySort.recentlyAdded;
+        break;
+      case 'discover':
+      case 'recently-added':
+      case 'books-recently-added':
+      case 'episodes-recently-added':
+        nextFilter = LibraryFilter.none;
+        nextSort = LibrarySort.recentlyAdded;
+        break;
+      default:
+        if (sectionType == 'series') {
+          nextFilter = LibraryFilter.inASeries;
+          nextSort = LibrarySort.recentlyAdded;
+        } else if (sectionType == 'author' || sectionType == 'authors') {
+          nextFilter = LibraryFilter.none;
+          nextSort = LibrarySort.authorName;
+        }
+        break;
+    }
+
+    _loadGeneration++;
+    setState(() {
+      _sort = nextSort;
+      _sortAsc = nextSort == LibrarySort.alphabetical ||
+          nextSort == LibrarySort.authorName ||
+          nextSort == LibrarySort.duration;
+      _filter = nextFilter;
+      _genreFilter = nextGenre;
+      _items.clear();
+      _page = 0;
+      _hasMore = true;
+      _isLoadingPage = false;
+    });
+
+    PlayerSettings.setLibrarySort(_sort.name);
+    PlayerSettings.setLibrarySortAsc(_sortAsc);
+    PlayerSettings.setLibraryFilter(_filter.name);
+    PlayerSettings.setLibraryGenreFilter(_genreFilter);
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    _loadPage();
+  }
+
   List<dynamic> _searchBookResults = [];
   List<dynamic> _searchSeriesResults = [];
   List<dynamic> _searchAuthorResults = [];

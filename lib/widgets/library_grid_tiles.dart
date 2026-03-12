@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/download_service.dart';
+import 'author_name_link.dart';
 import 'book_detail_sheet.dart';
 import 'episode_list_sheet.dart';
 import 'series_books_sheet.dart';
@@ -181,8 +182,9 @@ class _GridBookTileState extends State<GridBookTile> {
           ),
           // Author
           if (author.isNotEmpty)
-            Text(
-              author,
+            AuthorNameLink(
+              item: widget.item,
+              authorName: author,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: tt.labelSmall?.copyWith(
@@ -313,8 +315,9 @@ class GridSeriesTile extends StatelessWidget {
           ),
           // Author
           if (author.isNotEmpty)
-            Text(
-              author,
+            AuthorNameLink(
+              item: item,
+              authorName: author,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: tt.labelSmall?.copyWith(
@@ -362,8 +365,10 @@ class GridSeriesTileDirect extends StatelessWidget {
     // Get cover from first book in series
     String? coverUrl;
     String author = '';
+    Map<String, dynamic> authorItem = const <String, dynamic>{};
     if (books.isNotEmpty) {
       final firstBook = books.first as Map<String, dynamic>? ?? {};
+      authorItem = firstBook;
       final bookId = firstBook['id'] as String? ?? '';
       if (bookId.isNotEmpty) coverUrl = lib.getCoverUrl(bookId);
       final media = firstBook['media'] as Map<String, dynamic>? ?? {};
@@ -448,8 +453,9 @@ class GridSeriesTileDirect extends StatelessWidget {
             ),
           ),
           if (author.isNotEmpty)
-            Text(
-              author,
+            AuthorNameLink(
+              item: authorItem,
+              authorName: author,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: tt.labelSmall?.copyWith(
