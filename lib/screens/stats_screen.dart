@@ -119,13 +119,13 @@ class _StatsScreenState extends State<StatsScreen>
       body: Container(
         decoration: oledNotifier.value ? null : BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            stops: const [0.0, 0.4, 0.7, 1.0],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            stops: const [0.0, 0.22, 0.72, 1.0],
             colors: [
-              cs.primary.withValues(alpha: 0.12),
-              cs.primary.withValues(alpha: 0.04),
-              Theme.of(context).scaffoldBackgroundColor,
+              cs.primary.withValues(alpha: 0.06),
+              cs.surface,
+              Color.lerp(cs.surface, Theme.of(context).scaffoldBackgroundColor, 0.55) ?? Theme.of(context).scaffoldBackgroundColor,
               Theme.of(context).scaffoldBackgroundColor,
             ],
           ),
@@ -289,11 +289,11 @@ class _StatsScreenState extends State<StatsScreen>
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         gradient: oledNotifier.value ? null : LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
           colors: [
-            cs.primary.withValues(alpha: 0.12),
-            cs.primary.withValues(alpha: 0.04),
+            cs.primary.withValues(alpha: 0.08),
+            cs.primary.withValues(alpha: 0.02),
           ],
         ),
         border: Border.all(color: cs.primary.withValues(alpha: oledNotifier.value ? 0.08 : 0.15)),

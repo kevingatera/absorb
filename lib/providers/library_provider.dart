@@ -105,6 +105,12 @@ class LibraryProvider extends ChangeNotifier {
   bool get isOffline => _manualOffline || _networkOffline;
   bool get isManualOffline => _manualOffline;
 
+  // Battery-saving: soft-disconnect socket when idle or backgrounded
+  bool _isBackgrounded = false;
+  bool _socketSoftDisconnected = false;
+  Timer? _idleDisconnectTimer;
+  static const _idleTimeout = Duration(minutes: 5);
+
   /// Toggle manual offline mode.
   Future<void> setManualOffline(bool value) async {
     debugPrint('[Library] setManualOffline($value)');
@@ -442,6 +448,13 @@ class LibraryProvider extends ChangeNotifier {
         _checkRollingDownloads(key);
         _checkQueueAutoDownloads(key);
       });
+      AudioPlayerService.setOnPlaybackStateChangedCallback((playing) {
+        if (playing) {
+          onPlaybackStarted();
+        } else {
+          onPlaybackStopped();
+        }
+      });
       ChromecastService.setOnBookFinishedCallback(markFinishedLocally);
 
       restoreOfflineMode().then((_) async {
@@ -489,7 +502,10 @@ class LibraryProvider extends ChangeNotifier {
       _lastAuthKey = null;
       AudioPlayerService.setOnBookFinishedCallback(null);
       AudioPlayerService.setOnPlayStartedCallback(null);
+      AudioPlayerService.setOnPlaybackStateChangedCallback(null);
       ChromecastService.setOnBookFinishedCallback(null);
+      _idleDisconnectTimer?.cancel();
+      _idleDisconnectTimer = null;
       _libraries = [];
       _personalizedSections = [];
       _series = [];
@@ -549,6 +565,7 @@ class LibraryProvider extends ChangeNotifier {
   /// Used when the device has network but the server was unreachable.
   void _startServerPingTimer() {
     _serverPingTimer?.cancel();
+    if (_isBackgrounded) return;
     final serverUrl = _auth?.serverUrl;
     if (serverUrl == null) return;
     debugPrint('[Library] Starting server ping timer');
@@ -572,6 +589,65 @@ class LibraryProvider extends ChangeNotifier {
   void _stopServerPingTimer() {
     _serverPingTimer?.cancel();
     _serverPingTimer = null;
+  }
+
+  // ── Battery-saving lifecycle methods ──
+
+  /// Called when the app moves to background.
+  void onAppBackgrounded() {
+    _isBackgrounded = true;
+    _stopServerPingTimer();
+    if (!AudioPlayerService().isPlaying && !ChromecastService().isPlaying) {
+      _softDisconnectSocket();
+    }
+  }
+
+  /// Called when the app returns to foreground.
+  void onAppForegrounded() {
+    _isBackgrounded = false;
+    _softReconnectSocket();
+    // Restart ping timer if we were network-offline
+    if (_networkOffline && _deviceHasConnectivity && !_manualOffline) {
+      _startServerPingTimer();
+    }
+    _restartIdleTimer();
+  }
+
+  /// Start or restart the idle disconnect timer.
+  void _restartIdleTimer() {
+    _idleDisconnectTimer?.cancel();
+    _idleDisconnectTimer = Timer(_idleTimeout, () {
+      if (!AudioPlayerService().isPlaying && !ChromecastService().isPlaying) {
+        debugPrint('[Library] Idle timeout - soft disconnecting socket');
+        _softDisconnectSocket();
+      }
+    });
+  }
+
+  /// Called when playback starts - reconnect if needed and cancel idle timer.
+  void onPlaybackStarted() {
+    _softReconnectSocket();
+    _idleDisconnectTimer?.cancel();
+  }
+
+  /// Called when playback stops - start idle timer.
+  void onPlaybackStopped() {
+    _restartIdleTimer();
+    if (_isBackgrounded) {
+      _softDisconnectSocket();
+    }
+  }
+
+  void _softDisconnectSocket() {
+    if (_socketSoftDisconnected || _manualOffline) return;
+    _socketSoftDisconnected = true;
+    SocketService().softDisconnect();
+  }
+
+  void _softReconnectSocket() {
+    if (!_socketSoftDisconnected || _manualOffline) return;
+    _socketSoftDisconnected = false;
+    SocketService().softReconnect();
   }
 
   /// Returns true for exceptions that indicate a real network problem

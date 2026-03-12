@@ -21,7 +21,7 @@ import '../screens/app_shell.dart';
 import '../screens/admin_screen.dart';
 import '../screens/downloads_screen.dart';
 import '../screens/bookmarks_screen.dart';
-import '../main.dart' show applyThemeMode, oledNotifier;
+import '../main.dart' show applyThemeMode, oledNotifier, snappyTransitionsNotifier;
 import '../widgets/absorb_page_header.dart';
 import '../widgets/absorb_slider.dart';
 
@@ -56,6 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _showGoodreadsButton = false;
   bool _loggingEnabled = false;
   bool _fullScreenPlayer = false;
+  bool _snappyTransitions = false;
   String _themeMode = 'dark';
   int _streamingCacheSizeMb = 0;
   bool _loaded = false;
@@ -121,12 +122,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       PlayerSettings.getLoggingEnabled(),                     // 21
       PlayerSettings.getFullScreenPlayer(),                   // 22
       PlayerSettings.getThemeMode(),                          // 23
-      DownloadService().downloadLocationLabel,                // 24
-      DownloadService().totalDownloadSize,                    // 25
-      DownloadService.getDeviceStorage(),                     // 26
-      AutoSleepSettings.load(),                               // 27
-      PackageInfo.fromPlatform(),                             // 28
-      PlayerSettings.getStreamingCacheSizeMb(),               // 29
+      PlayerSettings.getSnappyTransitions(),                  // 24
+      DownloadService().downloadLocationLabel,                // 25
+      DownloadService().totalDownloadSize,                    // 26
+      DownloadService.getDeviceStorage(),                     // 27
+      AutoSleepSettings.load(),                               // 28
+      PackageInfo.fromPlatform(),                             // 29
+      PlayerSettings.getStreamingCacheSizeMb(),               // 30
     ]);
     final s = results[0] as AutoRewindSettings;
     final speed = results[1] as double;
@@ -152,12 +154,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final logging = results[21] as bool;
     final fullScreen = results[22] as bool;
     final theme = results[23] as String;
-    final dlLabel = results[24] as String;
-    final dlSize = results[25] as int;
-    final deviceStorage = results[26] as Map<String, int>?;
-    final autoSleep = results[27] as AutoSleepSettings;
-    final pkgInfo = results[28] as PackageInfo;
-    final cacheSizeMb = results[29] as int;
+    final snappyTrans = results[24] as bool;
+    final dlLabel = results[25] as String;
+    final dlSize = results[26] as int;
+    final deviceStorage = results[27] as Map<String, int>?;
+    final autoSleep = results[28] as AutoSleepSettings;
+    final pkgInfo = results[29] as PackageInfo;
+    final cacheSizeMb = results[30] as int;
     if (mounted) setState(() {
       _rewindSettings = s;
       _defaultSpeed = speed;
@@ -182,6 +185,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _showGoodreadsButton = showGoodreads;
       _loggingEnabled = logging;
       _fullScreenPlayer = fullScreen;
+      _snappyTransitions = snappyTrans;
       _themeMode = theme;
       _downloadLocationLabel = dlLabel;
       _totalDownloadSizeBytes = dlSize;
@@ -522,6 +526,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ],
                       ),
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    SwitchListTile(
+                      title: const Text('Snappy transitions'),
+                      subtitle: Text(
+                        _snappyTransitions ? 'On - instant page transitions' : 'Off - smooth slide animations',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _snappyTransitions,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _snappyTransitions = v);
+                        PlayerSettings.setSnappyTransitions(v);
+                        snappyTransitionsNotifier.value = v;
+                      } : null,
                     ),
                   ],
                 ),

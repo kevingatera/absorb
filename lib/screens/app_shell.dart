@@ -220,9 +220,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      context.read<LibraryProvider>().onAppForegrounded();
       _refreshDataForTab(_currentIndex);
       // Check auto sleep in case we resumed into the window
       SleepTimerService().checkAutoSleep();
+    } else if (state == AppLifecycleState.paused) {
+      context.read<LibraryProvider>().onAppBackgrounded();
     } else if (state == AppLifecycleState.detached) {
       final cast = ChromecastService();
       if (cast.isConnected) cast.disconnect();

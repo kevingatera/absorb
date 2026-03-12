@@ -8,6 +8,9 @@ class SocketService {
 
   IO.Socket? _socket;
   String? _token;
+  String? _serverUrl;
+
+  bool get isConnected => _socket?.connected ?? false;
 
   /// Called when the server pushes a progress update (cross-device sync).
   void Function(Map<String, dynamic> progress)? onProgressUpdated;
@@ -31,6 +34,7 @@ class SocketService {
     if (_socket != null) disconnect();
 
     _token = token;
+    _serverUrl = serverUrl;
 
     try {
       _socket = IO.io(serverUrl, IO.OptionBuilder()
@@ -122,18 +126,100 @@ class SocketService {
       debugPrint('[Socket] Failed to connect: $e');
       _socket = null;
       _token = null;
+      _serverUrl = null;
     }
   }
 
+  /// Disconnect and tear down the socket, clearing all callbacks.
   void disconnect() {
     _socket?.dispose();
     _socket = null;
     _token = null;
+    _serverUrl = null;
     onProgressUpdated = null;
     onItemUpdated = null;
     onItemRemoved = null;
     onSeriesUpdated = null;
     onCollectionUpdated = null;
     onUserUpdated = null;
+  }
+
+  /// Disconnect the socket but keep callbacks and credentials so we can
+  /// cheaply reconnect later without re-wiring everything.
+  void softDisconnect() {
+    if (_socket == null) return;
+    debugPrint('[Socket] Soft disconnect (battery saving)');
+    _socket!.dispose();
+    _socket = null;
+  }
+
+  /// Reconnect after a soft disconnect, reusing saved credentials.
+  void softReconnect() {
+    if (_socket != null) return; // already connected
+    final url = _serverUrl;
+    final token = _token;
+    if (url == null || token == null) return;
+    debugPrint('[Socket] Soft reconnect');
+
+    try {
+      _socket = IO.io(url, IO.OptionBuilder()
+          .setTransports(['websocket'])
+          .enableReconnection()
+          .build());
+
+      _socket!.onConnect((_) {
+        debugPrint('[Socket] Connected, sending auth');
+        _socket!.emit('auth', _token);
+      });
+
+      _socket!.on('init', (_) {
+        debugPrint('[Socket] Authenticated - user is online');
+      });
+
+      _socket!.on('auth_failed', (_) {
+        debugPrint('[Socket] Auth failed');
+        disconnect();
+      });
+
+      _socket!.on('user_item_progress_updated', (data) {
+        if (data is Map<String, dynamic>) {
+          final patch = data['data'] as Map<String, dynamic>?;
+          if (patch != null) onProgressUpdated?.call(patch);
+        }
+      });
+
+      _socket!.on('item_added', (data) {
+        if (data is Map<String, dynamic>) onItemUpdated?.call(data);
+      });
+      _socket!.on('item_updated', (data) {
+        if (data is Map<String, dynamic>) onItemUpdated?.call(data);
+      });
+      _socket!.on('item_removed', (data) {
+        if (data is Map<String, dynamic>) onItemRemoved?.call(data);
+      });
+
+      _socket!.on('series_added', (_) => onSeriesUpdated?.call());
+      _socket!.on('series_updated', (_) => onSeriesUpdated?.call());
+      _socket!.on('series_removed', (_) => onSeriesUpdated?.call());
+
+      _socket!.on('collection_added', (_) => onCollectionUpdated?.call());
+      _socket!.on('collection_updated', (_) => onCollectionUpdated?.call());
+      _socket!.on('collection_removed', (_) => onCollectionUpdated?.call());
+
+      _socket!.on('user_updated', (data) {
+        if (data is Map<String, dynamic>) onUserUpdated?.call(data);
+      });
+
+      _socket!.onDisconnect((_) {
+        debugPrint('[Socket] Disconnected');
+      });
+
+      _socket!.onConnectError((err) {
+        debugPrint('[Socket] Connect error: $err');
+      });
+    } catch (e) {
+      debugPrint('[Socket] Failed to reconnect: $e');
+      _socket = null;
+    }
   }
 }

@@ -235,6 +235,9 @@ class PlayerSettings {
   static Future<bool> getFullScreenPlayer() => _get('fullScreenPlayer', false);
   static Future<void> setFullScreenPlayer(bool value) => _set('fullScreenPlayer', value);
 
+  static Future<bool> getSnappyTransitions() => _get('snappyTransitions', false);
+  static Future<void> setSnappyTransitions(bool value) => _set('snappyTransitions', value);
+
   // ── Card button order ──
 
   static const defaultButtonOrder = ['chapters', 'speed', 'sleep', 'bookmarks', 'details', 'equalizer', 'cast', 'history', 'remove'];
@@ -866,6 +869,13 @@ class AudioPlayerService extends ChangeNotifier {
   static void Function()? _onEpisodePlayStartedCallback;
   static void setOnEpisodePlayStartedCallback(void Function()? cb) {
     _onEpisodePlayStartedCallback = cb;
+  }
+
+  /// Called when playback state changes (playing/paused). Used by
+  /// LibraryProvider for battery-saving socket lifecycle.
+  static void Function(bool isPlaying)? _onPlaybackStateChangedCallback;
+  static void setOnPlaybackStateChangedCallback(void Function(bool isPlaying)? cb) {
+    _onPlaybackStateChangedCallback = cb;
   }
 
   static AudioPlayerHandler? _handler;
@@ -2165,6 +2175,7 @@ class AudioPlayerService extends ChangeNotifier {
     try { (await AudioSession.instance).setActive(true); } catch (_) {}
     _player?.play();
     _logEvent(PlaybackEventType.play);
+    _onPlaybackStateChangedCallback?.call(true);
     // Check auto sleep on every resume — catches window entry between pauses
     SleepTimerService().checkAutoSleep();
     notifyListeners();
@@ -2176,6 +2187,7 @@ class AudioPlayerService extends ChangeNotifier {
     _lastPauseTime = DateTime.now();
     await _player?.pause();
     _logEvent(PlaybackEventType.pause);
+    _onPlaybackStateChangedCallback?.call(false);
     notifyListeners();
     final pos = position;
     debugPrint('[Player] Saving on pause: ${(pos.inMilliseconds / 1000.0).toStringAsFixed(1)}s');
@@ -2316,6 +2328,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     await _player?.stop();
+    _onPlaybackStateChangedCallback?.call(false);
     _clearState();
     _chapters = [];
     _handler?.updateChaptersQueue(const []);
