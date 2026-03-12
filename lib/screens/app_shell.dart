@@ -17,7 +17,6 @@ import 'home_screen.dart';
 import 'library_screen.dart';
 import 'stats_screen.dart';
 import 'settings_screen.dart';
-import '../widgets/welcome_sheet.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -33,6 +32,20 @@ class AppShell extends StatefulWidget {
     _AppShellState._instance?._switchToAbsorbing();
   }
 
+  static void goToLibraryPreset(
+    BuildContext context, {
+    required String sectionId,
+    required String sectionType,
+    required String sectionTitle,
+  }) {
+    final state = context.findAncestorStateOfType<_AppShellState>();
+    state?._switchToLibraryPreset(
+      sectionId: sectionId,
+      sectionType: sectionType,
+      sectionTitle: sectionTitle,
+    );
+  }
+
   /// Track when expanded card is opened/closed externally (e.g. chevron tap).
   static void setExpandedOpen(bool open) {
     _AppShellState._instance?._expandedIsOpen = open;
@@ -42,11 +55,12 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> with WidgetsBindingObserver, TickerProviderStateMixin {
+class _AppShellState extends State<AppShell>
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   static _AppShellState? _instance;
 
   // Tabs: 0=Home, 1=Library, 2=Absorbing (default), 3=Stats, 4=Settings
-  int _currentIndex = 2; // overridden by user preference in initState
+  int _currentIndex = 2;
   final _libraryKey = GlobalKey<LibraryScreenState>();
   final _player = AudioPlayerService();
   final _cast = ChromecastService();
@@ -95,6 +109,24 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     }
   }
 
+  void _switchToLibraryPreset({
+    required String sectionId,
+    required String sectionType,
+    required String sectionTitle,
+  }) {
+    _ensurePageBuilt(1);
+    if (_currentIndex != 1) {
+      _navigateTo(1);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _libraryKey.currentState?.applyHomeSectionPreset(
+        sectionId: sectionId,
+        sectionType: sectionType,
+        sectionTitle: sectionTitle,
+      );
+    });
+  }
+
   void _ensurePageBuilt(int index) {
     if (_pages[index] != null) return;
     switch (index) {
@@ -122,26 +154,17 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     value: 1.0,
   );
 
-  void _loadStartScreen() {
-    PlayerSettings.getStartScreen().then((idx) {
-      if (mounted && idx != _currentIndex && idx >= 0 && idx <= 4) {
-        setState(() => _currentIndex = idx);
-        _ensurePageBuilt(idx);
-      }
-    });
-  }
-
   @override
   void initState() {
     super.initState();
     _instance = this;
-    _loadStartScreen();
     _ensurePageBuilt(_currentIndex);
     _playerHadBook = _player.hasBook;
     _wasPlaying = _player.isPlaying;
     _lastItemId = _player.currentItemId;
     WidgetsBinding.instance.addObserver(this);
-    AudioPlayerService.setOnEpisodePlayStartedCallback(AppShell.goToAbsorbingGlobal);
+    AudioPlayerService.setOnEpisodePlayStartedCallback(
+        AppShell.goToAbsorbingGlobal);
     _player.addListener(_onPlayerChanged);
     _wasCasting = _cast.isCasting;
     _cast.addListener(_onCastChanged);
@@ -149,7 +172,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     // Try immediately; _onLibraryChanged picks it up once data loads.
     _deriveCoverScheme();
     context.read<LibraryProvider>().addListener(_onLibraryChanged);
-    WelcomeSheet.showIfNeeded(context);
   }
 
   @override
@@ -339,7 +361,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     }
 
     // Only do a full server refresh if enough time has passed
-    if (_lastRefresh == null || now.difference(_lastRefresh!) > _refreshCooldown) {
+    if (_lastRefresh == null ||
+        now.difference(_lastRefresh!) > _refreshCooldown) {
       _lastRefresh = now;
       lib.refresh();
       // Keep Android Auto browse tree in sync
@@ -364,7 +387,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
         // If already on Absorbing tab, require double-back to exit
         if (_currentIndex == 2) {
           final now = DateTime.now();
-          if (_lastBackPress != null && now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
+          if (_lastBackPress != null &&
+              now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
             SystemChannels.platform.invokeMethod('SystemNavigator.pop', true);
             return;
           }
@@ -374,7 +398,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
             content: const Text('Press back again to exit'),
             duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ));
           return;
         }
@@ -383,39 +408,40 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
         _switchToAbsorbing();
       },
       child: Scaffold(
-      body: FadeTransition(
-        opacity: _fadeController,
-        child: IndexedStack(
-          index: _currentIndex,
-          children: List<Widget>.generate(
-            _pages.length,
-            (i) => _pages[i] ?? const SizedBox.shrink(),
+        body: FadeTransition(
+          opacity: _fadeController,
+          child: IndexedStack(
+            index: _currentIndex,
+            children: List<Widget>.generate(
+              _pages.length,
+              (i) => _pages[i] ?? const SizedBox.shrink(),
+            ),
           ),
         ),
+        bottomNavigationBar: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            NavigationBar(
+              selectedIndex: _currentIndex,
+              onDestinationSelected: (i) {
+                // If tapping Library while already on Library, clear search
+                if (i == 1 &&
+                    _currentIndex == 1 &&
+                    _libraryKey.currentState?.isSearchActive == true) {
+                  _libraryKey.currentState?.clearSearch();
+                  return;
+                }
+                _navigateTo(i);
+                // Refresh data on switching to Library, Home, Absorbing, or Stats
+                if (i == 0 || i == 1 || i == 2 || i == 3) {
+                  _refreshDataForTab(i);
+                }
+              },
+              destinations: _buildDestinations(context),
+            ),
+          ],
+        ),
       ),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          NavigationBar(
-            selectedIndex: _currentIndex,
-            onDestinationSelected: (i) {
-              // If tapping Library while already on Library, clear search
-              if (i == 1 && _currentIndex == 1 &&
-                  _libraryKey.currentState?.isSearchActive == true) {
-                _libraryKey.currentState?.clearSearch();
-                return;
-              }
-              _navigateTo(i);
-              // Refresh data on switching to Library, Home, Absorbing, or Stats
-              if (i == 0 || i == 1 || i == 2 || i == 3) {
-                _refreshDataForTab(i);
-              }
-            },
-            destinations: _buildDestinations(context),
-          ),
-        ],
-      ),
-    ),
     );
   }
 
@@ -426,12 +452,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     return [
       NavigationDestination(
         icon: Icon(isPodcast ? Icons.explore_outlined : Icons.home_outlined),
-        selectedIcon: Icon(isPodcast ? Icons.explore_rounded : Icons.home_rounded),
+        selectedIcon:
+            Icon(isPodcast ? Icons.explore_rounded : Icons.home_rounded),
         label: isPodcast ? 'Discover' : 'Home',
       ),
       NavigationDestination(
-        icon: Icon(isPodcast ? Icons.podcasts_outlined : Icons.library_books_outlined),
-        selectedIcon: Icon(isPodcast ? Icons.podcasts_rounded : Icons.library_books_rounded),
+        icon: Icon(
+            isPodcast ? Icons.podcasts_outlined : Icons.library_books_outlined),
+        selectedIcon: Icon(
+            isPodcast ? Icons.podcasts_rounded : Icons.library_books_rounded),
         label: isPodcast ? 'Shows' : 'Library',
       ),
       NavigationDestination(
@@ -475,29 +504,19 @@ class _AnimatedWaveIconState extends State<_AnimatedWaveIcon>
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
-    );
-    _player.addListener(_onPlayerChanged);
-    _syncAnimation();
+    )..repeat();
+    _player.addListener(_rebuild);
   }
 
   @override
   void dispose() {
     _ctrl.dispose();
-    _player.removeListener(_onPlayerChanged);
+    _player.removeListener(_rebuild);
     super.dispose();
   }
 
-  void _onPlayerChanged() {
-    _syncAnimation();
+  void _rebuild() {
     if (mounted) setState(() {});
-  }
-
-  void _syncAnimation() {
-    if (_player.isPlaying) {
-      if (!_ctrl.isAnimating) _ctrl.repeat();
-    } else {
-      if (_ctrl.isAnimating) _ctrl.stop();
-    }
   }
 
   @override
@@ -524,7 +543,8 @@ class _NavWavePainter extends CustomPainter {
   final Color color;
   final bool playing;
 
-  _NavWavePainter({required this.phase, required this.color, required this.playing});
+  _NavWavePainter(
+      {required this.phase, required this.color, required this.playing});
 
   static const _barHeights = [0.35, 0.6, 1.0, 0.6, 0.35];
   static const _barCount = 5;
@@ -548,7 +568,8 @@ class _NavWavePainter extends CustomPainter {
 
       if (playing) {
         final barPhase = phase * 2 * math.pi + i * 1.2;
-        final ratio = (baseRatio * (0.5 + 0.5 * math.sin(barPhase))).clamp(0.2, 1.0);
+        final ratio =
+            (baseRatio * (0.5 + 0.5 * math.sin(barPhase))).clamp(0.2, 1.0);
         final half = maxHalf * ratio;
         canvas.drawLine(Offset(x, midY - half), Offset(x, midY + half), paint);
       } else {

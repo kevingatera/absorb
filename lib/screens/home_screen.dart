@@ -5,19 +5,16 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
-import '../services/download_service.dart';
 import '../widgets/home_section.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/shimmer.dart';
 import '../widgets/book_card.dart';
 import '../widgets/status_message_view.dart';
 import '../widgets/book_detail_sheet.dart';
+import '../widgets/author_name_link.dart';
 import '../widgets/card_buttons.dart';
 import '../widgets/episode_list_sheet.dart';
 import '../main.dart' show oledNotifier;
-import '../widgets/home_customize_sheet.dart';
-import '../widgets/playlist_detail_sheet.dart';
-import '../widgets/collection_detail_sheet.dart';
 import 'app_shell.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -32,13 +29,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _hideEbookOnly = false;
 
   // Cached filtered sections — invalidated when source data or settings change.
-  List<Map<String, dynamic>>? _cachedSections;
+  List<dynamic>? _cachedSections;
   List<dynamic>? _cachedClItems;
   List<dynamic>? _lastSectionsRef;
-  List<dynamic>? _lastPlaylistsRef;
-  List<dynamic>? _lastCollectionsRef;
-  List<String>? _lastSectionOrder;
-  Set<String>? _lastHiddenIds;
   bool _lastHideEbook = false;
   bool _lastIsPodcast = false;
 
@@ -87,26 +80,14 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Recompute cached filtered sections only when input data changes.
   void _refreshFilteredCache(LibraryProvider lib) {
     final sections = lib.personalizedSections;
-    final playlists = lib.playlists;
-    final collections = lib.collections;
     final isPod = lib.isPodcastLibrary;
-    final sectionOrder = lib.sectionOrder;
-    final hiddenIds = lib.hiddenSectionIds;
     if (identical(sections, _lastSectionsRef) &&
-        identical(playlists, _lastPlaylistsRef) &&
-        identical(collections, _lastCollectionsRef) &&
-        identical(sectionOrder, _lastSectionOrder) &&
-        identical(hiddenIds, _lastHiddenIds) &&
         _hideEbookOnly == _lastHideEbook &&
         isPod == _lastIsPodcast &&
         _cachedSections != null) {
       return; // cache is still valid
     }
     _lastSectionsRef = sections;
-    _lastPlaylistsRef = playlists;
-    _lastCollectionsRef = collections;
-    _lastSectionOrder = sectionOrder;
-    _lastHiddenIds = hiddenIds;
     _lastHideEbook = _hideEbookOnly;
     _lastIsPodcast = isPod;
 
@@ -127,7 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }).toList();
     }
     _cachedClItems = clItems;
-    _cachedSections = lib.getOrderedHomeSections();
+    _cachedSections = _sortSections(sections);
   }
 
   @override
@@ -233,6 +214,17 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  static const _prioritySections = [
+    'continue-listening',
+    'continue-series',
+    'episodes-recently-added',
+    'recently-added',
+    'discover',
+    'listen-again',
+  ];
+
+  static const _hiddenSections = {'newest-authors', 'recent-series'};
+
   static const _sectionLabels = {
     'continue-listening': 'Continue Listening',
     'continue-series': 'Continue Series',
@@ -252,6 +244,16 @@ class _HomeScreenState extends State<HomeScreen> {
     'episodes-recently-added': Icons.podcasts_rounded,
     'downloaded-books': Icons.download_done_rounded,
   };
+
+  List<dynamic> _sortSections(List<dynamic> sections) {
+    final sorted = List<dynamic>.from(sections);
+    sorted.sort((a, b) {
+      final aIdx = _prioritySections.indexOf(a['id'] ?? '');
+      final bIdx = _prioritySections.indexOf(b['id'] ?? '');
+      return (aIdx == -1 ? 999 : aIdx).compareTo(bIdx == -1 ? 999 : bIdx);
+    });
+    return sorted;
+  }
 
   String _titleCase(String s) {
     return s
@@ -310,66 +312,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: AbsorbPageHeader(
                     title: 'Home',
                     actions: [
-                      GestureDetector(
-                        onTap: () {
-                          final newVal = !lib.isManualOffline;
-                          lib.setManualOffline(newVal);
-                          if (newVal) {
-                            final dl = DownloadService();
-                            final player = AudioPlayerService();
-                            final itemId = player.currentItemId;
-                            final epId = player.currentEpisodeId;
-                            final dlKey = epId != null && itemId != null
-                                ? '$itemId-$epId'
-                                : itemId;
-                            if (dlKey == null || !dl.isDownloaded(dlKey)) {
-                              player.stop();
-                            }
-                          }
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOutCubic,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: lib.isOffline
-                                ? Colors.orange.withValues(alpha: 0.15)
-                                : cs.onSurface.withValues(alpha: 0.06),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: lib.isOffline
-                                  ? Colors.orange.withValues(alpha: 0.3)
-                                  : cs.onSurface.withValues(alpha: 0.08),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                lib.isOffline
-                                    ? Icons.airplanemode_active_rounded
-                                    : Icons.airplanemode_inactive_rounded,
-                                size: 14,
-                                color: lib.isOffline
-                                    ? Colors.orange
-                                    : cs.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                lib.isOffline ? 'Offline' : 'Online',
-                                style: TextStyle(
-                                  color: lib.isOffline
-                                      ? Colors.orange
-                                      : cs.onSurfaceVariant,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
                       if (!lib.isOffline && allLibraries.length > 1)
                         Material(
                           color: cs.onSurface.withValues(alpha: 0.06),
@@ -417,27 +359,68 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ),
-                      if (!lib.isOffline)
-                        GestureDetector(
-                          onTap: () => HomeCustomizeSheet.show(context),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: cs.onSurface.withValues(alpha: 0.06),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                  color: cs.onSurface.withValues(alpha: 0.08)),
-                            ),
-                            child: Icon(Icons.tune_rounded,
-                                size: 14, color: cs.onSurfaceVariant),
-                          ),
-                        ),
                     ],
                   ),
                 ),
 
-                // (Continue Listening is now rendered in the generic sections loop below)
+                // ── Currently Absorbing section ──
+                if (!lib.isLoading)
+                  ...() {
+                    final clItems = _cachedClItems ?? [];
+                    if (clItems.isEmpty) return <Widget>[];
+                    return <Widget>[
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                          child: Row(
+                            children: [
+                              Icon(Icons.play_circle_outline_rounded,
+                                  size: 16,
+                                  color: cs.primary.withValues(alpha: 0.7)),
+                              const SizedBox(width: 8),
+                              Text('Continue Listening',
+                                  style: tt.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w500,
+                                    color: cs.onSurface.withValues(alpha: 0.8),
+                                    letterSpacing: 0.3,
+                                  )),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                  child: Container(
+                                      height: 0.5,
+                                      color: cs.outlineVariant
+                                          .withValues(alpha: 0.2))),
+                            ],
+                          ),
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: SizedBox(
+                            height: 92,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 20),
+                              physics: const BouncingScrollPhysics(),
+                              itemCount: clItems.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(width: 10),
+                              itemBuilder: (context, i) {
+                                final item = clItems[i] as Map<String, dynamic>;
+                                return _ContinueListeningCard(
+                                  item: item,
+                                  lib: lib,
+                                  player: _player,
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ];
+                  }(),
 
                 // ── Loading shimmer ──
                 if (lib.isLoading) ...[
@@ -487,124 +470,47 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
 
-                // ── All sections (including Continue Listening) ──
+                // ── Other sections ──
                 if (!lib.isLoading)
-                  ...(_cachedSections ?? []).expand((section) {
-                    final id = section['id'] as String? ?? '';
-                    final isPlaylist = id.startsWith('playlist:');
-                    final isCollection = id.startsWith('collection:');
-
-                    // Playlists/collections are server-only; hide when offline
-                    if ((isPlaylist || isCollection) && lib.isOffline)
-                      return <Widget>[];
-
-                    // Continue Listening gets its own compact card layout
-                    if (id == 'continue-listening') {
-                      final clItems = _cachedClItems ?? [];
-                      if (clItems.isEmpty) return <Widget>[];
-                      return <Widget>[
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-                            child: Row(children: [
-                              Icon(Icons.play_circle_outline_rounded,
-                                  size: 16,
-                                  color: cs.primary.withValues(alpha: 0.7)),
-                              const SizedBox(width: 8),
-                              Text('Continue Listening',
-                                  style: tt.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w500,
-                                    color: cs.onSurface.withValues(alpha: 0.8),
-                                    letterSpacing: 0.3,
-                                  )),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                  child: Container(
-                                      height: 0.5,
-                                      color: cs.outlineVariant
-                                          .withValues(alpha: 0.2))),
-                            ]),
-                          ),
-                        ),
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: SizedBox(
-                              height: 92,
-                              child: ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 20),
-                                physics: const BouncingScrollPhysics(),
-                                itemCount: clItems.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(width: 10),
-                                itemBuilder: (context, i) {
-                                  final item =
-                                      clItems[i] as Map<String, dynamic>;
-                                  return _ContinueListeningCard(
-                                    item: item,
-                                    lib: lib,
-                                    player: _player,
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        ),
-                      ];
+                  ...(_cachedSections ?? []).map((section) {
+                    final id = section['id'] ?? '';
+                    if (id == 'continue-listening' ||
+                        _hiddenSections.contains(id)) {
+                      return const SliverToBoxAdapter();
                     }
-
                     final label = section['label'] ??
                         _sectionLabels[id] ??
                         _titleCase(id);
                     final entities = _filterEbookOnly(
                         (section['entities'] as List<dynamic>?) ?? []);
-                    final type = isPlaylist
-                        ? 'playlist'
-                        : isCollection
-                            ? 'collection'
-                            : (section['type'] ?? 'book');
-                    if (entities.isEmpty) return <Widget>[];
+                    final type = section['type'] ?? 'book';
+                    if (entities.isEmpty) return const SliverToBoxAdapter();
 
                     if (lib.isOffline && id == 'downloaded-books') {
-                      return <Widget>[
-                        SliverToBoxAdapter(
-                          child: _OfflineDownloadsSection(
-                            title: label,
-                            icon: _sectionIcons[id] ?? Icons.album_outlined,
-                            entities: entities,
-                          ),
-                        ),
-                      ];
-                    }
-
-                    VoidCallback? titleTap;
-                    IconData sectionIcon;
-                    if (isPlaylist) {
-                      titleTap = () => PlaylistDetailSheet.show(
-                          context, section['_playlistId'] as String);
-                      sectionIcon = Icons.playlist_play_rounded;
-                    } else if (isCollection) {
-                      titleTap = () => CollectionDetailSheet.show(
-                          context, section['_collectionId'] as String);
-                      sectionIcon = Icons.collections_bookmark_rounded;
-                    } else {
-                      sectionIcon = _sectionIcons[id] ?? Icons.album_outlined;
-                    }
-
-                    return <Widget>[
-                      SliverToBoxAdapter(
-                        child: HomeSection(
+                      return SliverToBoxAdapter(
+                        child: _OfflineDownloadsSection(
                           title: label,
-                          icon: sectionIcon,
+                          icon: _sectionIcons[id] ?? Icons.album_outlined,
                           entities: entities,
-                          sectionType: type,
+                        ),
+                      );
+                    }
+
+                    return SliverToBoxAdapter(
+                      child: HomeSection(
+                        title: label,
+                        icon: _sectionIcons[id] ?? Icons.album_outlined,
+                        entities: entities,
+                        sectionType: type,
+                        sectionId: id,
+                        onHeaderTap: () => AppShell.goToLibraryPreset(
+                          context,
                           sectionId: id,
-                          onTitleTap: titleTap,
+                          sectionType: type,
+                          sectionTitle: label,
                         ),
                       ),
-                    ];
+                    );
                   }),
 
                 const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
@@ -843,7 +749,9 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
                         style: tt.bodySmall?.copyWith(
                             fontWeight: FontWeight.w600, color: cs.onSurface)),
                     if (author.isNotEmpty)
-                      Text(author,
+                      AuthorNameLink(
+                          item: item,
+                          authorName: author,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: tt.labelSmall?.copyWith(
