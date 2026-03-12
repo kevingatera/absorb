@@ -691,23 +691,26 @@ class ChapterPillPainter extends CustomPainter {
 
       // Glow layers (more when playing)
       if (isPlaying) {
-        // Wide alpha strokes instead of blurred mask filters to avoid GPU artifacts.
-        canvas.drawLine(
-          Offset(lineX, inset),
-          Offset(lineX, h - inset),
-          Paint()
-            ..color = accent.withValues(alpha: 0.12)
-            ..strokeWidth = 10.0
-            ..strokeCap = StrokeCap.round,
-        );
-        canvas.drawLine(
-          Offset(lineX, inset),
-          Offset(lineX, h - inset),
-          Paint()
-            ..color = accent.withValues(alpha: 0.22)
-            ..strokeWidth = 6.0
-            ..strokeCap = StrokeCap.round,
-        );
+        // Use several soft alpha steps instead of just 2 visible layers.
+        const glowLayers = <(double, double)>[
+          (12.0, 0.035),
+          (10.0, 0.05),
+          (8.5, 0.07),
+          (7.0, 0.095),
+          (5.5, 0.13),
+          (4.0, 0.18),
+          (2.8, 0.24),
+        ];
+        for (final (strokeWidth, alpha) in glowLayers) {
+          canvas.drawLine(
+            Offset(lineX, inset),
+            Offset(lineX, h - inset),
+            Paint()
+              ..color = accent.withValues(alpha: alpha)
+              ..strokeWidth = strokeWidth
+              ..strokeCap = StrokeCap.round,
+          );
+        }
       }
 
       // Solid line
@@ -716,7 +719,7 @@ class ChapterPillPainter extends CustomPainter {
         Offset(lineX, h - inset),
         Paint()
           ..color = accent.withValues(alpha: isPlaying ? 0.95 : 0.5)
-          ..strokeWidth = 1.5
+          ..strokeWidth = 1.6
           ..strokeCap = StrokeCap.round,
       );
 
