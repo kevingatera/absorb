@@ -407,6 +407,34 @@ class ApiService {
     return [];
   }
 
+  /// Get books by narrator name using the filter API.
+  /// Filter format: narrators.<base64(narratorName)>
+  Future<List<dynamic>> getBooksByNarrator(
+    String libraryId,
+    String narratorName, {
+    int limit = 200,
+  }) async {
+    try {
+      final filterValue = base64Encode(utf8.encode(narratorName));
+      final url = '$_cleanBaseUrl/api/libraries/$libraryId/items'
+          '?filter=narrators.$filterValue&sort=media.metadata.title&limit=$limit&collapseseries=0';
+      final response = await http
+          .get(
+            Uri.parse(url),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['results'] as List<dynamic>? ?? [];
+      }
+    } catch (e) {
+      debugPrint('[API] getBooksByNarrator error: $e');
+    }
+    return [];
+  }
+
   /// Get all authors for a library.
   Future<List<Map<String, dynamic>>> getLibraryAuthors(String libraryId) async {
     try {

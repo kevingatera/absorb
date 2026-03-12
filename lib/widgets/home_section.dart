@@ -13,8 +13,7 @@ class HomeSection extends StatelessWidget {
   final List<dynamic> entities;
   final String sectionType;
   final String sectionId;
-  final VoidCallback? onTitleTap;
-  final double coverAspectRatio;
+  final VoidCallback? onHeaderTap;
 
   const HomeSection({
     super.key,
@@ -23,8 +22,7 @@ class HomeSection extends StatelessWidget {
     required this.entities,
     required this.sectionType,
     required this.sectionId,
-    this.onTitleTap,
-    this.coverAspectRatio = 1.0,
+    this.onHeaderTap,
   });
 
   @override
@@ -33,22 +31,24 @@ class HomeSection extends StatelessWidget {
     final tt = Theme.of(context).textTheme;
 
     final isContinueListening = sectionId == 'continue-listening';
-    final isPlaylistSection = sectionType == 'playlist';
     final isAuthorSection = sectionType == 'author' || sectionType == 'authors';
     final isSeriesSection = sectionType == 'series';
     final isEpisodeSection = sectionType == 'episode';
 
     // Check if any entities have recentEpisode (podcast episode sections)
-    final hasEpisodeEntities = !isEpisodeSection && entities.isNotEmpty &&
+    final hasEpisodeEntities = !isEpisodeSection &&
+        entities.isNotEmpty &&
         entities.first is Map<String, dynamic> &&
         (entities.first as Map<String, dynamic>)['recentEpisode'] != null;
     final effectiveEpisode = isEpisodeSection || hasEpisodeEntities;
 
-    final bool isRectCover = coverAspectRatio < 1.0;
     final double cardWidth =
         isContinueListening ? 300 : (isAuthorSection ? 120 : 140);
-    final double cardHeight =
-        isContinueListening ? 120 : effectiveEpisode ? 200 : (isAuthorSection ? 170 : (isRectCover ? 260 : 200));
+    final double cardHeight = isContinueListening
+        ? 120
+        : effectiveEpisode
+            ? 200
+            : (isAuthorSection ? 170 : 200);
 
     return Padding(
       padding: const EdgeInsets.only(top: 24),
@@ -56,36 +56,41 @@ class HomeSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Section header
-          GestureDetector(
-            onTap: onTitleTap,
-            behavior: onTitleTap != null ? HitTestBehavior.opaque : HitTestBehavior.deferToChild,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  Icon(icon, size: 16, color: cs.primary.withValues(alpha: 0.7)),
-                  const SizedBox(width: 8),
-                  Text(
-                    title,
-                    style: tt.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w500,
-                      color: cs.onSurface.withValues(alpha: 0.8),
-                      letterSpacing: 0.3,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onHeaderTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Icon(icon,
+                        size: 16, color: cs.primary.withValues(alpha: 0.7)),
+                    const SizedBox(width: 8),
+                    Text(
+                      title,
+                      style: tt.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w500,
+                        color: cs.onSurface.withValues(alpha: 0.8),
+                        letterSpacing: 0.3,
+                      ),
                     ),
-                  ),
-                  if (onTitleTap != null) ...[
-                    const SizedBox(width: 4),
-                    Icon(Icons.chevron_right_rounded, size: 16,
-                      color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Container(
+                        height: 0.5,
+                        color: cs.outlineVariant.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    if (onHeaderTap != null) ...[
+                      const SizedBox(width: 10),
+                      Icon(Icons.chevron_right_rounded,
+                          size: 18,
+                          color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
+                    ],
                   ],
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Container(
-                      height: 0.5,
-                      color: cs.outlineVariant.withValues(alpha: 0.2),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -98,26 +103,7 @@ class HomeSection extends StatelessWidget {
               cardWidth: cardWidth,
               itemCount: entities.length,
               itemBuilder: (context, index) {
-                var entity = entities[index];
-
-                // Playlist items nest actual item under 'libraryItem'
-                if (isPlaylistSection && entity is Map<String, dynamic>) {
-                  final inner = entity['libraryItem'] as Map<String, dynamic>?;
-                  if (inner != null) {
-                    // Merge episodeId into the item for episode detection
-                    final episodeId = entity['episodeId'] as String?;
-                    entity = Map<String, dynamic>.from(inner);
-                    if (episodeId != null) {
-                      // Find the matching episode from the podcast's episodes
-                      final media = entity['media'] as Map<String, dynamic>? ?? {};
-                      final episodes = media['episodes'] as List<dynamic>? ?? [];
-                      final ep = episodes.cast<Map<String, dynamic>>().where(
-                        (e) => e['id'] == episodeId,
-                      ).firstOrNull;
-                      if (ep != null) entity['recentEpisode'] = ep;
-                    }
-                  }
-                }
+                final entity = entities[index];
 
                 if (isAuthorSection) {
                   return SizedBox(
@@ -129,7 +115,7 @@ class HomeSection extends StatelessWidget {
                 if (isSeriesSection) {
                   return SizedBox(
                     width: cardWidth,
-                    child: SeriesCard(series: entity, coverAspectRatio: coverAspectRatio),
+                    child: SeriesCard(series: entity),
                   );
                 }
 
@@ -157,7 +143,6 @@ class HomeSection extends StatelessWidget {
                     item: entity,
                     showProgress: isContinueListening,
                     isWide: isContinueListening,
-                    coverAspectRatio: isContinueListening ? 1.0 : coverAspectRatio,
                   ),
                 );
               },
@@ -208,8 +193,8 @@ class _SnapScrollListState extends State<_SnapScrollList> {
       onNotification: (notification) {
         final offset = _controller.offset;
         final targetIndex = (offset / itemExtent).round();
-        final targetOffset =
-            (targetIndex * itemExtent).clamp(0.0, _controller.position.maxScrollExtent);
+        final targetOffset = (targetIndex * itemExtent)
+            .clamp(0.0, _controller.position.maxScrollExtent);
         if ((offset - targetOffset).abs() > 1) {
           Future.microtask(() {
             if (_controller.hasClients) {
@@ -287,22 +272,29 @@ class _EpisodeCard extends StatelessWidget {
                 children: [
                   if (coverUrl != null)
                     coverUrl.startsWith('/')
-                        ? Image.file(File(coverUrl), fit: BoxFit.cover,
+                        ? Image.file(File(coverUrl),
+                            fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => Container(
-                              color: cs.surfaceContainerHigh,
-                              child: Icon(Icons.podcasts_rounded, size: 32,
-                                color: cs.onSurfaceVariant.withValues(alpha: 0.3))))
-                        : Image.network(coverUrl, fit: BoxFit.cover,
+                                color: cs.surfaceContainerHigh,
+                                child: Icon(Icons.podcasts_rounded,
+                                    size: 32,
+                                    color: cs.onSurfaceVariant
+                                        .withValues(alpha: 0.3))))
+                        : Image.network(coverUrl,
+                            fit: BoxFit.cover,
                             headers: lib.mediaHeaders,
                             errorBuilder: (_, __, ___) => Container(
-                              color: cs.surfaceContainerHigh,
-                              child: Icon(Icons.podcasts_rounded, size: 32,
-                                color: cs.onSurfaceVariant.withValues(alpha: 0.3))))
+                                color: cs.surfaceContainerHigh,
+                                child: Icon(Icons.podcasts_rounded,
+                                    size: 32,
+                                    color: cs.onSurfaceVariant
+                                        .withValues(alpha: 0.3))))
                   else
                     Container(
                       color: cs.surfaceContainerHigh,
-                      child: Icon(Icons.podcasts_rounded, size: 32,
-                        color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
+                      child: Icon(Icons.podcasts_rounded,
+                          size: 32,
+                          color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
                     ),
                 ],
               ),
