@@ -1,8 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -10,33 +9,39 @@ import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import 'card_buttons.dart';
 import '../services/api_service.dart';
 import '../services/download_service.dart';
+import 'author_name_link.dart';
 import '../services/progress_sync_service.dart';
 import '../services/metadata_override_service.dart';
 import '../services/scoped_prefs.dart';
+import 'status_message_view.dart';
 import '../screens/app_shell.dart';
-import 'author_books_sheet.dart';
 import 'series_books_sheet.dart';
 import 'absorbing_shared.dart';
 import 'html_description.dart';
 import 'metadata_lookup_sheet.dart';
-import 'absorb_wave_icon.dart';
 
 // ─── BOOK DETAIL BOTTOM SHEET ───────────────────────────────
 
 void showBookDetailSheet(BuildContext context, String itemId) {
   showModalBottomSheet(
-    context: context, isScrollControlled: true, useSafeArea: true,
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
     backgroundColor: Colors.transparent,
     builder: (ctx) => DraggableScrollableSheet(
-      expand: false, initialChildSize: 0.85, minChildSize: 0.05, snap: true, maxChildSize: 0.95,
-      builder: (ctx, sc) => _BookDetailSheetContent(itemId: itemId, scrollController: sc),
+      expand: false,
+      initialChildSize: 0.85,
+      minChildSize: 0.05,
+      snap: true,
+      maxChildSize: 0.95,
+      builder: (ctx, sc) =>
+          _BookDetailSheetContent(itemId: itemId, scrollController: sc),
     ),
   );
 }
@@ -44,14 +49,16 @@ void showBookDetailSheet(BuildContext context, String itemId) {
 class _BookDetailSheetContent extends StatefulWidget {
   final String itemId;
   final ScrollController scrollController;
-  const _BookDetailSheetContent({required this.itemId, required this.scrollController});
-  @override State<_BookDetailSheetContent> createState() => _BookDetailSheetContentState();
+  const _BookDetailSheetContent(
+      {required this.itemId, required this.scrollController});
+  @override
+  State<_BookDetailSheetContent> createState() =>
+      _BookDetailSheetContentState();
 }
 
 class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   Map<String, dynamic>? _item;
   Map<String, dynamic>? _rating;
-  String? _asin;
   bool _isLoading = true;
   bool _chaptersExpanded = false;
   bool _isAbsorbing = false;
@@ -59,10 +66,13 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   bool _showGoodreads = false;
   bool _ebookSaved = false;
 
-  @override void initState() {
+  @override
+  void initState() {
     super.initState();
     _loadItem();
-    PlayerSettings.getShowGoodreadsButton().then((v) { if (mounted) setState(() => _showGoodreads = v); });
+    PlayerSettings.getShowGoodreadsButton().then((v) {
+      if (mounted) setState(() => _showGoodreads = v);
+    });
     ScopedPrefs.getStringList('saved_ebooks').then((list) {
       if (mounted && list.contains(widget.itemId)) {
         setState(() => _ebookSaved = true);
@@ -89,7 +99,10 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             _hasLocalOverride = true;
           }
 
-          setState(() { _item = finalItem; _isLoading = false; });
+          setState(() {
+            _item = finalItem;
+            _isLoading = false;
+          });
 
           // Fetch Audible rating
           final media = finalItem['media'] as Map<String, dynamic>? ?? {};
@@ -105,15 +118,13 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           if ((rating == null || (rating['rating'] as num).toDouble() <= 0) &&
               title.isNotEmpty) {
             final fallback = await api.searchAudibleRating(title, author);
-            if (fallback != null && (fallback['rating'] as num).toDouble() > 0) {
+            if (fallback != null &&
+                (fallback['rating'] as num).toDouble() > 0) {
               rating = fallback;
             }
           }
           if (rating != null && mounted) {
-            setState(() {
-              _rating = rating;
-              _asin = rating?['asin'] as String? ?? asin;
-            });
+            setState(() => _rating = rating);
           }
           return;
         }
@@ -129,7 +140,10 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         final session = jsonDecode(dl.sessionData!) as Map<String, dynamic>;
         final localItem = session['libraryItem'] as Map<String, dynamic>?;
         if (localItem != null && mounted) {
-          setState(() { _item = localItem; _isLoading = false; });
+          setState(() {
+            _item = localItem;
+            _isLoading = false;
+          });
           return;
         }
       } catch (_) {}
@@ -162,37 +176,61 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     return auth.apiService?.getCoverUrl(widget.itemId, width: 800);
   }
 
-  @override Widget build(BuildContext context) {
+  @override
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     return Container(
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(color: Theme.of(context).scaffoldBackgroundColor, borderRadius: const BorderRadius.vertical(top: Radius.circular(24))),
+      decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24))),
       child: Stack(children: [
         if (_coverUrl != null)
           Positioned.fill(
             child: RepaintBoundary(
               child: CachedNetworkImage(
-                imageUrl: _coverUrl!, fit: BoxFit.cover,
+                imageUrl: _coverUrl!,
+                fit: BoxFit.cover,
                 httpHeaders: context.read<LibraryProvider>().mediaHeaders,
                 imageBuilder: (_, p) => ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50, tileMode: TileMode.decal),
-                  child: Image(image: p, fit: BoxFit.cover)),
+                    imageFilter: ImageFilter.blur(
+                        sigmaX: 50, sigmaY: 50, tileMode: TileMode.decal),
+                    child: Image(image: p, fit: BoxFit.cover)),
                 placeholder: (_, __) => const SizedBox(),
                 errorWidget: (_, __, ___) => const SizedBox(),
               ),
             ),
           ),
-        Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
-          begin: Alignment.topCenter, end: Alignment.bottomCenter,
-          colors: [Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.6), Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85), Theme.of(context).scaffoldBackgroundColor],
+        Positioned.fill(
+            child: DecoratedBox(
+                decoration: BoxDecoration(
+                    gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.6),
+            Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85),
+            Theme.of(context).scaffoldBackgroundColor
+          ],
         )))),
         _isLoading
-            ? Center(child: CircularProgressIndicator(strokeWidth: 2, color: cs.onSurface.withValues(alpha: 0.24)))
+            ? Center(
+                child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: cs.onSurface.withValues(alpha: 0.24)))
             : _item == null
-                ? Center(child: Text('Failed to load', style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)))
+                ? StatusMessageView(
+                    icon: Icons.error_outline_rounded,
+                    title: 'Book details could not load',
+                    message:
+                        'Absorb could not fetch this item from Audiobookshelf. Close this sheet and try again.',
+                    actionLabel: 'Retry',
+                    onAction: _loadItem,
+                  )
                 : AnimatedOpacity(
-                    opacity: 1.0, duration: const Duration(milliseconds: 300),
+                    opacity: 1.0,
+                    duration: const Duration(milliseconds: 300),
                     child: _buildContent(context, cs, tt)),
       ]),
     );
@@ -222,313 +260,492 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
 
     final isEbookOnly = PlayerSettings.isEbookOnly(_item!);
 
-    return ListView(controller: widget.scrollController, padding: EdgeInsets.fromLTRB(20, 8, 20, 32 + MediaQuery.of(context).viewPadding.bottom), children: [
-      Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
-      Text(title, textAlign: TextAlign.center, style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
-      const SizedBox(height: 4),
-      GestureDetector(
-        onTap: () => _openAuthor(context, metadata),
-        child: Text(authorName, textAlign: TextAlign.center, style: tt.bodyMedium?.copyWith(
-          color: cs.primary,
-          decoration: TextDecoration.underline,
-          decorationColor: cs.primary.withValues(alpha: 0.4),
-        )),
-      ),
-      if (narrator.isNotEmpty) ...[const SizedBox(height: 2),
-        Text('Narrated by $narrator', textAlign: TextAlign.center, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant))],
-      // ─── AUDIBLE RATING (space always reserved) ─────────
-      const SizedBox(height: 8),
-      if (_rating != null && (_rating!['rating'] as num).toDouble() > 0)
-        Center(
-          child: GestureDetector(
-            onTap: _asin != null ? () => _showAudibleReviews(context) : null,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: cs.onSurface.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                ..._buildStars((_rating!['rating'] as num).toDouble(), cs),
-                const SizedBox(width: 6),
-                Text((_rating!['rating'] as num).toStringAsFixed(1),
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: cs.onSurfaceVariant)),
-                const SizedBox(width: 4),
-                Text('on Audible', style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
-              ]),
-            ),
-          ),
-        )
-      else
-        const SizedBox(height: 20),
-      const SizedBox(height: 12),
-      if (progress > 0 && !isFinished) ...[
-        ClipRRect(borderRadius: BorderRadius.circular(3),
-          child: LinearProgressIndicator(value: progress.clamp(0.0, 1.0), minHeight: 4,
-            backgroundColor: cs.onSurface.withValues(alpha: 0.1), valueColor: AlwaysStoppedAnimation(cs.primary))),
-        const SizedBox(height: 4),
-        Text('${(progress * 100).toStringAsFixed(1)}% complete', textAlign: TextAlign.center,
-          style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
-        const SizedBox(height: 12),
-      ],
-      if (isEbookOnly)
-        SizedBox(height: 52, child: FilledButton.icon(
-          onPressed: null,
-          icon: const Icon(Icons.menu_book_rounded, size: 24),
-          label: Text('eBook Only — No Audio',
-            style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-          style: FilledButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-        ))
-      else
-      SizedBox(
-        height: 52,
-        child: ListenableBuilder(
-          listenable: AudioPlayerService(),
-          builder: (_, __) {
-            final player = AudioPlayerService();
-            final isCurrentPlaying =
-                player.currentItemId == widget.itemId && player.isPlaying;
-            final showAbsorbingState = _isAbsorbing || isCurrentPlaying;
-
-            return FilledButton.icon(
-              onPressed: showAbsorbingState
-                  ? () {}
-                  : () {
-                      setState(() => _isAbsorbing = true);
-                      _startAbsorb(
-                        context,
-                        auth: auth,
-                        title: title,
-                        author: authorName,
-                        coverUrl: _coverUrl,
-                        duration: duration,
-                        chapters: chapters,
-                      );
-                    },
-              icon: showAbsorbingState
-                  ? SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: AbsorbingWave(color: cs.onPrimary),
-                    )
-                  : isFinished
-                      ? AbsorbReplayIcon(size: 24, color: cs.onPrimary)
-                      : const Icon(Icons.waves_rounded, size: 24),
-              label: Text(
-                showAbsorbingState
-                    ? 'Absorbing…'
-                    : isFinished
-                        ? 'Absorb Again'
-                        : 'Absorb',
-                style: tt.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w600, color: cs.onPrimary),
-              ),
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-            );
-          },
-        ),
-      ),
-      // ─── Action row: Download | Finished | More ─────────────────
-      const SizedBox(height: 12),
-      Row(children: [
-        if (!isEbookOnly) ...[
-          Expanded(child: DownloadWideButton(itemId: widget.itemId, coverUrl: _coverUrl, title: title, author: authorName, accent: cs.primary)),
-          const SizedBox(width: 8),
-        ],
-        Expanded(child: GestureDetector(
-          onTap: () => isFinished
-              ? _markNotFinished(context, auth, currentTime, duration)
-              : _markFinished(context, auth, duration),
-          child: Container(
-            height: 36,
-            decoration: BoxDecoration(
-              color: isFinished ? Colors.green.withValues(alpha: 0.06) : cs.onSurface.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: isFinished ? Colors.green.withValues(alpha: 0.15) : cs.onSurface.withValues(alpha: 0.08)),
-            ),
-            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(
-                isFinished ? Icons.check_circle_rounded : Icons.check_circle_outline_rounded,
-                size: 16,
-                color: isFinished ? Colors.green : cs.onSurfaceVariant,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                isFinished ? 'Fully Absorbed' : 'Fully Absorb',
-                style: TextStyle(
-                  color: isFinished ? Colors.green : cs.onSurfaceVariant,
-                  fontSize: 12, fontWeight: FontWeight.w500,
-                ),
-              ),
-            ]),
-          ),
-        )),
-        const SizedBox(width: 8),
-        // More button - opens styled bottom sheet with secondary actions
-        GestureDetector(
-          onTap: () => _showMoreSheet(context, auth, lib, title, authorName, progress, isFinished, duration, ebookFile, isEbookOnly),
-          child: Container(
-            height: 36, width: 44,
-            decoration: BoxDecoration(
-              color: cs.onSurface.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: cs.onSurface.withValues(alpha: 0.1)),
-            ),
-            child: Icon(Icons.more_horiz_rounded, size: 18, color: cs.onSurfaceVariant),
-          ),
-        ),
-      ]),
-      const SizedBox(height: 16),
-      Wrap(spacing: 8, runSpacing: 8, children: [
-        if (year.isNotEmpty) _chip(Icons.calendar_today_rounded, year),
-        _chip(Icons.schedule_rounded, _fmtDur(duration)),
-        if (chapters.isNotEmpty) _chip(Icons.list_rounded, '${chapters.length} chapters'),
-        ..._audioInfoChips(media),
-        if (publisher.isNotEmpty) _chip(Icons.business_rounded, publisher),
-        ...genres.take(3).map((g) => _chip(Icons.tag_rounded, g)),
-        if (progressData?['startedAt'] is num)
-          _chip(Icons.play_circle_outline_rounded, 'Started ${_fmtDate((progressData!['startedAt'] as num).toInt())}'),
-        if (progressData?['finishedAt'] is num)
-          _chip(Icons.check_circle_outline_rounded, 'Finished ${_fmtDate((progressData!['finishedAt'] as num).toInt())}'),
-      ]),
-      if (seriesEntries.isNotEmpty) ...[const SizedBox(height: 16),
-        ...seriesEntries.map((s) {
-          final name = s['name'] as String? ?? '';
-          final seq = s['sequence'] as String? ?? '';
-          final seriesId = s['id'] as String?;
-          return Padding(padding: const EdgeInsets.only(bottom: 4),
-            child: GestureDetector(
-              onTap: () => _openSeries(context, seriesId, name),
+    return ListView(
+        controller: widget.scrollController,
+        padding: EdgeInsets.fromLTRB(
+            20, 8, 20, 32 + MediaQuery.of(context).viewPadding.bottom),
+        children: [
+          Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: cs.primary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: cs.primary.withValues(alpha: 0.15)),
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                      color: cs.onSurface.withValues(alpha: 0.24),
+                      borderRadius: BorderRadius.circular(2)))),
+          Text(title,
+              textAlign: TextAlign.center,
+              style: tt.headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
+          const SizedBox(height: 4),
+          AuthorNameLink(
+              item: _item!,
+              authorName: authorName,
+              textAlign: TextAlign.center,
+              style: tt.bodyMedium
+                  ?.copyWith(color: cs.onSurface.withValues(alpha: 0.6))),
+          if (narrator.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Wrap(
+              alignment: WrapAlignment.center,
+              children: [
+                Text(
+                  'Narrated by ',
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                 ),
-                child: Row(children: [
-                  Icon(Icons.auto_stories_rounded, size: 16, color: cs.primary.withValues(alpha: 0.7)),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text('$name${seq.isNotEmpty ? ' #$seq' : ''}',
-                    style: tt.bodySmall?.copyWith(color: cs.primary.withValues(alpha: 0.9), fontWeight: FontWeight.w500))),
-                  Icon(Icons.chevron_right_rounded, size: 18, color: cs.primary.withValues(alpha: 0.5)),
+                NarratorNameLink(
+                  item: _item!,
+                  narratorName: narrator,
+                  textAlign: TextAlign.center,
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                ),
+              ],
+            )
+          ],
+          // ─── AUDIBLE RATING (space always reserved) ─────────
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 20,
+            child: (_rating != null &&
+                    (_rating!['rating'] as num).toDouble() > 0)
+                ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    ..._buildStars((_rating!['rating'] as num).toDouble(), cs),
+                    const SizedBox(width: 6),
+                    Text((_rating!['rating'] as num).toStringAsFixed(1),
+                        style: tt.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: cs.onSurface.withValues(alpha: 0.7))),
+                    const SizedBox(width: 4),
+                    Text('on Audible',
+                        style: tt.labelSmall
+                            ?.copyWith(color: cs.onSurfaceVariant)),
+                  ])
+                : null,
+          ),
+          const SizedBox(height: 12),
+          if (progress > 0 && !isFinished) ...[
+            ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                    value: progress.clamp(0.0, 1.0),
+                    minHeight: 4,
+                    backgroundColor: cs.onSurface.withValues(alpha: 0.1),
+                    valueColor: AlwaysStoppedAnimation(cs.primary))),
+            const SizedBox(height: 4),
+            Text('${(progress * 100).toStringAsFixed(1)}% complete',
+                textAlign: TextAlign.center,
+                style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
+            const SizedBox(height: 12),
+          ],
+          if (isEbookOnly)
+            SizedBox(
+                height: 52,
+                child: FilledButton.icon(
+                  onPressed: null,
+                  icon: const Icon(Icons.menu_book_rounded, size: 24),
+                  label: Text('eBook Only — No Audio',
+                      style: tt.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600)),
+                  style: FilledButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16))),
+                ))
+          else
+            SizedBox(
+              height: 52,
+              child: ListenableBuilder(
+                listenable: AudioPlayerService(),
+                builder: (_, __) {
+                  final player = AudioPlayerService();
+                  final isCurrentPlaying =
+                      player.currentItemId == widget.itemId && player.isPlaying;
+                  final showAbsorbingState = _isAbsorbing || isCurrentPlaying;
+
+                  return FilledButton.icon(
+                    onPressed: showAbsorbingState
+                        ? null
+                        : () {
+                            setState(() => _isAbsorbing = true);
+                            _startAbsorb(
+                              context,
+                              auth: auth,
+                              title: title,
+                              author: authorName,
+                              coverUrl: _coverUrl,
+                              duration: duration,
+                              chapters: chapters,
+                            );
+                          },
+                    icon: showAbsorbingState
+                        ? SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: AbsorbingWave(color: cs.onPrimary),
+                          )
+                        : Icon(
+                            isFinished
+                                ? Icons.replay_rounded
+                                : Icons.waves_rounded,
+                            size: 24,
+                          ),
+                    label: Text(
+                      showAbsorbingState
+                          ? 'Absorbing…'
+                          : isFinished
+                              ? 'Absorb Again'
+                              : 'Absorb',
+                      style: tt.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600, color: cs.onPrimary),
+                    ),
+                    style: FilledButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                    ),
+                  );
+                },
+              ),
+            ),
+          const SizedBox(height: 12),
+          if (isEbookOnly && ebookFile != null) ...[
+            GestureDetector(
+              onTap: () => _saveEbook(context, auth, ebookFile, title),
+              child: Container(
+                height: 36,
+                decoration: BoxDecoration(
+                  color: cs.onSurface.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(14),
+                  border:
+                      Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+                ),
+                child:
+                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  _ebookSaving
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: cs.onSurfaceVariant))
+                      : Icon(
+                          _ebookSaved
+                              ? Icons.download_done_rounded
+                              : Icons.save_alt_rounded,
+                          size: 16,
+                          color: cs.onSurfaceVariant),
+                  const SizedBox(width: 6),
+                  Text(
+                    _ebookSaving
+                        ? 'Saving…'
+                        : _ebookSaved
+                            ? 'Download eBook Again'
+                            : 'Download eBook',
+                    style: TextStyle(
+                        color: cs.onSurfaceVariant,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500),
+                  ),
                 ]),
               ),
-            ));
-        })],
-      if (descRaw.isNotEmpty) ...[const SizedBox(height: 16),
-        Text('About', style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 6),
-        HtmlDescription(
-          html: descRaw,
-          maxLines: 6,
-          style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.7), height: 1.5),
-          linkColor: cs.primary,
-        )],
-      if (chapters.isNotEmpty) ...[const SizedBox(height: 16),
-        GestureDetector(onTap: () => setState(() => _chaptersExpanded = !_chaptersExpanded),
-          child: Row(children: [
-            Text('Chapters (${chapters.length})', style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
-            const Spacer(), Icon(_chaptersExpanded ? Icons.expand_less : Icons.expand_more, color: cs.onSurface.withValues(alpha: 0.3), size: 20)])),
-        if (_chaptersExpanded) ...[const SizedBox(height: 8),
-          ...chapters.asMap().entries.map((e) {
-            final ch = e.value as Map<String, dynamic>;
-            return Padding(padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Row(children: [
-                SizedBox(width: 28, child: Text('${e.key + 1}', style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.3)))),
-                Expanded(child: Text(ch['title'] as String? ?? 'Chapter ${e.key + 1}', maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.6)))),
-                Text(_fmtDur(((ch['end'] as num?)?.toDouble() ?? 0) - ((ch['start'] as num?)?.toDouble() ?? 0)), style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.3))),
-              ]));
-          })]],
-      // Secondary actions are in the More sheet now.
-    ]);
-  }
-
-  void _showMoreSheet(BuildContext context, AuthProvider auth, LibraryProvider lib,
-      String title, String authorName, double progress, bool isFinished,
-      double duration, Map<String, dynamic>? ebookFile, bool isEbookOnly) {
-    final cs = Theme.of(context).colorScheme;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
-              _moreItem(cs, lib.isOnAbsorbingList(widget.itemId)
-                  ? Icons.remove_circle_outline_rounded : Icons.add_circle_outline_rounded,
-                lib.isOnAbsorbingList(widget.itemId) ? 'Remove from Absorbing' : 'Add to Absorbing',
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  if (lib.isOnAbsorbingList(widget.itemId)) {
-                    await lib.removeFromAbsorbing(widget.itemId);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        duration: const Duration(seconds: 3),
-                        content: const Text('Removed from Absorbing'),
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
-                    }
-                  } else {
-                    await lib.addToAbsorbingQueue(widget.itemId);
-                    if (_item != null) {
-                      final cached = Map<String, dynamic>.from(_item!);
-                      cached['_absorbingKey'] = widget.itemId;
-                      lib.absorbingItemCache[widget.itemId] = cached;
-                    }
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        duration: const Duration(seconds: 3),
-                        content: const Text('Added to Absorbing'),
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
-                    }
-                  }
-                }),
-              if (ebookFile != null)
-                _moreItem(cs, _ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded,
-                  _ebookSaved ? 'Download eBook Again' : 'Download eBook',
-                  onTap: () { Navigator.pop(ctx); _saveEbook(context, auth, ebookFile, title); }),
-              if (progress > 0 || isFinished)
-                _moreItem(cs, Icons.restart_alt_rounded, 'Reset Progress',
-                  onTap: () { Navigator.pop(ctx); _resetProgress(context, auth, duration); }),
-              if (auth.apiService != null && !lib.isOffline)
-                _moreItem(cs, Icons.manage_search_rounded,
-                  _hasLocalOverride ? 'Re-Lookup Metadata' : 'Lookup Metadata',
-                  onTap: () { Navigator.pop(ctx); _openMetadataLookup(context, auth, title, authorName); }),
-              if (_hasLocalOverride)
-                _moreItem(cs, Icons.layers_clear_rounded, 'Clear Local Metadata',
-                  onTap: () { Navigator.pop(ctx); _clearOverride(context); }),
-              if (_showGoodreads)
-                _moreItem(cs, Icons.local_library_rounded, 'Search on Goodreads',
-                  onTap: () { Navigator.pop(ctx); _openGoodreads(title, authorName); }),
-            ]),
+            ),
+            const SizedBox(height: 8),
+          ],
+          Row(children: [
+            if (!isEbookOnly)
+              Expanded(
+                  child: DownloadWideButton(
+                      itemId: widget.itemId,
+                      coverUrl: _coverUrl,
+                      title: title,
+                      author: authorName,
+                      accent: cs.primary)),
+            if (!isEbookOnly) const SizedBox(width: 10),
+            Expanded(
+                child: GestureDetector(
+              onTap: () => isFinished
+                  ? _markNotFinished(context, auth, currentTime, duration)
+                  : _markFinished(context, auth, duration),
+              child: Container(
+                height: 36,
+                decoration: BoxDecoration(
+                  color: isFinished
+                      ? Colors.green.withValues(alpha: 0.06)
+                      : cs.onSurface.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                      color: isFinished
+                          ? Colors.green.withValues(alpha: 0.15)
+                          : cs.onSurface.withValues(alpha: 0.08)),
+                ),
+                child:
+                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(
+                    isFinished
+                        ? Icons.check_circle_rounded
+                        : Icons.check_circle_outline_rounded,
+                    size: 16,
+                    color: isFinished ? Colors.green : cs.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    isFinished ? 'Fully Absorbed' : 'Fully Absorb',
+                    style: TextStyle(
+                      color: isFinished ? Colors.green : cs.onSurfaceVariant,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ]),
+              ),
+            )),
+          ]),
+          if (ebookFile != null && !isEbookOnly) ...[
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: () => _saveEbook(context, auth, ebookFile, title),
+              child: Container(
+                height: 36,
+                decoration: BoxDecoration(
+                  color: cs.onSurface.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(14),
+                  border:
+                      Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+                ),
+                child:
+                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  _ebookSaving
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: cs.onSurfaceVariant))
+                      : Icon(
+                          _ebookSaved
+                              ? Icons.download_done_rounded
+                              : Icons.save_alt_rounded,
+                          size: 16,
+                          color: cs.onSurfaceVariant),
+                  const SizedBox(width: 6),
+                  Text(
+                    _ebookSaving
+                        ? 'Saving…'
+                        : _ebookSaved
+                            ? 'Download eBook Again'
+                            : 'Download eBook',
+                    style: TextStyle(
+                        color: cs.onSurfaceVariant,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500),
+                  ),
+                ]),
+              ),
+            ),
+          ],
+          if (progress > 0 || isFinished) ...[
+            const SizedBox(height: 8),
+            _sheetBtn(
+                icon: Icons.restart_alt_rounded,
+                label: 'Reset Progress',
+                onTap: () => _resetProgress(context, auth, duration)),
+          ],
+          const SizedBox(height: 8),
+          _sheetBtn(
+            icon: lib.isOnAbsorbingList(widget.itemId)
+                ? Icons.remove_circle_outline_rounded
+                : Icons.add_circle_outline_rounded,
+            label: lib.isOnAbsorbingList(widget.itemId)
+                ? 'Remove from Absorbing'
+                : 'Add to Absorbing',
+            onTap: () async {
+              if (lib.isOnAbsorbingList(widget.itemId)) {
+                await lib.removeFromAbsorbing(widget.itemId);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      duration: const Duration(seconds: 3),
+                      content: const Text('Removed from Absorbing'),
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12))));
+                }
+              } else {
+                await lib.addToAbsorbingQueue(widget.itemId);
+                // Populate cache so the absorbing card can render immediately
+                if (_item != null) {
+                  final cached = Map<String, dynamic>.from(_item!);
+                  cached['_absorbingKey'] = widget.itemId;
+                  lib.absorbingItemCache[widget.itemId] = cached;
+                }
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      duration: const Duration(seconds: 3),
+                      content: const Text('Added to Absorbing'),
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12))));
+                }
+              }
+            },
           ),
-        );
-      },
-    );
+          const SizedBox(height: 16),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            if (year.isNotEmpty) _chip(Icons.calendar_today_rounded, year),
+            _chip(Icons.schedule_rounded, _fmtDur(duration)),
+            if (chapters.isNotEmpty)
+              _chip(Icons.list_rounded, '${chapters.length} chapters'),
+            ..._audioInfoChips(media),
+            if (publisher.isNotEmpty) _chip(Icons.business_rounded, publisher),
+            ...genres.take(3).map((g) => _chip(Icons.tag_rounded, g)),
+            if (progressData?['startedAt'] is num)
+              _chip(Icons.play_circle_outline_rounded,
+                  'Started ${_fmtDate((progressData!['startedAt'] as num).toInt())}'),
+            if (progressData?['finishedAt'] is num)
+              _chip(Icons.check_circle_outline_rounded,
+                  'Finished ${_fmtDate((progressData!['finishedAt'] as num).toInt())}'),
+          ]),
+          if (seriesEntries.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            ...seriesEntries.map((s) {
+              final name = s['name'] as String? ?? '';
+              final seq = s['sequence'] as String? ?? '';
+              final seriesId = s['id'] as String?;
+              return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: GestureDetector(
+                    onTap: () => _openSeries(context, seriesId, name),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: cs.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: cs.primary.withValues(alpha: 0.15)),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.auto_stories_rounded,
+                            size: 16, color: cs.primary.withValues(alpha: 0.7)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: Text(
+                                '$name${seq.isNotEmpty ? ' #$seq' : ''}',
+                                style: tt.bodySmall?.copyWith(
+                                    color: cs.primary.withValues(alpha: 0.9),
+                                    fontWeight: FontWeight.w500))),
+                        Icon(Icons.chevron_right_rounded,
+                            size: 18, color: cs.primary.withValues(alpha: 0.5)),
+                      ]),
+                    ),
+                  ));
+            })
+          ],
+          if (descRaw.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('About',
+                style: tt.titleSmall?.copyWith(
+                    color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            HtmlDescription(
+              html: descRaw,
+              maxLines: 6,
+              style: tt.bodySmall?.copyWith(
+                  color: cs.onSurface.withValues(alpha: 0.7), height: 1.5),
+              linkColor: cs.primary,
+            )
+          ],
+          if (chapters.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            GestureDetector(
+                onTap: () =>
+                    setState(() => _chaptersExpanded = !_chaptersExpanded),
+                child: Row(children: [
+                  Text('Chapters (${chapters.length})',
+                      style: tt.titleSmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  Icon(
+                      _chaptersExpanded ? Icons.expand_less : Icons.expand_more,
+                      color: cs.onSurface.withValues(alpha: 0.3),
+                      size: 20)
+                ])),
+            if (_chaptersExpanded) ...[
+              const SizedBox(height: 8),
+              ...chapters.asMap().entries.map((e) {
+                final ch = e.value as Map<String, dynamic>;
+                return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(children: [
+                      SizedBox(
+                          width: 28,
+                          child: Text('${e.key + 1}',
+                              style: tt.labelSmall?.copyWith(
+                                  color: cs.onSurface.withValues(alpha: 0.3)))),
+                      Expanded(
+                          child: Text(
+                              ch['title'] as String? ?? 'Chapter ${e.key + 1}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: tt.bodySmall?.copyWith(
+                                  color: cs.onSurface.withValues(alpha: 0.6)))),
+                      Text(
+                          _fmtDur(((ch['end'] as num?)?.toDouble() ?? 0) -
+                              ((ch['start'] as num?)?.toDouble() ?? 0)),
+                          style: tt.labelSmall?.copyWith(
+                              color: cs.onSurface.withValues(alpha: 0.3))),
+                    ]));
+              })
+            ]
+          ],
+          // ─── Metadata lookup (bottom of sheet) ─────────────────
+          if (_showGoodreads) ...[
+            const SizedBox(height: 8),
+            _sheetBtn(
+              icon: Icons.local_library_rounded,
+              label: 'Search on Goodreads',
+              onTap: () => _openGoodreads(title, authorName),
+            ),
+          ],
+          if (auth.apiService != null && !lib.isOffline) ...[
+            const SizedBox(height: 20),
+            _sheetBtn(
+              icon: Icons.manage_search_rounded,
+              label:
+                  _hasLocalOverride ? 'Re-Lookup Metadata' : 'Lookup Metadata',
+              onTap: () =>
+                  _openMetadataLookup(context, auth, title, authorName),
+            ),
+          ],
+          if (_hasLocalOverride) ...[
+            const SizedBox(height: 8),
+            _sheetBtn(
+              icon: Icons.layers_clear_rounded,
+              label: 'Clear Local Metadata',
+              onTap: () => _clearOverride(context),
+            ),
+          ],
+        ]);
   }
 
-  Widget _moreItem(ColorScheme cs, IconData icon, String label, {required VoidCallback onTap}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: GestureDetector(onTap: onTap, child: Container(height: 44,
-        decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: cs.onSurface.withValues(alpha: 0.1))),
-        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(icon, size: 16, color: cs.onSurfaceVariant), const SizedBox(width: 8),
-          Text(label, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w500))]))),
-    );
+  Widget _sheetBtn(
+      {required IconData icon,
+      required String label,
+      required VoidCallback onTap}) {
+    final cs = Theme.of(context).colorScheme;
+    return GestureDetector(
+        onTap: onTap,
+        child: Container(
+            height: 44,
+            decoration: BoxDecoration(
+                color: cs.onSurface.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: cs.onSurface.withValues(alpha: 0.1))),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(icon, size: 16, color: cs.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Text(label,
+                  style: TextStyle(
+                      color: cs.onSurfaceVariant,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500))
+            ])));
   }
 
   List<Widget> _audioInfoChips(Map<String, dynamic> media) {
@@ -537,49 +754,56 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final first = audioFiles.first as Map<String, dynamic>;
     final codec = (first['codec'] as String?)?.toUpperCase();
     final bitRate = (first['bitRate'] as num?)?.toInt();
-    // Sum size across all audio files
-    int totalSize = 0;
-    for (final af in audioFiles) {
-      if (af is Map<String, dynamic>) {
-        final meta = af['metadata'] as Map<String, dynamic>?;
-        totalSize += (meta?['size'] as num?)?.toInt() ?? 0;
-      }
-    }
     return [
-      if (codec != null && codec.isNotEmpty) _chip(Icons.audio_file_rounded, codec),
-      if (bitRate != null && bitRate > 0) _chip(Icons.speed_rounded, '${(bitRate / 1000).round()} kbps'),
-      if (totalSize > 0) _chip(Icons.storage_rounded, _fmtSize(totalSize)),
+      if (codec != null && codec.isNotEmpty)
+        _chip(Icons.audio_file_rounded, codec),
+      if (bitRate != null && bitRate > 0)
+        _chip(Icons.speed_rounded, '${(bitRate / 1000).round()} kbps'),
     ];
-  }
-
-  String _fmtSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1048576) return '${(bytes / 1024).round()} KB';
-    if (bytes < 1073741824) return '${(bytes / 1048576).toStringAsFixed(1)} MB';
-    return '${(bytes / 1073741824).toStringAsFixed(2)} GB';
   }
 
   Widget _chip(IconData icon, String text) {
     final cs = Theme.of(context).colorScheme;
     return Container(
-      constraints: const BoxConstraints(maxWidth: 200),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: cs.onSurface.withValues(alpha: 0.08))),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 12, color: cs.onSurface.withValues(alpha: 0.3)), const SizedBox(width: 4),
-        Flexible(child: Text(text, overflow: TextOverflow.ellipsis, maxLines: 1,
-          style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11)))]));
+        constraints: const BoxConstraints(maxWidth: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+            color: cs.onSurface.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: cs.onSurface.withValues(alpha: 0.08))),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 12, color: cs.onSurface.withValues(alpha: 0.3)),
+          const SizedBox(width: 4),
+          Flexible(
+              child: Text(text,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11)))
+        ]));
   }
 
   String _fmtDate(int ms) {
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
     return '${months[d.month - 1]} ${d.day}, ${d.year}';
   }
 
   String _fmtDur(double s) {
-    final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor();
+    final h = (s / 3600).floor();
+    final m = ((s % 3600) / 60).floor();
     if (h > 0) return '${h}h ${m}m';
     return '${m}m';
   }
@@ -594,137 +818,31 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       } else if (i == fullStars && hasHalf) {
         stars.add(Icon(Icons.star_half_rounded, size: 16, color: cs.primary));
       } else {
-        stars.add(Icon(Icons.star_outline_rounded, size: 16, color: cs.onSurface.withValues(alpha: 0.24)));
+        stars.add(Icon(Icons.star_outline_rounded,
+            size: 16, color: cs.onSurface.withValues(alpha: 0.24)));
       }
     }
     return stars;
   }
 
-  static String get _audibleDomain {
-    final code = (PlatformDispatcher.instance.locale.countryCode ?? 'US').toUpperCase();
-    const domains = {
-      'US': 'audible.com',
-      'GB': 'audible.co.uk',
-      'AU': 'audible.com.au',
-      'CA': 'audible.ca',
-      'DE': 'audible.de',
-      'FR': 'audible.fr',
-      'IT': 'audible.it',
-      'ES': 'audible.es',
-      'JP': 'audible.co.jp',
-      'IN': 'audible.in',
-      'BR': 'audible.com.br',
-    };
-    return domains[code] ?? 'audible.com';
-  }
-
-  void _showAudibleReviews(BuildContext context) {
-    final asin = _asin;
-    if (asin == null) return;
-    final url = 'https://www.$_audibleDomain/pd/$asin#customer-reviews';
-    final cs = Theme.of(context).colorScheme;
-
-    final controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(cs.surface)
-      ..loadRequest(Uri.parse(url));
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      enableDrag: true,
-      builder: (ctx) => FractionallySizedBox(
-        heightFactor: 0.92,
-        child: Container(
-          clipBehavior: Clip.hardEdge,
-          decoration: BoxDecoration(
-            color: cs.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
-              child: Column(
-                children: [
-                  const SizedBox(height: 12),
-                  Container(width: 32, height: 4,
-                    decoration: BoxDecoration(
-                      color: cs.onSurface.withValues(alpha: 0.24),
-                      borderRadius: BorderRadius.circular(2))),
-                  Row(
-                    children: [
-                      const Spacer(),
-                      IconButton(
-                        icon: Icon(Icons.close_rounded, color: cs.onSurfaceVariant),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SizedBox.expand(
-                child: WebViewWidget(
-                  controller: controller,
-                  gestureRecognizers: {
-                    Factory<VerticalDragGestureRecognizer>(
-                      () => VerticalDragGestureRecognizer(),
-                    ),
-                  },
-                ),
-              ),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  void _openAuthor(BuildContext context, Map<String, dynamic> metadata) {
-    // Get first author with an ID from the authors array
-    final authors = metadata['authors'] as List<dynamic>? ?? [];
-    String? authorId;
-    String authorName = metadata['authorName'] as String? ?? '';
-    for (final a in authors) {
-      if (a is Map<String, dynamic>) {
-        final id = a['id'] as String? ?? '';
-        if (id.isNotEmpty) {
-          authorId = id;
-          authorName = a['name'] as String? ?? authorName;
-          break;
-        }
-      }
-    }
-    if (authorId == null || authorName.isEmpty) return;
-    // Close current sheet before opening author sheet
-    final nav = Navigator.of(context);
-    nav.pop();
-    showAuthorDetailSheet(nav.context, authorId: authorId, authorName: authorName);
-  }
-
-  Future<void> _openSeries(BuildContext context, String? seriesId, String seriesName) async {
+  Future<void> _openSeries(
+      BuildContext context, String? seriesId, String seriesName) async {
     if (seriesId == null) return;
     final auth = context.read<AuthProvider>();
-    final itemLibraryId = _item?['libraryId'] as String?;
-    // Close current sheet before opening series to prevent infinite stacking
-    final nav = Navigator.of(context);
-    nav.pop();
+    // Show series sheet on top of the detail sheet (don't close detail)
     showSeriesBooksSheet(
-      nav.context,
+      context,
       seriesName: seriesName,
       seriesId: seriesId,
       serverUrl: auth.serverUrl,
       token: auth.token,
-      libraryId: itemLibraryId,
     );
   }
 
   bool _ebookSaving = false;
 
-  Future<void> _saveEbook(BuildContext context, AuthProvider auth, Map<String, dynamic> ebookFile, String bookTitle) async {
+  Future<void> _saveEbook(BuildContext context, AuthProvider auth,
+      Map<String, dynamic> ebookFile, String bookTitle) async {
     if (_ebookSaving) return;
     setState(() => _ebookSaving = true);
 
@@ -736,13 +854,17 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       if (ino == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No ebook file found')));
+              const SnackBar(content: Text('No ebook file found')));
         }
         return;
       }
 
-      final ebookName = ebookFile['metadata']?['filename'] as String? ?? ebookFile['name'] as String? ?? 'book.epub';
-      final ext = ebookName.contains('.') ? ebookName.substring(ebookName.lastIndexOf('.')) : '.epub';
+      final ebookName = ebookFile['metadata']?['filename'] as String? ??
+          ebookFile['name'] as String? ??
+          'book.epub';
+      final ext = ebookName.contains('.')
+          ? ebookName.substring(ebookName.lastIndexOf('.'))
+          : '.epub';
       final safeTitle = bookTitle.replaceAll(RegExp(r'[^\w\s-]'), '').trim();
 
       // Download to cache first (reuse if already cached)
@@ -750,7 +872,9 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       final cachedFile = File('${cacheDir.path}/$safeTitle$ext');
 
       if (!cachedFile.existsSync()) {
-        final cleanBase = api.baseUrl.endsWith('/') ? api.baseUrl.substring(0, api.baseUrl.length - 1) : api.baseUrl;
+        final cleanBase = api.baseUrl.endsWith('/')
+            ? api.baseUrl.substring(0, api.baseUrl.length - 1)
+            : api.baseUrl;
         final url = '$cleanBase/api/items/${widget.itemId}/file/$ino';
 
         // Use streamed download with proper headers (including custom
@@ -765,7 +889,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
 
           // Manually follow redirects while preserving auth headers
           var redirects = 0;
-          while ([301, 302, 303, 307, 308].contains(response.statusCode) && redirects < 5) {
+          while ([301, 302, 303, 307, 308].contains(response.statusCode) &&
+              redirects < 5) {
             final location = response.headers['location'];
             if (location == null) break;
             final redirectUrl = Uri.parse(url).resolve(location);
@@ -778,8 +903,9 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
 
           if (response.statusCode != 200) {
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Failed to download ebook (${response.statusCode})')));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(
+                      'Failed to download ebook (${response.statusCode})')));
             }
             return;
           }
@@ -788,10 +914,12 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           // file, the download is likely an error/login page.
           final ct = response.headers['content-type'] ?? '';
           if (ct.contains('text/html')) {
-            debugPrint('[Ebook] Server returned HTML instead of ebook file (content-type: $ct)');
+            debugPrint(
+                '[Ebook] Server returned HTML instead of ebook file (content-type: $ct)');
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Server returned an error page instead of the ebook file')));
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text(
+                      'Server returned an error page instead of the ebook file')));
             }
             return;
           }
@@ -827,24 +955,31 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       if (mounted) setState(() => _ebookSaved = true);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved: $safeTitle$ext'),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Saved: $safeTitle$ext'),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             duration: const Duration(seconds: 3)));
       }
     } catch (e) {
       debugPrint('[Ebook] Save error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving ebook: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error saving ebook: $e')));
       }
     } finally {
       if (mounted) setState(() => _ebookSaving = false);
     }
   }
 
-  Future<void> _startAbsorb(BuildContext context, {required AuthProvider auth, required String title, required String author, required String? coverUrl, required double duration, required List<dynamic> chapters}) async {
+  Future<void> _startAbsorb(BuildContext context,
+      {required AuthProvider auth,
+      required String title,
+      required String author,
+      required String? coverUrl,
+      required double duration,
+      required List<dynamic> chapters}) async {
     final player = AudioPlayerService();
     // Grab the root navigator before we pop the sheet
     final rootNav = Navigator.of(context, rootNavigator: true);
@@ -858,7 +993,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         lib.resetProgressFor(widget.itemId);
       }
     }
-    
+
     if (player.currentItemId == widget.itemId) {
       if (!player.isPlaying) player.play();
       rootNav.popUntil((route) => route.isFirst);
@@ -871,7 +1006,14 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     if (api == null) return;
 
     // Start playback
-    final error = await player.playItem(api: api, itemId: widget.itemId, title: title, author: author, coverUrl: coverUrl, totalDuration: duration, chapters: chapters);
+    final error = await player.playItem(
+        api: api,
+        itemId: widget.itemId,
+        title: title,
+        author: author,
+        coverUrl: coverUrl,
+        totalDuration: duration,
+        chapters: chapters);
     if (error != null && context.mounted) showErrorSnackBar(context, error);
 
     // Refresh library so the absorbing screen picks up the new book
@@ -888,15 +1030,21 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     });
   }
 
-  Future<void> _markFinished(BuildContext context, AuthProvider auth, double duration) async {
+  Future<void> _markFinished(
+      BuildContext context, AuthProvider auth, double duration) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Mark as Fully Absorbed?'),
-        content: const Text('This will set your progress to 100% and stop playback if this book is playing.'),
+        content: const Text(
+            'This will set your progress to 100% and stop playback if this book is playing.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Fully Absorb')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Fully Absorb')),
         ],
       ),
     );
@@ -907,7 +1055,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     // Mark finished locally first so the absorbing card shows the overlay
     // immediately when the player stops (which triggers the expanded card to pop)
     if (context.mounted) {
-      context.read<LibraryProvider>().markFinishedLocally(widget.itemId, skipRefresh: true, skipAutoAdvance: true);
+      context.read<LibraryProvider>().markFinishedLocally(widget.itemId,
+          skipRefresh: true, skipAutoAdvance: true);
     }
     if (player.currentItemId == widget.itemId) await player.stopWithoutSaving();
     try {
@@ -924,26 +1073,39 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         if (mounted) setState(() {});
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            duration: const Duration(seconds: 3), content: const Text('Marked as finished — nice work!'),
-            behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+              duration: const Duration(seconds: 3),
+              content: const Text('Marked as finished — nice work!'),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12))));
         }
       }
     } catch (_) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        duration: const Duration(seconds: 3), content: const Text('Failed to update — check your connection'),
-        behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+      if (context.mounted)
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            duration: const Duration(seconds: 3),
+            content: const Text('Failed to update — check your connection'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12))));
     }
   }
 
-  Future<void> _markNotFinished(BuildContext context, AuthProvider auth, double currentTime, double duration) async {
+  Future<void> _markNotFinished(BuildContext context, AuthProvider auth,
+      double currentTime, double duration) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Mark as Not Finished?'),
-        content: const Text('This will clear the finished status but keep your current position.'),
+        content: const Text(
+            'This will clear the finished status but keep your current position.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Unmark')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Unmark')),
         ],
       ),
     );
@@ -951,34 +1113,48 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final api = auth.apiService;
     if (api == null) return;
     try {
-      await api.markNotFinished(widget.itemId, currentTime: currentTime, duration: duration);
+      await api.markNotFinished(widget.itemId,
+          currentTime: currentTime, duration: duration);
       await ProgressSyncService().deleteLocal(widget.itemId);
       if (context.mounted) {
         await _loadItem();
         await context.read<LibraryProvider>().refresh();
         if (mounted) setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          duration: const Duration(seconds: 3), content: const Text('Marked as not finished — back at it!'),
-          behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+            duration: const Duration(seconds: 3),
+            content: const Text('Marked as not finished — back at it!'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12))));
       }
     } catch (_) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        duration: const Duration(seconds: 3), content: const Text('Failed to update — check your connection'),
-        behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+      if (context.mounted)
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            duration: const Duration(seconds: 3),
+            content: const Text('Failed to update — check your connection'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12))));
     }
   }
 
-  Future<void> _resetProgress(BuildContext context, AuthProvider auth, double duration) async {
+  Future<void> _resetProgress(
+      BuildContext context, AuthProvider auth, double duration) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Reset Progress?'),
-        content: const Text('This will erase all progress for this book and set it back to the beginning. This can\'t be undone.'),
+        content: const Text(
+            'This will erase all progress for this book and set it back to the beginning. This can\'t be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
-            child: const Text('Reset')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(ctx).colorScheme.error),
+              child: const Text('Reset')),
         ],
       ),
     );
@@ -986,27 +1162,32 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final api = auth.apiService;
     if (api == null) return;
     final player = AudioPlayerService();
-    
+
     // Stop player without saving progress
     if (player.currentItemId == widget.itemId) {
       await player.stopWithoutSaving();
     }
-    
+
     // Clear local progress
     await ProgressSyncService().deleteLocal(widget.itemId);
-    
+
     // Reset server progress (PATCH to zero + hide from continue listening)
     final serverSuccess = await api.resetProgress(widget.itemId, duration);
-    
+
     // Clear from library provider (mark as reset — forces 0 progress)
-    if (context.mounted) context.read<LibraryProvider>().resetProgressFor(widget.itemId);
+    if (context.mounted)
+      context.read<LibraryProvider>().resetProgressFor(widget.itemId);
     if (context.mounted) {
       await _loadItem();
       await context.read<LibraryProvider>().refresh();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        duration: const Duration(seconds: 3),
-        content: Text(serverSuccess ? 'Progress reset — fresh start!' : 'Reset may not have synced — check your server'),
-        behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+          duration: const Duration(seconds: 3),
+          content: Text(serverSuccess
+              ? 'Progress reset — fresh start!'
+              : 'Reset may not have synced — check your server'),
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
     }
   }
 
@@ -1015,7 +1196,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final uri = Uri.https('www.goodreads.com', '/search', {'q': q});
     try {
       // Open in Goodreads app if installed
-      if (!await launchUrl(uri, mode: LaunchMode.externalNonBrowserApplication)) {
+      if (!await launchUrl(uri,
+          mode: LaunchMode.externalNonBrowserApplication)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
     } catch (_) {
@@ -1024,7 +1206,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     }
   }
 
-  void _openMetadataLookup(BuildContext context, AuthProvider auth, String title, String author) {
+  void _openMetadataLookup(
+      BuildContext context, AuthProvider auth, String title, String author) {
     final api = auth.apiService;
     if (api == null) return;
     showModalBottomSheet(
@@ -1034,7 +1217,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       builder: (_) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.85,
-        minChildSize: 0.05, snap: true,
+        minChildSize: 0.05,
+        snap: true,
         maxChildSize: 0.95,
         builder: (ctx, sc) => MetadataLookupSheet(
           itemId: widget.itemId,
@@ -1077,10 +1261,10 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           content: const Text('Local metadata cleared'),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 2),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ));
       }
     }
   }
 }
-

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/api_service.dart';
 import '../services/metadata_override_service.dart';
+import 'author_name_link.dart';
 import 'status_message_view.dart';
 
 /// Bottom sheet that lets users search for book metadata via the ABS server
@@ -422,18 +423,29 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet> {
                             fontWeight: FontWeight.w600, color: Colors.white)),
                     if (author.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Text(author,
+                      AuthorNameLink(
+                          item: book,
+                          authorName: author,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: tt.bodySmall?.copyWith(color: Colors.white60)),
                     ],
                     if (narrator.isNotEmpty) ...[
                       const SizedBox(height: 1),
-                      Text('Narrated by $narrator',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              tt.labelSmall?.copyWith(color: Colors.white38)),
+                      Wrap(
+                        children: [
+                          Text('Narrated by ',
+                              style: tt.labelSmall
+                                  ?.copyWith(color: Colors.white38)),
+                          NarratorNameLink(
+                              item: book,
+                              narratorName: narrator,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: tt.labelSmall
+                                  ?.copyWith(color: Colors.white38)),
+                        ],
+                      ),
                     ],
                     const SizedBox(height: 4),
                     Wrap(

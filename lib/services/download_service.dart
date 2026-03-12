@@ -25,6 +25,7 @@ class DownloadInfo {
   final String? coverUrl;
   final String? localCoverPath;
   final String? localDirPath;
+  final int? itemUpdatedAt;
 
   DownloadInfo({
     required this.itemId,
@@ -37,6 +38,7 @@ class DownloadInfo {
     this.coverUrl,
     this.localCoverPath,
     this.localDirPath,
+    this.itemUpdatedAt,
   });
 
   Map<String, dynamic> toJson() => {
@@ -49,6 +51,7 @@ class DownloadInfo {
         'coverUrl': coverUrl,
         'localCoverPath': localCoverPath,
         if (localDirPath != null) 'localDirPath': localDirPath,
+        'itemUpdatedAt': itemUpdatedAt,
       };
 
   factory DownloadInfo.fromJson(Map<String, dynamic> json) {
@@ -94,6 +97,7 @@ class DownloadInfo {
       coverUrl: coverUrl,
       localCoverPath: json['localCoverPath'] as String?,
       localDirPath: json['localDirPath'] as String?,
+      itemUpdatedAt: (json['itemUpdatedAt'] as num?)?.toInt(),
     );
   }
 }
@@ -351,36 +355,50 @@ class DownloadService extends ChangeNotifier {
       String? author = info.author;
       String? coverUrl = info.coverUrl;
       String? localCoverPath = info.localCoverPath;
+      int? itemUpdatedAt = info.itemUpdatedAt;
 
       // For podcast episodes, the itemId is a composite "showUUID-episodeId".
       // Extract the library item ID (first 36 chars = UUID) for API calls.
       final apiItemId =
           info.itemId.length > 36 ? info.itemId.substring(0, 36) : info.itemId;
 
-      // Enrich missing title/author from server
-      if (title == null || title.isEmpty) {
-        try {
-          final item = await api.getLibraryItem(apiItemId);
-          if (item != null) {
-            final media = item['media'] as Map<String, dynamic>? ?? {};
-            final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-            title = metadata['title'] as String? ?? title;
-            author = metadata['authorName'] as String? ?? author;
-            coverUrl = api.getCoverUrl(apiItemId);
-            needsUpdate = true;
-            debugPrint(
-                '[Download] Enriched metadata for ${info.itemId}: $title');
-          }
-        } catch (e) {
-          debugPrint('[Download] Enrich failed for ${info.itemId}: $e');
+      Map<String, dynamic>? item;
+      try {
+        item = await api.getLibraryItem(apiItemId);
+      } catch (e) {
+        debugPrint('[Download] Enrich failed for ${info.itemId}: $e');
+      }
+
+      if (item != null) {
+        final media = item['media'] as Map<String, dynamic>? ?? {};
+        final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+        final nextTitle = metadata['title'] as String? ?? title;
+        final nextAuthor = metadata['authorName'] as String? ?? author;
+        final nextUpdatedAt = (item['updatedAt'] as num?)?.toInt();
+        final nextCoverUrl =
+            api.getCoverUrl(apiItemId, updatedAt: nextUpdatedAt);
+
+        if (nextTitle != title ||
+            nextAuthor != author ||
+            nextCoverUrl != coverUrl ||
+            nextUpdatedAt != itemUpdatedAt) {
+          title = nextTitle;
+          author = nextAuthor;
+          coverUrl = nextCoverUrl;
+          itemUpdatedAt = nextUpdatedAt;
+          needsUpdate = true;
+          debugPrint(
+              '[Download] Refreshed metadata for ${info.itemId}: $title');
         }
       }
 
-      // Cache cover in internal storage if not already cached
-      if (localCoverPath == null || !File(localCoverPath).existsSync()) {
+      // Cache cover in internal storage if missing or stale.
+      if (localCoverPath == null ||
+          !File(localCoverPath).existsSync() ||
+          itemUpdatedAt != info.itemUpdatedAt) {
         final internalBase = await _internalBasePath;
         final existingCover = File('$internalBase/${info.itemId}/cover.jpg');
-        if (existingCover.existsSync()) {
+        if (existingCover.existsSync() && itemUpdatedAt == info.itemUpdatedAt) {
           // Already on disk from a previous download, just not tracked
           localCoverPath = existingCover.path;
           needsUpdate = true;
@@ -425,6 +443,7 @@ class DownloadService extends ChangeNotifier {
           author: author ?? info.author,
           coverUrl: coverUrl ?? info.coverUrl,
           localCoverPath: localCoverPath,
+          itemUpdatedAt: itemUpdatedAt,
         );
         changed = true;
       }
@@ -715,13 +734,15 @@ class DownloadService extends ChangeNotifier {
         if (originalName.isEmpty) {
           final contentPath = Uri.tryParse(contentUrl)?.path ?? contentUrl;
           originalName = Uri.decodeComponent(contentPath.split('/').last);
-          if (originalName.contains('?')) originalName = originalName.split('?').first;
+          if (originalName.contains('?'))
+            originalName = originalName.split('?').first;
         }
 
         final String fileName;
         if (originalName.isNotEmpty && originalName.contains('.')) {
-          fileName = _sanitizePath(originalName.replaceAll(RegExp(r'\.[^.]+$'), ''))
-              + originalName.substring(originalName.lastIndexOf('.'));
+          fileName =
+              _sanitizePath(originalName.replaceAll(RegExp(r'\.[^.]+$'), '')) +
+                  originalName.substring(originalName.lastIndexOf('.'));
         } else {
           final mimeType = track['mimeType'] as String? ?? 'audio/mpeg';
           final ext = mimeType.contains('mp4')

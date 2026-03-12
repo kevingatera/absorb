@@ -500,6 +500,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         entities: entities,
                         sectionType: type,
                         sectionId: id,
+                        onHeaderTap: () => AppShell.goToLibraryPreset(
+                          context,
+                          sectionId: id,
+                          sectionType: type,
+                          sectionTitle: label,
+                        ),
                       ),
                     );
                   }),

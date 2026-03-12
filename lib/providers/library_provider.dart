@@ -778,6 +778,9 @@ class LibraryProvider extends ChangeNotifier {
   void _onRemoteItemUpdated(Map<String, dynamic> data) {
     // Refresh the personalized view so new/updated items appear
     loadPersonalizedView(force: true);
+    if (_api != null && !isOffline) {
+      unawaited(DownloadService().enrichMetadata(_api!));
+    }
   }
 
   /// Handle library item removed from socket.
