@@ -10,6 +10,8 @@ class _PersonTarget {
   final String? authorId;
 
   const _PersonTarget({required this.label, this.authorId});
+
+  bool get hasResolvedAuthorId => authorId != null && authorId!.isNotEmpty;
 }
 
 Map<String, dynamic>? _asMap(dynamic value) =>
@@ -59,6 +61,30 @@ List<_PersonTarget> _extractAuthorTargets(
 
   final directId =
       metadata['authorId'] as String? ?? item['authorId'] as String?;
+  final normalizedDisplayed = displayedAuthor.trim();
+
+  if (targets.isNotEmpty && directId != null && directId.isNotEmpty) {
+    final resolved = <_PersonTarget>[];
+    for (final target in targets) {
+      if (target.hasResolvedAuthorId) {
+        resolved.add(target);
+        continue;
+      }
+
+      final shouldUseDirectId = targets.length == 1 ||
+          target.label == normalizedDisplayed ||
+          _splitPeople(normalizedDisplayed).length == 1;
+      resolved.add(
+        shouldUseDirectId
+            ? _PersonTarget(label: target.label, authorId: directId)
+            : target,
+      );
+    }
+    targets
+      ..clear()
+      ..addAll(resolved);
+  }
+
   if (targets.isEmpty && displayedAuthor.isNotEmpty) {
     for (final label in _splitPeople(displayedAuthor)) {
       addTarget(label, authorId: directId);
@@ -129,6 +155,15 @@ class _PersonNameLink extends StatelessWidget {
         return _extractAuthorTargets(item, displayedName);
       case _PersonKind.narrator:
         return _extractNarratorTargets(item, displayedName);
+    }
+  }
+
+  bool _isNavigable(_PersonTarget target) {
+    switch (kind) {
+      case _PersonKind.author:
+        return target.hasResolvedAuthorId;
+      case _PersonKind.narrator:
+        return target.label.isNotEmpty;
     }
   }
 
@@ -236,7 +271,8 @@ class _PersonNameLink extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final targets = _targets();
-    final clickable = displayedName.isNotEmpty && targets.isNotEmpty;
+    final navigableTargets = targets.where(_isNavigable).toList();
+    final clickable = displayedName.isNotEmpty && navigableTargets.isNotEmpty;
 
     final text = Text(
       displayedName,
@@ -251,10 +287,10 @@ class _PersonNameLink extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: () {
-        if (targets.length == 1) {
-          _openTarget(context, targets.first);
+        if (navigableTargets.length == 1) {
+          _openTarget(context, navigableTargets.first);
         } else {
-          _openChooser(context, targets);
+          _openChooser(context, navigableTargets);
         }
       },
       child: text,
