@@ -11,6 +11,7 @@ import '../widgets/shimmer.dart';
 import '../widgets/book_card.dart';
 import '../widgets/status_message_view.dart';
 import '../widgets/book_detail_sheet.dart';
+import '../widgets/author_name_link.dart';
 import '../widgets/card_buttons.dart';
 import '../widgets/episode_list_sheet.dart';
 import '../main.dart' show oledNotifier;
@@ -284,19 +285,21 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       body: Container(
-        decoration: oledNotifier.value ? null : BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            stops: const [0.0, 0.22, 0.72, 1.0],
-            colors: [
-              cs.primary.withValues(alpha: 0.06),
-              cs.surface,
-              lowerFade,
-              scaffoldBg,
-            ],
-          ),
-        ),
+        decoration: oledNotifier.value
+            ? null
+            : BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: const [0.0, 0.22, 0.72, 1.0],
+                  colors: [
+                    cs.primary.withValues(alpha: 0.06),
+                    cs.surface,
+                    lowerFade,
+                    scaffoldBg,
+                  ],
+                ),
+              ),
         child: SafeArea(
           child: RefreshIndicator(
             onRefresh: () async {
@@ -746,7 +749,9 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
                         style: tt.bodySmall?.copyWith(
                             fontWeight: FontWeight.w600, color: cs.onSurface)),
                     if (author.isNotEmpty)
-                      Text(author,
+                      AuthorNameLink(
+                          item: item,
+                          authorName: author,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: tt.labelSmall?.copyWith(
