@@ -7,6 +7,7 @@ void showCoverArtViewer(
   BuildContext context, {
   required String title,
   required String? coverUrl,
+  String? hiResCoverUrl,
   Map<String, String> httpHeaders = const {},
 }) {
   if (coverUrl == null || coverUrl.isEmpty) return;
@@ -17,7 +18,7 @@ void showCoverArtViewer(
       barrierColor: Colors.black.withValues(alpha: 0.94),
       pageBuilder: (_, __, ___) => _CoverArtViewerPage(
         title: title,
-        coverUrl: coverUrl,
+        coverUrl: hiResCoverUrl?.isNotEmpty == true ? hiResCoverUrl! : coverUrl,
         httpHeaders: httpHeaders,
       ),
       transitionsBuilder: (_, animation, __, child) => FadeTransition(

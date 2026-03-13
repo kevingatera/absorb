@@ -112,6 +112,11 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     return lib.getCoverUrl(_itemId, width: 800);
   }
 
+  String? get _viewerCoverUrl {
+    final lib = context.read<LibraryProvider>();
+    return lib.getCoverUrl(_itemId, width: 2000);
+  }
+
   bool get _isLocalCover => _coverUrl != null && _coverUrl!.startsWith('/');
 
   @override
