@@ -176,6 +176,11 @@ class _ExpandedCardState extends State<ExpandedCard> {
     return lib.getCoverUrl(_itemId, width: 800);
   }
 
+  String? get _viewerCoverUrl {
+    final lib = context.read<LibraryProvider>();
+    return lib.getCoverUrl(_itemId, width: 2000);
+  }
+
   bool get _isLocalCover => _coverUrl != null && _coverUrl!.startsWith('/');
 
   @override
@@ -725,6 +730,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                       context,
                                       title: _title,
                                       coverUrl: _coverUrl,
+                                      hiResCoverUrl: _viewerCoverUrl,
                                       httpHeaders: mediaHeaders,
                                     ),
                                     child: RepaintBoundary(
