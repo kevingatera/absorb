@@ -208,6 +208,15 @@ class _PersonNameLink extends StatelessWidget {
       final id = author['id'] as String?;
       if (name.contains(wanted) && id != null && id.isNotEmpty) return id;
     }
+
+    final search = await api.searchLibrary(libraryId, target.label, limit: 8);
+    final searchAuthors = search?['authors'] as List<dynamic>? ?? const [];
+    for (final result in searchAuthors) {
+      if (result is! Map<String, dynamic>) continue;
+      final name = (result['name'] as String? ?? '').trim().toLowerCase();
+      final id = result['id'] as String?;
+      if (name == wanted && id != null && id.isNotEmpty) return id;
+    }
     return null;
   }
 
