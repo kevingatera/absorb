@@ -41,6 +41,7 @@ class HomeWidgetService {
 
     final player = AudioPlayerService();
     player.addListener(_onPlayerChanged);
+    AudioPlayerService.addPlaybackStateListener(_onPlaybackStateChanged);
 
     // Listen for widget click actions (e.g. play/pause button)
     _clickSub = HomeWidget.widgetClicked.listen(_onWidgetClicked);
@@ -60,6 +61,12 @@ class HomeWidgetService {
     _pendingUpdate?.cancel();
     _clickSub?.cancel();
     AudioPlayerService().removeListener(_onPlayerChanged);
+    AudioPlayerService.removePlaybackStateListener(_onPlaybackStateChanged);
+  }
+
+  void _onPlaybackStateChanged(bool isPlaying) {
+    _pendingUpdate?.cancel();
+    _scheduleUpdate();
   }
 
   void _onWidgetClicked(Uri? uri) {
