@@ -24,7 +24,8 @@ class AutoRewindSettings {
   final bool enabled;
   final double minRewind;
   final double maxRewind;
-  final double activationDelay; // seconds — how long pause must be before rewind kicks in
+  final double
+      activationDelay; // seconds — how long pause must be before rewind kicks in
 
   const AutoRewindSettings({
     this.enabled = true,
@@ -76,7 +77,8 @@ class PlayerSettings {
     return defaultValue;
   }
 
-  static Future<void> _set<T>(String key, T value, {bool notify = false}) async {
+  static Future<void> _set<T>(String key, T value,
+      {bool notify = false}) async {
     if (value is bool) {
       await ScopedPrefs.setBool(key, value);
     } else if (value is int) {
@@ -92,32 +94,48 @@ class PlayerSettings {
   // ── General settings ──
 
   static Future<double> getDefaultSpeed() => _get('defaultSpeed', 1.0);
-  static Future<void> setDefaultSpeed(double speed) => _set('defaultSpeed', speed);
+  static Future<void> setDefaultSpeed(double speed) =>
+      _set('defaultSpeed', speed);
 
-  static Future<bool> getWifiOnlyDownloads() => _get('wifiOnlyDownloads', false);
-  static Future<void> setWifiOnlyDownloads(bool value) => _set('wifiOnlyDownloads', value);
+  static Future<bool> getWifiOnlyDownloads() =>
+      _get('wifiOnlyDownloads', false);
+  static Future<void> setWifiOnlyDownloads(bool value) =>
+      _set('wifiOnlyDownloads', value);
 
-  static Future<int> getRollingDownloadCount() => _get('rollingDownloadCount', 3);
-  static Future<void> setRollingDownloadCount(int value) => _set('rollingDownloadCount', value);
+  static Future<int> getRollingDownloadCount() =>
+      _get('rollingDownloadCount', 3);
+  static Future<void> setRollingDownloadCount(int value) =>
+      _set('rollingDownloadCount', value);
 
-  static Future<bool> getRollingDownloadDeleteFinished() => _get('rollingDownloadDeleteFinished', false);
-  static Future<void> setRollingDownloadDeleteFinished(bool value) => _set('rollingDownloadDeleteFinished', value);
+  static Future<bool> getRollingDownloadDeleteFinished() =>
+      _get('rollingDownloadDeleteFinished', false);
+  static Future<void> setRollingDownloadDeleteFinished(bool value) =>
+      _set('rollingDownloadDeleteFinished', value);
 
-  static Future<bool> getQueueAutoDownload() => _get('queueAutoDownload', false);
-  static Future<void> setQueueAutoDownload(bool value) => _set('queueAutoDownload', value);
+  static Future<bool> getQueueAutoDownload() =>
+      _get('queueAutoDownload', false);
+  static Future<void> setQueueAutoDownload(bool value) =>
+      _set('queueAutoDownload', value);
 
-  static Future<bool> getAutoDownloadOnStream() => _get('autoDownloadOnStream', false);
-  static Future<void> setAutoDownloadOnStream(bool value) => _set('autoDownloadOnStream', value);
+  static Future<bool> getAutoDownloadOnStream() =>
+      _get('autoDownloadOnStream', false);
+  static Future<void> setAutoDownloadOnStream(bool value) =>
+      _set('autoDownloadOnStream', value);
 
   /// Bookmark sort: 'newest' (default) or 'position'
   static Future<String> getBookmarkSort() => _get('bookmarkSort', 'newest');
-  static Future<void> setBookmarkSort(String value) => _set('bookmarkSort', value);
+  static Future<void> setBookmarkSort(String value) =>
+      _set('bookmarkSort', value);
 
-  static Future<bool> getMergeAbsorbingLibraries() => _get('mergeAbsorbingLibraries', false);
-  static Future<void> setMergeAbsorbingLibraries(bool value) => _set('mergeAbsorbingLibraries', value);
+  static Future<bool> getMergeAbsorbingLibraries() =>
+      _get('mergeAbsorbingLibraries', false);
+  static Future<void> setMergeAbsorbingLibraries(bool value) =>
+      _set('mergeAbsorbingLibraries', value);
 
-  static Future<int> getMaxConcurrentDownloads() => _get('maxConcurrentDownloads', 1);
-  static Future<void> setMaxConcurrentDownloads(int value) => _set('maxConcurrentDownloads', value);
+  static Future<int> getMaxConcurrentDownloads() =>
+      _get('maxConcurrentDownloads', 1);
+  static Future<void> setMaxConcurrentDownloads(int value) =>
+      _set('maxConcurrentDownloads', value);
 
   // ── Queue mode (replaces autoPlayNextBook + autoPlayNextPodcast) ──
   // Values: 'off', 'manual', 'auto_next'
@@ -129,35 +147,46 @@ class PlayerSettings {
     if (await ScopedPrefs.containsKey('queueMode')) return;
     final autoBook = await ScopedPrefs.getBool('autoPlayNextBook') ?? false;
     final autoPod = await ScopedPrefs.getBool('autoPlayNextPodcast') ?? false;
-    await ScopedPrefs.setString('queueMode', (autoBook || autoPod) ? 'auto_next' : 'off');
+    await ScopedPrefs.setString(
+        'queueMode', (autoBook || autoPod) ? 'auto_next' : 'off');
   }
 
   // Legacy getters kept for backup service compatibility
   static Future<bool> getAutoPlayNextBook() => _get('autoPlayNextBook', false);
-  static Future<void> setAutoPlayNextBook(bool value) => _set('autoPlayNextBook', value);
+  static Future<void> setAutoPlayNextBook(bool value) =>
+      _set('autoPlayNextBook', value);
 
-  static Future<bool> getAutoPlayNextPodcast() => _get('autoPlayNextPodcast', false);
-  static Future<void> setAutoPlayNextPodcast(bool value) => _set('autoPlayNextPodcast', value);
+  static Future<bool> getAutoPlayNextPodcast() =>
+      _get('autoPlayNextPodcast', false);
+  static Future<void> setAutoPlayNextPodcast(bool value) =>
+      _set('autoPlayNextPodcast', value);
 
   static Future<String> getWhenFinished() => _get('whenFinished', 'overlay');
-  static Future<void> setWhenFinished(String value) => _set('whenFinished', value);
+  static Future<void> setWhenFinished(String value) =>
+      _set('whenFinished', value);
 
   // ── Player UI settings (notify listeners on change) ──
 
   static Future<bool> getShowBookSlider() => _get('showBookSlider', false);
-  static Future<void> setShowBookSlider(bool value) => _set('showBookSlider', value, notify: true);
+  static Future<void> setShowBookSlider(bool value) =>
+      _set('showBookSlider', value, notify: true);
 
   static Future<bool> getSpeedAdjustedTime() => _get('speedAdjustedTime', true);
-  static Future<void> setSpeedAdjustedTime(bool value) => _set('speedAdjustedTime', value, notify: true);
+  static Future<void> setSpeedAdjustedTime(bool value) =>
+      _set('speedAdjustedTime', value, notify: true);
 
   static Future<int> getForwardSkip() => _get('forwardSkip', 30);
-  static Future<void> setForwardSkip(int seconds) => _set('forwardSkip', seconds, notify: true);
+  static Future<void> setForwardSkip(int seconds) =>
+      _set('forwardSkip', seconds, notify: true);
 
   static Future<int> getBackSkip() => _get('backSkip', 10);
-  static Future<void> setBackSkip(int seconds) => _set('backSkip', seconds, notify: true);
+  static Future<void> setBackSkip(int seconds) =>
+      _set('backSkip', seconds, notify: true);
 
-  static Future<bool> getNotificationChapterProgress() => _get('notificationChapterProgress', false);
-  static Future<void> setNotificationChapterProgress(bool value) => _set('notificationChapterProgress', value, notify: true);
+  static Future<bool> getNotificationChapterProgress() =>
+      _get('notificationChapterProgress', false);
+  static Future<void> setNotificationChapterProgress(bool value) =>
+      _set('notificationChapterProgress', value, notify: true);
 
   // ── Sleep timer settings ──
 
@@ -166,30 +195,39 @@ class PlayerSettings {
   static Future<void> setShakeMode(String value) => _set('shakeMode', value);
 
   static Future<int> getShakeAddMinutes() => _get('shakeAddMinutes', 5);
-  static Future<void> setShakeAddMinutes(int minutes) => _set('shakeAddMinutes', minutes);
+  static Future<void> setShakeAddMinutes(int minutes) =>
+      _set('shakeAddMinutes', minutes);
 
   static Future<int> getSleepTimerMinutes() => _get('sleepTimerMinutes', 30);
-  static Future<void> setSleepTimerMinutes(int minutes) => _set('sleepTimerMinutes', minutes);
+  static Future<void> setSleepTimerMinutes(int minutes) =>
+      _set('sleepTimerMinutes', minutes);
 
   static Future<int> getSleepTimerChapters() => _get('sleepTimerChapters', 1);
-  static Future<void> setSleepTimerChapters(int chapters) => _set('sleepTimerChapters', chapters);
+  static Future<void> setSleepTimerChapters(int chapters) =>
+      _set('sleepTimerChapters', chapters);
 
-  static Future<bool> getResetSleepOnPause() => _get('resetSleepOnPause', false);
-  static Future<void> setResetSleepOnPause(bool value) => _set('resetSleepOnPause', value);
+  static Future<bool> getResetSleepOnPause() =>
+      _get('resetSleepOnPause', false);
+  static Future<void> setResetSleepOnPause(bool value) =>
+      _set('resetSleepOnPause', value);
 
   static Future<bool> getSleepFadeOut() => _get('sleepFadeOut', true);
-  static Future<void> setSleepFadeOut(bool value) => _set('sleepFadeOut', value);
+  static Future<void> setSleepFadeOut(bool value) =>
+      _set('sleepFadeOut', value);
 
   static Future<bool> getHideEbookOnly() => _get('hideEbookOnly', false);
-  static Future<void> setHideEbookOnly(bool value) => _set('hideEbookOnly', value, notify: true);
+  static Future<void> setHideEbookOnly(bool value) =>
+      _set('hideEbookOnly', value, notify: true);
 
   static Future<bool> getCollapseSeries() => _get('collapseSeries', false);
-  static Future<void> setCollapseSeries(bool value) => _set('collapseSeries', value, notify: true);
+  static Future<void> setCollapseSeries(bool value) =>
+      _set('collapseSeries', value, notify: true);
 
   // ── Streaming cache ──
 
   /// 0 = disabled, > 0 = cache size in MB (LRU eviction)
-  static Future<int> getStreamingCacheSizeMb() => _get('streamingCacheSizeMb', 0);
+  static Future<int> getStreamingCacheSizeMb() =>
+      _get('streamingCacheSizeMb', 0);
   static Future<void> setStreamingCacheSizeMb(int value) async {
     debugPrint('[Settings] Streaming cache set to: $value MB');
     await _set('streamingCacheSizeMb', value);
@@ -204,72 +242,105 @@ class PlayerSettings {
 
   // ── Library sort/filter persistence ──
 
-  static Future<String> getLibrarySort() => _get('librarySort', 'recentlyAdded');
-  static Future<void> setLibrarySort(String value) => _set('librarySort', value);
+  static Future<String> getLibrarySort() =>
+      _get('librarySort', 'recentlyAdded');
+  static Future<void> setLibrarySort(String value) =>
+      _set('librarySort', value);
 
   static Future<bool> getLibrarySortAsc() => _get('librarySortAsc', false);
-  static Future<void> setLibrarySortAsc(bool value) => _set('librarySortAsc', value);
+  static Future<void> setLibrarySortAsc(bool value) =>
+      _set('librarySortAsc', value);
 
   static Future<String> getLibraryFilter() => _get('libraryFilter', 'none');
-  static Future<void> setLibraryFilter(String value) => _set('libraryFilter', value);
+  static Future<void> setLibraryFilter(String value) =>
+      _set('libraryFilter', value);
 
-  static Future<String> getLibraryGenreFilter() => _get('libraryGenreFilter', '');
-  static Future<void> setLibraryGenreFilter(String? value) => _set('libraryGenreFilter', value ?? '');
+  static Future<String> getLibraryGenreFilter() =>
+      _get('libraryGenreFilter', '');
+  static Future<void> setLibraryGenreFilter(String? value) =>
+      _set('libraryGenreFilter', value ?? '');
 
   // ── Podcast library sort persistence ──
 
-  static Future<String> getPodcastSort() => _get('podcastSort', 'recentlyAdded');
-  static Future<void> setPodcastSort(String value) => _set('podcastSort', value);
+  static Future<String> getPodcastSort() =>
+      _get('podcastSort', 'recentlyAdded');
+  static Future<void> setPodcastSort(String value) =>
+      _set('podcastSort', value);
 
   static Future<bool> getPodcastSortAsc() => _get('podcastSortAsc', false);
-  static Future<void> setPodcastSortAsc(bool value) => _set('podcastSortAsc', value);
+  static Future<void> setPodcastSortAsc(bool value) =>
+      _set('podcastSortAsc', value);
 
   static Future<String> getSeriesSort() => _get('seriesSort', 'alphabetical');
   static Future<void> setSeriesSort(String value) => _set('seriesSort', value);
 
   static Future<bool> getSeriesSortAsc() => _get('seriesSortAsc', true);
-  static Future<void> setSeriesSortAsc(bool value) => _set('seriesSortAsc', value);
+  static Future<void> setSeriesSortAsc(bool value) =>
+      _set('seriesSortAsc', value);
 
   static Future<String> getAuthorSort() => _get('authorSort', 'alphabetical');
   static Future<void> setAuthorSort(String value) => _set('authorSort', value);
 
   static Future<bool> getAuthorSortAsc() => _get('authorSortAsc', true);
-  static Future<void> setAuthorSortAsc(bool value) => _set('authorSortAsc', value);
+  static Future<void> setAuthorSortAsc(bool value) =>
+      _set('authorSortAsc', value);
 
-  static Future<bool> getShowGoodreadsButton() => _get('showGoodreadsButton', false);
-  static Future<void> setShowGoodreadsButton(bool value) => _set('showGoodreadsButton', value);
+  static Future<bool> getShowGoodreadsButton() =>
+      _get('showGoodreadsButton', false);
+  static Future<void> setShowGoodreadsButton(bool value) =>
+      _set('showGoodreadsButton', value);
 
   static Future<bool> getLoggingEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool('loggingEnabled') ?? false;
   }
+
   static Future<void> setLoggingEnabled(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('loggingEnabled', value);
   }
 
   static Future<bool> getFullScreenPlayer() => _get('fullScreenPlayer', false);
-  static Future<void> setFullScreenPlayer(bool value) => _set('fullScreenPlayer', value);
+  static Future<void> setFullScreenPlayer(bool value) =>
+      _set('fullScreenPlayer', value);
 
-  static Future<bool> getSnappyTransitions() => _get('snappyTransitions', false);
-  static Future<void> setSnappyTransitions(bool value) => _set('snappyTransitions', value);
+  static Future<bool> getSnappyTransitions() =>
+      _get('snappyTransitions', false);
+  static Future<void> setSnappyTransitions(bool value) =>
+      _set('snappyTransitions', value);
 
   // ── Audio focus ──
 
-  static Future<bool> getDisableAudioFocus() => _get('disableAudioFocus', false);
-  static Future<void> setDisableAudioFocus(bool value) => _set('disableAudioFocus', value);
+  static Future<bool> getDisableAudioFocus() =>
+      _get('disableAudioFocus', false);
+  static Future<void> setDisableAudioFocus(bool value) =>
+      _set('disableAudioFocus', value);
 
   // ── Local server ──
 
-  static Future<bool> getLocalServerEnabled() => _get('localServerEnabled', false);
-  static Future<void> setLocalServerEnabled(bool value) => _set('localServerEnabled', value);
+  static Future<bool> getLocalServerEnabled() =>
+      _get('localServerEnabled', false);
+  static Future<void> setLocalServerEnabled(bool value) =>
+      _set('localServerEnabled', value);
 
   static Future<String> getLocalServerUrl() => _get('localServerUrl', '');
-  static Future<void> setLocalServerUrl(String value) => _set('localServerUrl', value);
+  static Future<void> setLocalServerUrl(String value) =>
+      _set('localServerUrl', value);
 
   // ── Card button order ──
 
-  static const defaultButtonOrder = ['chapters', 'speed', 'sleep', 'bookmarks', 'details', 'equalizer', 'cast', 'history', 'remove', 'car'];
+  static const defaultButtonOrder = [
+    'chapters',
+    'speed',
+    'sleep',
+    'bookmarks',
+    'details',
+    'equalizer',
+    'cast',
+    'history',
+    'remove',
+    'car'
+  ];
 
   static Future<List<String>> getCardButtonOrder() async {
     final stored = await ScopedPrefs.getStringList('card_button_order');
@@ -294,12 +365,15 @@ class PlayerSettings {
   static Future<void> setThemeMode(String value) => _set('themeMode', value);
 
   static Future<String> getColorSource() => _get('colorSource', 'wallpaper');
-  static Future<void> setColorSource(String value) => _set('colorSource', value);
+  static Future<void> setColorSource(String value) =>
+      _set('colorSource', value);
 
   /// Cached seed color from the last cover-art derivation, so we can show
   /// the correct color immediately on restart without waiting for the image.
-  static Future<int?> getCoverSeedColor() async => await ScopedPrefs.getInt('coverSeedColor');
-  static Future<void> setCoverSeedColor(int value) => _set('coverSeedColor', value);
+  static Future<int?> getCoverSeedColor() async =>
+      await ScopedPrefs.getInt('coverSeedColor');
+  static Future<void> setCoverSeedColor(int value) =>
+      _set('coverSeedColor', value);
 
   /// Check if an item has no audio content.
   /// For minified responses (library list), duration == 0 means no audio files.
@@ -367,7 +441,6 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
-
   // OnePlus/Oppo/Realme (ColorOS) rearrange media session buttons.
   static bool get _isOnePlusFamily {
     final m = ApiService.deviceManufacturer.toLowerCase();
@@ -422,12 +495,27 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     final List<MediaControl> controls;
     if (_isOnePlusFamily) {
       if (ApiService.deviceSdkInt >= 33) {
-        controls = [speedAction, MediaControl.rewind, playPause, MediaControl.fastForward];
+        controls = [
+          speedAction,
+          MediaControl.rewind,
+          playPause,
+          MediaControl.fastForward
+        ];
       } else {
-        controls = [MediaControl.fastForward, playPause, MediaControl.rewind, speedAction];
+        controls = [
+          MediaControl.fastForward,
+          playPause,
+          MediaControl.rewind,
+          speedAction
+        ];
       }
     } else {
-      controls = [MediaControl.rewind, playPause, MediaControl.fastForward, speedAction];
+      controls = [
+        MediaControl.rewind,
+        playPause,
+        MediaControl.fastForward,
+        speedAction
+      ];
     }
 
     return PlaybackState(
@@ -585,7 +673,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> click([MediaButton button = MediaButton.media]) async {
-    debugPrint('[Handler] click(button=$button) count=${_clickCount + 1} playing=${_player.playing}');
+    debugPrint(
+        '[Handler] click(button=$button) count=${_clickCount + 1} playing=${_player.playing}');
 
     if (button != MediaButton.media) {
       // Hardware next/prev button — set cooldown to ignore phantom media click
@@ -602,9 +691,11 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
     // Ignore phantom media click that follows hardware next/prev within 500ms
     if (_hardwareButtonTime != null) {
-      final elapsed = DateTime.now().difference(_hardwareButtonTime!).inMilliseconds;
+      final elapsed =
+          DateTime.now().difference(_hardwareButtonTime!).inMilliseconds;
       if (elapsed < 500) {
-        debugPrint('[Handler] Ignoring phantom media click (${elapsed}ms after hardware button)');
+        debugPrint(
+            '[Handler] Ignoring phantom media click (${elapsed}ms after hardware button)');
         _hardwareButtonTime = null;
         return;
       }
@@ -618,11 +709,13 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       final count = _clickCount;
       _clickCount = 0;
       if (_noisyPauseFlag) {
-        debugPrint('[Handler] click resolved: count=$count — suppressed (noisy pause)');
+        debugPrint(
+            '[Handler] click resolved: count=$count — suppressed (noisy pause)');
         _noisyPauseFlag = false;
         return;
       }
-      debugPrint('[Handler] click resolved: count=$count playing=${_player.playing}');
+      debugPrint(
+          '[Handler] click resolved: count=$count playing=${_player.playing}');
       switch (count) {
         case 1:
           if (_player.playing) {
@@ -661,7 +754,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   Future<void> setSpeed(double speed) => _player.setSpeed(speed);
 
   @override
-  Future<dynamic> customAction(String name, [Map<String, dynamic>? extras]) async {
+  Future<dynamic> customAction(String name,
+      [Map<String, dynamic>? extras]) async {
     debugPrint('[Handler] customAction($name)');
     switch (name) {
       case 'nextChapter':
@@ -675,9 +769,9 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
           final current = _service!.speed;
           // Find next preset above current speed, or wrap to first
           final next = _aaSpeedPresets.cast<double>().firstWhere(
-            (s) => s > current + 0.01,
-            orElse: () => _aaSpeedPresets.first,
-          );
+                (s) => s > current + 0.01,
+                orElse: () => _aaSpeedPresets.first,
+              );
           await _service!.setSpeed(next);
         }
         break;
@@ -790,7 +884,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     if (entry == null) {
       final ds = DownloadService();
       if (ds.isDownloaded(absId)) {
-        debugPrint('[Handler] Item not in AA cache but downloaded locally: $absId');
+        debugPrint(
+            '[Handler] Item not in AA cache but downloaded locally: $absId');
         final dl = ds.getInfo(absId);
         double duration = 0;
         List<dynamic> chapters = [];
@@ -827,9 +922,9 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
             // Find the specific episode in the show's episode list
             final episodes = media?['episodes'] as List<dynamic>? ?? [];
             final ep = episodes.cast<Map<String, dynamic>?>().firstWhere(
-              (e) => e?['id'] == episodeId,
-              orElse: () => null,
-            );
+                  (e) => e?['id'] == episodeId,
+                  orElse: () => null,
+                );
             if (ep != null) {
               entry = AutoBookEntry(
                 id: absId,
@@ -863,7 +958,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       return;
     }
 
-    debugPrint('[Handler] Android Auto play: "${entry.title}" by ${entry.author}');
+    debugPrint(
+        '[Handler] Android Auto play: "${entry.title}" by ${entry.author}');
 
     // Always generate a fresh HTTP cover URL for Now Playing — api is
     // available here, so use it directly rather than relying on the cached
@@ -917,8 +1013,26 @@ class AudioPlayerService extends ChangeNotifier {
   /// Called when playback state changes (playing/paused). Used by
   /// LibraryProvider for battery-saving socket lifecycle.
   static void Function(bool isPlaying)? _onPlaybackStateChangedCallback;
-  static void setOnPlaybackStateChangedCallback(void Function(bool isPlaying)? cb) {
+  static final Set<void Function(bool isPlaying)> _playbackStateListeners = {};
+  static void setOnPlaybackStateChangedCallback(
+      void Function(bool isPlaying)? cb) {
     _onPlaybackStateChangedCallback = cb;
+  }
+
+  static void addPlaybackStateListener(void Function(bool isPlaying) listener) {
+    _playbackStateListeners.add(listener);
+  }
+
+  static void removePlaybackStateListener(
+      void Function(bool isPlaying) listener) {
+    _playbackStateListeners.remove(listener);
+  }
+
+  static void _emitPlaybackStateChanged(bool isPlaying) {
+    _onPlaybackStateChangedCallback?.call(isPlaying);
+    for (final listener in _playbackStateListeners.toList()) {
+      listener(isPlaying);
+    }
   }
 
   static AudioPlayerHandler? _handler;
@@ -937,6 +1051,7 @@ class AudioPlayerService extends ChangeNotifier {
   StreamSubscription? _syncSub;
   StreamSubscription? _completionSub;
   Timer? _bgSaveTimer;
+
   /// Last known position in seconds — used to detect end→0 position jumps.
   double _lastKnownPositionSec = 0;
   // ── Stream error retry tracking ──
@@ -966,10 +1081,11 @@ class AudioPlayerService extends ChangeNotifier {
       _notifChapterMode = v;
       // Re-push MediaItem + PlaybackState so notification updates immediately
       if (_currentItemId != null) {
-        _pushMediaItem(_currentItemId!, _currentTitle ?? '', _currentAuthor ?? '',
-            _currentCoverUrl, _totalDuration,
+        _pushMediaItem(_currentItemId!, _currentTitle ?? '',
+            _currentAuthor ?? '', _currentCoverUrl, _totalDuration,
             chapter: _lastNotifiedChapterIndex >= 0 && _chapters.isNotEmpty
-                ? (_chapters[_lastNotifiedChapterIndex] as Map<String, dynamic>)['title'] as String?
+                ? (_chapters[_lastNotifiedChapterIndex]
+                    as Map<String, dynamic>)['title'] as String?
                 : null);
         _handler?.refreshPlaybackState();
       }
@@ -1005,7 +1121,8 @@ class AudioPlayerService extends ChangeNotifier {
   final _history = PlaybackHistoryService();
 
   /// Log a playback event to history.
-  void _logEvent(PlaybackEventType type, {String? detail, double? overridePosition}) {
+  void _logEvent(PlaybackEventType type,
+      {String? detail, double? overridePosition}) {
     if (_currentItemId == null) return;
     _history.log(
       itemId: _currentItemId!,
@@ -1019,7 +1136,8 @@ class AudioPlayerService extends ChangeNotifier {
     final h = d.inHours;
     final m = d.inMinutes % 60;
     final s = d.inSeconds % 60;
-    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    if (h > 0)
+      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
@@ -1035,6 +1153,7 @@ class AudioPlayerService extends ChangeNotifier {
     _handler?.updateChaptersQueue(chapters);
     notifyListeners();
   }
+
   bool get hasBook => _currentItemId != null;
   bool get isPlaying => _player?.playing ?? false;
   bool get isOfflineMode => _isOfflineMode;
@@ -1066,7 +1185,8 @@ class AudioPlayerService extends ChangeNotifier {
   Stream<Duration> get absolutePositionStream {
     if (_player == null) return const Stream.empty();
     return _player!.positionStream.map((trackRelative) {
-      if (_trackStartOffsets.length <= 1) return trackRelative; // single file, no offset
+      if (_trackStartOffsets.length <= 1)
+        return trackRelative; // single file, no offset
       final trackIdx = _currentTrackIndex;
       final offsetMs = (_trackStartOffsets[trackIdx] * 1000).round();
       final absolute = trackRelative + Duration(milliseconds: offsetMs);
@@ -1113,7 +1233,8 @@ class AudioPlayerService extends ChangeNotifier {
 
     if (_trackStartOffsets.length <= 1) {
       // Single file — seek directly
-      await _player!.seek(Duration(milliseconds: (absoluteSeconds * 1000).round()));
+      await _player!
+          .seek(Duration(milliseconds: (absoluteSeconds * 1000).round()));
       return;
     }
     // Multi-file — find the right track and local offset
@@ -1124,7 +1245,9 @@ class AudioPlayerService extends ChangeNotifier {
         final localOffset = absoluteSeconds - trackStart;
         // Update index BEFORE seeking so positionStream events use the right offset
         _currentTrackIndex = i;
-        await _player!.seek(Duration(milliseconds: (localOffset * 1000).round()), index: i);
+        await _player!.seek(
+            Duration(milliseconds: (localOffset * 1000).round()),
+            index: i);
         return;
       }
     }
@@ -1177,7 +1300,8 @@ class AudioPlayerService extends ChangeNotifier {
         }
       }
       // Load notification chapter progress setting and watch for changes
-      _instance._notifChapterMode = await PlayerSettings.getNotificationChapterProgress();
+      _instance._notifChapterMode =
+          await PlayerSettings.getNotificationChapterProgress();
       PlayerSettings.settingsChanged.addListener(_instance._onSettingsChanged);
       // Configure audio session for audiobook playback
       await _configureAudioSession();
@@ -1200,7 +1324,8 @@ class AudioPlayerService extends ChangeNotifier {
   /// Check if BT audio (A2DP/SCO) is currently connected via native AudioManager.
   static Future<bool> _isBluetoothAudioConnected() async {
     try {
-      final result = await _eqChannel.invokeMethod<bool>('isBluetoothAudioConnected');
+      final result =
+          await _eqChannel.invokeMethod<bool>('isBluetoothAudioConnected');
       return result ?? false;
     } catch (e) {
       debugPrint('[AudioSession] BT check failed: $e');
@@ -1223,14 +1348,17 @@ class AudioPlayerService extends ChangeNotifier {
       await session.configure(const AudioSessionConfiguration(
         avAudioSessionCategory: AVAudioSessionCategory.playback,
         avAudioSessionMode: AVAudioSessionMode.defaultMode,
-        avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.mixWithOthers,
+        avAudioSessionCategoryOptions:
+            AVAudioSessionCategoryOptions.mixWithOthers,
         androidAudioAttributes: AndroidAudioAttributes(
           contentType: AndroidAudioContentType.music,
           usage: AndroidAudioUsage.media,
         ),
-        androidAudioFocusGainType: AndroidAudioFocusGainType.gainTransientMayDuck,
+        androidAudioFocusGainType:
+            AndroidAudioFocusGainType.gainTransientMayDuck,
       ));
-      debugPrint('[AudioSession] Audio focus disabled - mixing with other apps');
+      debugPrint(
+          '[AudioSession] Audio focus disabled - mixing with other apps');
 
       // Ignore all interruption events - can't distinguish Spotify from
       // phone calls, so disable everything when user opts out of audio focus
@@ -1277,7 +1405,8 @@ class AudioPlayerService extends ChangeNotifier {
         // Some devices fire interruption-end AFTER becoming-noisy, which would
         // resume playback on the phone speaker.
         if (_noisyPause) {
-          debugPrint('[AudioSession] Interruption ended after noisy — skipping resume');
+          debugPrint(
+              '[AudioSession] Interruption ended after noisy — skipping resume');
           service._wasPlayingBeforeInterrupt = false;
           return;
         }
@@ -1292,9 +1421,11 @@ class AudioPlayerService extends ChangeNotifier {
           // so _noisyPause alone is not enough.
           if (_wasOnBluetooth) {
             final stillOnBt = await _isBluetoothAudioConnected();
-            debugPrint('[AudioSession] Interruption ended — was BT, still BT: $stillOnBt');
+            debugPrint(
+                '[AudioSession] Interruption ended — was BT, still BT: $stillOnBt');
             if (!stillOnBt) {
-              debugPrint('[AudioSession] BT disconnected during interruption — skipping resume');
+              debugPrint(
+                  '[AudioSession] BT disconnected during interruption — skipping resume');
               _noisyPause = true;
               return;
             }
@@ -1411,7 +1542,8 @@ class AudioPlayerService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final manualOffline = prefs.getBool('manual_offline_mode') ?? false;
       if (manualOffline) {
-        debugPrint('[Player] Manual offline — cannot stream non-downloaded item');
+        debugPrint(
+            '[Player] Manual offline — cannot stream non-downloaded item');
         _clearState();
         return 'This item isn\'t downloaded and offline mode is on';
       }
@@ -1438,7 +1570,8 @@ class AudioPlayerService extends ChangeNotifier {
     final currentAbsolutePos = position; // use absolute position getter
     final currentSpeed = _player!.speed;
 
-    debugPrint('[Player] Hot-swapping to local files at ${currentAbsolutePos.inSeconds}s');
+    debugPrint(
+        '[Player] Hot-swapping to local files at ${currentAbsolutePos.inSeconds}s');
 
     final localPaths = _downloadService.getLocalPaths(itemId);
     if (localPaths == null || localPaths.isEmpty) return false;
@@ -1466,7 +1599,8 @@ class AudioPlayerService extends ChangeNotifier {
       if (localPaths.length == 1) {
         source = AudioSource.file(localPaths.first);
       } else {
-        final sources = localPaths.map((p) => AudioSource.file(p) as AudioSource).toList();
+        final sources =
+            localPaths.map((p) => AudioSource.file(p) as AudioSource).toList();
         source = ConcatenatingAudioSource(children: sources);
       }
 
@@ -1517,20 +1651,24 @@ class AudioPlayerService extends ChangeNotifier {
       try {
         debugPrint('[Player] Starting server session for local playback...');
         final sessionData = _currentEpisodeId != null
-            ? await _api!.startEpisodePlaybackSession(_currentItemId!, _currentEpisodeId!)
+            ? await _api!.startEpisodePlaybackSession(
+                _currentItemId!, _currentEpisodeId!)
             : await _api!.startPlaybackSession(itemId);
         if (sessionData != null) {
           _playbackSessionId = sessionData['id'] as String?;
-          debugPrint('[Player] Got server session for local playback: $_playbackSessionId');
+          debugPrint(
+              '[Player] Got server session for local playback: $_playbackSessionId');
 
           // Pick up chapters from session (e.g. podcast episodes with embedded chapters)
           if (chapters.isEmpty) {
-            final sessionChapters = sessionData['chapters'] as List<dynamic>? ?? [];
+            final sessionChapters =
+                sessionData['chapters'] as List<dynamic>? ?? [];
             if (sessionChapters.isNotEmpty) {
               chapters = sessionChapters;
               _chapters = sessionChapters;
               _handler?.updateChaptersQueue(sessionChapters);
-              debugPrint('[Player] Loaded ${sessionChapters.length} chapters from session');
+              debugPrint(
+                  '[Player] Loaded ${sessionChapters.length} chapters from session');
             }
           }
 
@@ -1538,9 +1676,11 @@ class AudioPlayerService extends ChangeNotifier {
           // You can't un-listen to a book, so the furthest position is the most recent.
           // (Session updatedAt is unreliable — it reflects session creation time, not
           // when progress was actually last updated.)
-          final serverPos = (sessionData['currentTime'] as num?)?.toDouble() ?? 0;
+          final serverPos =
+              (sessionData['currentTime'] as num?)?.toDouble() ?? 0;
           if (serverPos > startTime + 1.0) {
-            debugPrint('[Player] Server position is ahead: server=${serverPos}s vs local=${startTime}s — using server');
+            debugPrint(
+                '[Player] Server position is ahead: server=${serverPos}s vs local=${startTime}s — using server');
             startTime = serverPos;
             await _progressSync.saveLocal(
               itemId: itemId,
@@ -1549,9 +1689,11 @@ class AudioPlayerService extends ChangeNotifier {
               speed: 1.0,
             );
           } else if (startTime > 0) {
-            debugPrint('[Player] Local position is ahead: local=${startTime}s vs server=${serverPos}s — keeping local');
+            debugPrint(
+                '[Player] Local position is ahead: local=${startTime}s vs server=${serverPos}s — keeping local');
           } else if (serverPos > 0) {
-            debugPrint('[Player] No local position, using server: ${serverPos}s');
+            debugPrint(
+                '[Player] No local position, using server: ${serverPos}s');
             startTime = serverPos;
           }
         } else {
@@ -1591,7 +1733,8 @@ class AudioPlayerService extends ChangeNotifier {
             chapters = cachedChapters;
             _chapters = cachedChapters;
             _handler?.updateChaptersQueue(cachedChapters);
-            debugPrint('[Player] Loaded ${cachedChapters.length} chapters from cached session');
+            debugPrint(
+                '[Player] Loaded ${cachedChapters.length} chapters from cached session');
           }
         }
       } catch (_) {}
@@ -1611,9 +1754,8 @@ class AudioPlayerService extends ChangeNotifier {
       if (localPaths.length == 1) {
         source = AudioSource.file(localPaths.first);
       } else {
-        final sources = localPaths
-            .map((p) => AudioSource.file(p) as AudioSource)
-            .toList();
+        final sources =
+            localPaths.map((p) => AudioSource.file(p) as AudioSource).toList();
         source = ConcatenatingAudioSource(children: sources);
       }
 
@@ -1627,7 +1769,8 @@ class AudioPlayerService extends ChangeNotifier {
 
       _subscribeTrackIndex();
       final initChapter = _initChapterInfo(startTime);
-      _pushMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: initChapter);
+      _pushMediaItem(itemId, title, author, coverUrl, totalDuration,
+          chapter: initChapter);
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
       await _player!.setSpeed(speed);
@@ -1662,7 +1805,8 @@ class AudioPlayerService extends ChangeNotifier {
 
     // Use episode endpoint if this is a podcast episode
     final sessionData = _currentEpisodeId != null
-        ? await api.startEpisodePlaybackSession(_currentItemId!, _currentEpisodeId!)
+        ? await api.startEpisodePlaybackSession(
+            _currentItemId!, _currentEpisodeId!)
         : await api.startPlaybackSession(itemId);
     if (sessionData == null) {
       debugPrint('[Player] Failed to start playback session');
@@ -1684,10 +1828,10 @@ class AudioPlayerService extends ChangeNotifier {
         chapters = sessionChapters;
         _chapters = sessionChapters;
         _handler?.updateChaptersQueue(sessionChapters);
-        debugPrint('[Player] Loaded ${sessionChapters.length} chapters from session');
+        debugPrint(
+            '[Player] Loaded ${sessionChapters.length} chapters from session');
       }
     }
-
 
     // Update totalDuration from session if it was unknown (e.g. podcast episodes
     // where the embedded recentEpisode didn't include a duration field)
@@ -1696,7 +1840,8 @@ class AudioPlayerService extends ChangeNotifier {
       if (sessionDur > 0) {
         totalDuration = sessionDur;
         _totalDuration = sessionDur;
-        debugPrint('[Player] Updated totalDuration from session: ${sessionDur}s');
+        debugPrint(
+            '[Player] Updated totalDuration from session: ${sessionDur}s');
       }
     }
 
@@ -1704,10 +1849,12 @@ class AudioPlayerService extends ChangeNotifier {
     // You can't un-listen to a book, so the furthest position is the most recent.
     final serverPos = (sessionData['currentTime'] as num?)?.toDouble() ?? 0;
     if (serverPos > startTime + 1.0) {
-      debugPrint('[Player] Server position is ahead: server=${serverPos}s vs local=${startTime}s — using server');
+      debugPrint(
+          '[Player] Server position is ahead: server=${serverPos}s vs local=${startTime}s — using server');
       startTime = serverPos;
     } else if (startTime > 0) {
-      debugPrint('[Player] Local position is ahead: local=${startTime}s vs server=${serverPos}s — keeping local');
+      debugPrint(
+          '[Player] Local position is ahead: local=${startTime}s vs server=${serverPos}s — keeping local');
     } else if (serverPos > 0) {
       debugPrint('[Player] No local position, using server: ${serverPos}s');
       startTime = serverPos;
@@ -1731,7 +1878,8 @@ class AudioPlayerService extends ChangeNotifier {
           final track = t as Map<String, dynamic>;
           final contentUrl = track['contentUrl'] as String? ?? '';
           final fullUrl = api.buildTrackUrl(contentUrl);
-          sources.add(AudioSource.uri(Uri.parse(fullUrl), headers: audioHeaders));
+          sources
+              .add(AudioSource.uri(Uri.parse(fullUrl), headers: audioHeaders));
         }
         source = ConcatenatingAudioSource(children: sources);
       }
@@ -1746,7 +1894,8 @@ class AudioPlayerService extends ChangeNotifier {
 
       _subscribeTrackIndex();
       final initChapter = _initChapterInfo(startTime);
-      _pushMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: initChapter);
+      _pushMediaItem(itemId, title, author, coverUrl, totalDuration,
+          chapter: initChapter);
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
       await _player!.setSpeed(speed);
@@ -1796,22 +1945,24 @@ class AudioPlayerService extends ChangeNotifier {
   static const _coverAuthority = 'com.barnabas.absorb.homelab.covers';
 
   void _pushMediaItem(String itemId, String title, String author,
-      String? coverUrl, double totalDuration, {String? chapter}) {
+      String? coverUrl, double totalDuration,
+      {String? chapter}) {
     // Android: Always use content:// URI for Now Playing artwork - some OEMs
     // (e.g. Vivo) don't load HTTP URLs in MediaSession. The CoverContentProvider
     // handles both downloaded and streamed covers.
     // iOS: Use the HTTP URL directly — content:// is Android-only.
-    final effectiveCoverUrl = Platform.isIOS
-        ? coverUrl
-        : 'content://$_coverAuthority/cover/$itemId';
-    _updateNotificationMediaItem(itemId, title, author, effectiveCoverUrl, totalDuration, chapter: chapter);
+    final effectiveCoverUrl =
+        Platform.isIOS ? coverUrl : 'content://$_coverAuthority/cover/$itemId';
+    _updateNotificationMediaItem(
+        itemId, title, author, effectiveCoverUrl, totalDuration,
+        chapter: chapter);
   }
 
   void _updateNotificationMediaItem(String itemId, String title, String author,
-      String? coverUrl, double totalDuration, {String? chapter}) {
-    final displayArtist = chapter != null && chapter.isNotEmpty
-        ? '$author · $chapter'
-        : author;
+      String? coverUrl, double totalDuration,
+      {String? chapter}) {
+    final displayArtist =
+        chapter != null && chapter.isNotEmpty ? '$author · $chapter' : author;
     // In chapter progress mode, show chapter duration instead of full book
     final displayDuration = notifChapterMode
         ? (_currentChapterEnd - _currentChapterStart)
@@ -1864,14 +2015,16 @@ class AudioPlayerService extends ChangeNotifier {
     if (_retryInProgress) return;
     if (_currentItemId == null || _api == null) return;
     if (_streamRetryCount >= _maxStreamRetries) {
-      debugPrint('[Player] Max retries reached ($_maxStreamRetries) — giving up');
+      debugPrint(
+          '[Player] Max retries reached ($_maxStreamRetries) — giving up');
       return;
     }
 
     _retryInProgress = true;
     _streamRetryCount++;
     final delay = Duration(seconds: 1 << (_streamRetryCount - 1)); // 1s, 2s, 4s
-    debugPrint('[Player] Stream error — retry $_streamRetryCount/$_maxStreamRetries in ${delay.inSeconds}s');
+    debugPrint(
+        '[Player] Stream error — retry $_streamRetryCount/$_maxStreamRetries in ${delay.inSeconds}s');
 
     await Future<void>.delayed(delay);
 
@@ -1967,7 +2120,8 @@ class AudioPlayerService extends ChangeNotifier {
     // progress is still written to SharedPreferences even when the stream
     // goes silent.
     _bgSaveTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
-      if (_currentItemId == null || _player == null || !_player!.playing) return;
+      if (_currentItemId == null || _player == null || !_player!.playing)
+        return;
       final pos = position;
       final posSec = pos.inMilliseconds / 1000.0;
       if (posSec <= 0) return;
@@ -2010,7 +2164,8 @@ class AudioPlayerService extends ChangeNotifier {
         final wasNearEnd = _lastKnownPositionSec >= _totalDuration - 5.0;
         final nowNearStart = posSec < 2.0;
         if (wasNearEnd && nowNearStart) {
-          debugPrint('[Player] Position jumped from ${_lastKnownPositionSec.toStringAsFixed(1)}s to ${posSec.toStringAsFixed(1)}s — treating as completion');
+          debugPrint(
+              '[Player] Position jumped from ${_lastKnownPositionSec.toStringAsFixed(1)}s to ${posSec.toStringAsFixed(1)}s — treating as completion');
           _onPlaybackComplete();
           return;
         }
@@ -2022,7 +2177,9 @@ class AudioPlayerService extends ChangeNotifier {
       // ─── Chapter change detection ──────────────────────────
       // Update notification subtitle when the chapter changes.
       // Throttled to once per second — chapters can't change faster than that.
-      if (_chapters.isNotEmpty && _currentItemId != null && sec != _lastChapterCheckSec) {
+      if (_chapters.isNotEmpty &&
+          _currentItemId != null &&
+          sec != _lastChapterCheckSec) {
         _lastChapterCheckSec = sec;
         int chapterIdx = -1;
         String? chapterTitle;
@@ -2045,8 +2202,11 @@ class AudioPlayerService extends ChangeNotifier {
           _currentChapterStart = chapterStart;
           _currentChapterEnd = chapterEnd;
           _pushMediaItem(
-            _currentItemId!, _currentTitle ?? '', _currentAuthor ?? '',
-            _currentCoverUrl, _totalDuration,
+            _currentItemId!,
+            _currentTitle ?? '',
+            _currentAuthor ?? '',
+            _currentCoverUrl,
+            _totalDuration,
             chapter: chapterTitle,
           );
           // Force PlaybackState refresh so the notification position resets
@@ -2077,15 +2237,18 @@ class AudioPlayerService extends ChangeNotifier {
           } else if (!_isOfflineMode && _playbackSessionId != null) {
             // Streaming/local with session: sync via session
             _syncToServer(absolutePos);
-          } else if (!_isOfflineMode && _api != null && _currentItemId != null) {
+          } else if (!_isOfflineMode &&
+              _api != null &&
+              _currentItemId != null) {
             // No session but online — sync via progress update endpoint
-            debugPrint('[Player] No-session sync — sending to server at ${absolutePos.inSeconds}s');
+            debugPrint(
+                '[Player] No-session sync — sending to server at ${absolutePos.inSeconds}s');
             try {
               final syncKey = _currentEpisodeId != null
                   ? '$_currentItemId-$_currentEpisodeId'
                   : _currentItemId!;
-              final ok = await _progressSync.syncToServer(
-                  api: _api!, itemId: syncKey);
+              final ok =
+                  await _progressSync.syncToServer(api: _api!, itemId: syncKey);
               if (ok) {
                 debugPrint('[Player] No-session sync succeeded');
               } else {
@@ -2130,7 +2293,8 @@ class AudioPlayerService extends ChangeNotifier {
       try {
         if (episodeId != null) {
           await _api!.updateEpisodeProgress(
-            itemId, episodeId,
+            itemId,
+            episodeId,
             currentTime: _totalDuration,
             duration: _totalDuration,
             isFinished: true,
@@ -2221,7 +2385,8 @@ class AudioPlayerService extends ChangeNotifier {
 
     // Linear from min to max over 1 hour of pause time
     const maxPause = 3600.0; // 1 hour = full rewind
-    final effectivePause = (pauseSeconds - activationDelay).clamp(0.0, maxPause);
+    final effectivePause =
+        (pauseSeconds - activationDelay).clamp(0.0, maxPause);
     final t = effectivePause / maxPause;
     final rewind = minRewind + (maxRewind - minRewind) * t;
     return rewind.clamp(minRewind, maxRewind);
@@ -2229,7 +2394,8 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> play() async {
     debugPrint('[Service] play() called — lastPause=${_lastPauseTime != null}');
-    _noisyPause = false; // User explicitly resumed — allow interrupt-resume again
+    _noisyPause =
+        false; // User explicitly resumed — allow interrupt-resume again
     // Auto-rewind on resume if enabled
     if (_lastPauseTime != null && _player != null) {
       final settings = await AutoRewindSettings.load();
@@ -2254,11 +2420,13 @@ class AudioPlayerService extends ChangeNotifier {
     _lastPauseTime = null;
     // Re-activate audio session (needed after stop() releases it)
     if (!_audioFocusDisabled) {
-      try { (await AudioSession.instance).setActive(true); } catch (_) {}
+      try {
+        (await AudioSession.instance).setActive(true);
+      } catch (_) {}
     }
     _player?.play();
     _logEvent(PlaybackEventType.play);
-    _onPlaybackStateChangedCallback?.call(true);
+    _emitPlaybackStateChanged(true);
     // Check auto sleep on every resume — catches window entry between pauses
     SleepTimerService().checkAutoSleep();
     notifyListeners();
@@ -2270,10 +2438,11 @@ class AudioPlayerService extends ChangeNotifier {
     _lastPauseTime = DateTime.now();
     await _player?.pause();
     _logEvent(PlaybackEventType.pause);
-    _onPlaybackStateChangedCallback?.call(false);
+    _emitPlaybackStateChanged(false);
     notifyListeners();
     final pos = position;
-    debugPrint('[Player] Saving on pause: ${(pos.inMilliseconds / 1000.0).toStringAsFixed(1)}s');
+    debugPrint(
+        '[Player] Saving on pause: ${(pos.inMilliseconds / 1000.0).toStringAsFixed(1)}s');
     await _saveProgressLocal(pos);
 
     // Check manual offline before syncing
@@ -2311,7 +2480,8 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> skipForward([int seconds = 30]) async {
     if (_player == null) return;
-    debugPrint('[Service] skipForward(${seconds}s) — playing=${_player!.playing}');
+    debugPrint(
+        '[Service] skipForward(${seconds}s) — playing=${_player!.playing}');
     final newPos = position + Duration(seconds: seconds);
     await _seekAbsolute(newPos.inMilliseconds / 1000.0);
     _logEvent(PlaybackEventType.skipForward, detail: '+${seconds}s');
@@ -2320,7 +2490,8 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> skipBackward([int seconds = 10]) async {
     if (_player == null) return;
-    debugPrint('[Service] skipBackward(${seconds}s) — playing=${_player!.playing}');
+    debugPrint(
+        '[Service] skipBackward(${seconds}s) — playing=${_player!.playing}');
     var n = position - Duration(seconds: seconds);
     if (n < Duration.zero) n = Duration.zero;
     await _seekAbsolute(n.inMilliseconds / 1000.0);
@@ -2368,7 +2539,8 @@ class AudioPlayerService extends ChangeNotifier {
     debugPrint('[Service] setSpeed(${s}x) — before: ${_player!.speed}x');
     await _player!.setSpeed(s);
     debugPrint('[Service] setSpeed done — after: ${_player!.speed}x');
-    _logEvent(PlaybackEventType.speedChange, detail: '${s.toStringAsFixed(2)}x');
+    _logEvent(PlaybackEventType.speedChange,
+        detail: '${s.toStringAsFixed(2)}x');
     if (_currentItemId != null) {
       PlayerSettings.setBookSpeed(_currentItemId!, s);
     }
@@ -2390,7 +2562,8 @@ class AudioPlayerService extends ChangeNotifier {
     // Save final position locally
     if (_currentItemId != null) {
       final pos = position;
-      debugPrint('[Player] Saving on stop: ${(pos.inMilliseconds / 1000.0).toStringAsFixed(1)}s');
+      debugPrint(
+          '[Player] Saving on stop: ${(pos.inMilliseconds / 1000.0).toStringAsFixed(1)}s');
       await _saveProgressLocal(pos);
     }
 
@@ -2411,7 +2584,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     await _player?.stop();
-    _onPlaybackStateChangedCallback?.call(false);
+    _emitPlaybackStateChanged(false);
     _clearState();
     _chapters = [];
     _handler?.updateChaptersQueue(const []);
@@ -2421,7 +2594,9 @@ class AudioPlayerService extends ChangeNotifier {
     }
     // Release audio focus so other apps can use it
     if (!_audioFocusDisabled) {
-      try { (await AudioSession.instance).setActive(false); } catch (_) {}
+      try {
+        (await AudioSession.instance).setActive(false);
+      } catch (_) {}
     }
   }
 
