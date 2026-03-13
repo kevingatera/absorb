@@ -26,7 +26,13 @@ class HomeWidgetService {
   DateTime? _lastUpdate;
   bool _initialized = false;
   bool _updating = false;
+  bool _needsFollowUpUpdate = false;
   StreamSubscription? _clickSub;
+  bool? _lastHasBook;
+  bool? _lastIsPlaying;
+  String? _lastItemId;
+  String? _lastEpisodeId;
+  String? _lastChapterTitle;
 
   /// Call after AudioPlayerService is initialized to start pushing state.
   Future<void> init() async {
@@ -79,7 +85,8 @@ class HomeWidgetService {
 
     final serverUrl = prefs.getString('server_url');
     final token = prefs.getString('token');
-    debugPrint('[HomeWidget] play_pause: server=${serverUrl != null}, token=${token != null}');
+    debugPrint(
+        '[HomeWidget] play_pause: server=${serverUrl != null}, token=${token != null}');
     if (serverUrl == null || token == null) return;
 
     Map<String, String>? customHeaders;
@@ -100,7 +107,8 @@ class HomeWidgetService {
     final episodeId = prefs.getString('widget_episode_id');
 
     try {
-      debugPrint('[HomeWidget] play_pause: fetching item $itemId (episode=$episodeId)');
+      debugPrint(
+          '[HomeWidget] play_pause: fetching item $itemId (episode=$episodeId)');
       final fullItem = await api.getLibraryItem(itemId);
       if (fullItem == null) {
         debugPrint('[HomeWidget] play_pause: getLibraryItem returned null');
@@ -155,6 +163,26 @@ class HomeWidgetService {
   }
 
   void _onPlayerChanged() {
+    final player = AudioPlayerService();
+    final chapterTitle = player.currentChapter?['title'] as String? ?? '';
+    final stateChanged = _lastHasBook != player.hasBook ||
+        _lastIsPlaying != player.isPlaying ||
+        _lastItemId != player.currentItemId ||
+        _lastEpisodeId != player.currentEpisodeId ||
+        _lastChapterTitle != chapterTitle;
+
+    _lastHasBook = player.hasBook;
+    _lastIsPlaying = player.isPlaying;
+    _lastItemId = player.currentItemId;
+    _lastEpisodeId = player.currentEpisodeId;
+    _lastChapterTitle = chapterTitle;
+
+    if (stateChanged) {
+      _pendingUpdate?.cancel();
+      _scheduleUpdate();
+      return;
+    }
+
     // Throttle to max once per 2 seconds, but never drop an update —
     // schedule a deferred one so the final state always gets pushed.
     final now = DateTime.now();
@@ -170,7 +198,10 @@ class HomeWidgetService {
   /// Schedule an update on the next microtask so we never do async work
   /// inside the synchronous ChangeNotifier callback.
   void _scheduleUpdate() {
-    if (_updating) return;
+    if (_updating) {
+      _needsFollowUpUpdate = true;
+      return;
+    }
     _updating = true;
     Future.microtask(() async {
       try {
@@ -179,6 +210,10 @@ class HomeWidgetService {
         debugPrint('[HomeWidget] Update failed: $e');
       } finally {
         _updating = false;
+        if (_needsFollowUpUpdate) {
+          _needsFollowUpUpdate = false;
+          _scheduleUpdate();
+        }
       }
     });
   }
