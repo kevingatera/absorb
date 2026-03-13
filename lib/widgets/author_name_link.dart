@@ -1,6 +1,9 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../providers/auth_provider.dart';
+import '../providers/library_provider.dart';
 import 'author_books_sheet.dart';
 import 'narrator_books_sheet.dart';
 
@@ -162,7 +165,7 @@ class _PersonNameLink extends StatelessWidget {
   bool _isNavigable(_PersonTarget target) {
     switch (kind) {
       case _PersonKind.author:
-        return target.hasResolvedAuthorId;
+        return target.label.isNotEmpty;
       case _PersonKind.narrator:
         return target.label.isNotEmpty;
     }
@@ -185,11 +188,34 @@ class _PersonNameLink extends StatelessWidget {
         );
   }
 
-  void _openTarget(BuildContext context, _PersonTarget target) {
+  Future<String?> _resolveAuthorId(
+      BuildContext context, _PersonTarget target) async {
+    if (target.hasResolvedAuthorId) return target.authorId;
+    final auth = context.read<AuthProvider>();
+    final libraryId = context.read<LibraryProvider>().selectedLibraryId;
+    final api = auth.apiService;
+    if (api == null || libraryId == null || target.label.isEmpty) return null;
+
+    final authors = await api.getLibraryAuthors(libraryId);
+    final wanted = target.label.trim().toLowerCase();
+    for (final author in authors) {
+      final name = (author['name'] as String? ?? '').trim().toLowerCase();
+      final id = author['id'] as String?;
+      if (name == wanted && id != null && id.isNotEmpty) return id;
+    }
+    for (final author in authors) {
+      final name = (author['name'] as String? ?? '').trim().toLowerCase();
+      final id = author['id'] as String?;
+      if (name.contains(wanted) && id != null && id.isNotEmpty) return id;
+    }
+    return null;
+  }
+
+  Future<void> _openTarget(BuildContext context, _PersonTarget target) async {
     FocusManager.instance.primaryFocus?.unfocus();
     switch (kind) {
       case _PersonKind.author:
-        final authorId = target.authorId;
+        final authorId = await _resolveAuthorId(context, target);
         if (authorId == null || authorId.isEmpty) return;
         showAuthorBooksSheet(
           context,
@@ -255,9 +281,9 @@ class _PersonNameLink extends StatelessWidget {
                       color: cs.onSurfaceVariant,
                     ),
                     title: Text(target.label),
-                    onTap: () {
+                    onTap: () async {
                       Navigator.pop(ctx);
-                      _openTarget(context, target);
+                      await _openTarget(context, target);
                     },
                   ),
                 ),
@@ -282,9 +308,9 @@ class _PersonNameLink extends StatelessWidget {
               text: displayedName,
               style: textStyle,
               recognizer: TapGestureRecognizer()
-                ..onTap = () {
+                ..onTap = () async {
                   if (navigableTargets.length == 1) {
-                    _openTarget(context, navigableTargets.first);
+                    await _openTarget(context, navigableTargets.first);
                   } else {
                     _openChooser(context, navigableTargets);
                   }
