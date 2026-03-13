@@ -15,6 +15,7 @@ import 'equalizer_sheet.dart';
 import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
 import 'card_buttons.dart';
+import 'cover_art_viewer.dart';
 import 'playback_history_sheet.dart';
 import 'sleep_timer_sheet.dart';
 import 'chromecast_button.dart';
@@ -605,267 +606,295 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                       spreadRadius: -5),
                                 ],
                               ),
-                              child: RepaintBoundary(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      // Cover image
-                                      _coverUrl != null
-                                          ? _isLocalCover
-                                              ? Image.file(File(_coverUrl!),
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder: (_, __, ___) =>
-                                                      _coverPlaceholder())
-                                              : CachedNetworkImage(
-                                                  imageUrl: _coverUrl!,
-                                                  fit: BoxFit.cover,
-                                                  httpHeaders: mediaHeaders,
-                                                  placeholder: (_, __) =>
-                                                      _coverPlaceholder(),
-                                                  errorWidget: (_, __, ___) =>
-                                                      _coverPlaceholder())
-                                          : _coverPlaceholder(),
-                                      // Downloaded badge (top-right)
-                                      if (isDownloaded)
-                                        Positioned(
-                                          top: 8,
-                                          right: 8,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 8, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black
-                                                  .withValues(alpha: 0.6),
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                    Icons.download_done_rounded,
-                                                    size: 13,
-                                                    color: accent.withValues(
-                                                        alpha: 0.9)),
-                                                const SizedBox(width: 4),
-                                                Text('Downloaded',
-                                                    style: TextStyle(
-                                                        color:
-                                                            accent.withValues(
-                                                                alpha: 0.9),
-                                                        fontSize: 10,
-                                                        fontWeight:
-                                                            FontWeight.w600)),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      // Casting overlay
-                                      if (isCastingThis) ...[
-                                        Positioned.fill(
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              color: Colors.black
-                                                  .withValues(alpha: 0.45),
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                            ),
-                                          ),
-                                        ),
-                                        Positioned.fill(
-                                          child: Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              Icon(Icons.cast_connected_rounded,
-                                                  size: 36,
-                                                  color: accent.withValues(
-                                                      alpha: 0.9)),
-                                              const SizedBox(height: 8),
-                                              Text('Casting to',
-                                                  style: TextStyle(
-                                                      color: Colors.white
-                                                          .withValues(
-                                                              alpha: 0.6),
-                                                      fontSize: 11,
-                                                      fontWeight:
-                                                          FontWeight.w500)),
-                                              const SizedBox(height: 2),
-                                              Padding(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                        horizontal: 16),
-                                                child: Text(
-                                                  castService
-                                                          .connectedDeviceName ??
-                                                      'Device',
-                                                  style: TextStyle(
-                                                      color: accent,
-                                                      fontSize: 14,
-                                                      fontWeight:
-                                                          FontWeight.w700),
-                                                  textAlign: TextAlign.center,
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onLongPress: () => showCoverArtViewer(
+                                  context,
+                                  title: _title,
+                                  coverUrl: _coverUrl,
+                                  httpHeaders: mediaHeaders,
+                                ),
+                                child: RepaintBoundary(
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        // Cover image
+                                        _coverUrl != null
+                                            ? _isLocalCover
+                                                ? Image.file(File(_coverUrl!),
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder:
+                                                        (_, __, ___) =>
+                                                            _coverPlaceholder())
+                                                : CachedNetworkImage(
+                                                    imageUrl: _coverUrl!,
+                                                    fit: BoxFit.cover,
+                                                    httpHeaders: mediaHeaders,
+                                                    placeholder: (_, __) =>
+                                                        _coverPlaceholder(),
+                                                    errorWidget: (_, __, ___) =>
+                                                        _coverPlaceholder())
+                                            : _coverPlaceholder(),
+                                        // Downloaded badge (top-right)
+                                        if (isDownloaded)
+                                          Positioned(
+                                            top: 8,
+                                            right: 8,
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black
+                                                    .withValues(alpha: 0.6),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
                                               ),
-                                            ],
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                      Icons
+                                                          .download_done_rounded,
+                                                      size: 13,
+                                                      color: accent.withValues(
+                                                          alpha: 0.9)),
+                                                  const SizedBox(width: 4),
+                                                  Text('Downloaded',
+                                                      style: TextStyle(
+                                                          color:
+                                                              accent.withValues(
+                                                                  alpha: 0.9),
+                                                          fontSize: 10,
+                                                          fontWeight:
+                                                              FontWeight.w600)),
+                                                ],
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                      ],
-                                      // Finished overlay
-                                      if (isFinished &&
-                                          !_autoRemoveFinished) ...[
-                                        Positioned.fill(
-                                          child: Container(
-                                            color: Colors.black
-                                                .withValues(alpha: 0.78),
+                                        // Casting overlay
+                                        if (isCastingThis) ...[
+                                          Positioned.fill(
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                color: Colors.black
+                                                    .withValues(alpha: 0.45),
+                                                borderRadius:
+                                                    BorderRadius.circular(16),
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                        Positioned.fill(
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 14),
+                                          Positioned.fill(
                                             child: Column(
                                               mainAxisAlignment:
                                                   MainAxisAlignment.center,
                                               children: [
-                                                Icon(Icons.check_circle_rounded,
-                                                    size: 32,
-                                                    color: isDark
-                                                        ? Colors.green.shade400
-                                                        : Colors
-                                                            .green.shade700),
-                                                const SizedBox(height: 6),
-                                                const Text('Finished',
+                                                Icon(
+                                                    Icons
+                                                        .cast_connected_rounded,
+                                                    size: 36,
+                                                    color: accent.withValues(
+                                                        alpha: 0.9)),
+                                                const SizedBox(height: 8),
+                                                Text('Casting to',
                                                     style: TextStyle(
-                                                        color: Colors.white,
-                                                        fontSize: 14,
-                                                        fontWeight:
-                                                            FontWeight.w700)),
-                                                const SizedBox(height: 18),
-                                                SizedBox(
-                                                  width: double.infinity,
-                                                  child: GestureDetector(
-                                                    onTap: _listenAgain,
-                                                    child: Container(
-                                                      padding: const EdgeInsets
-                                                          .symmetric(
-                                                          vertical: 9),
-                                                      decoration: BoxDecoration(
                                                         color: Colors.white
                                                             .withValues(
-                                                                alpha: 0.18),
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(11),
-                                                        border: Border.all(
-                                                            color: Colors.white
-                                                                .withValues(
-                                                                    alpha:
-                                                                        0.25)),
-                                                      ),
-                                                      child: const Text(
-                                                          'Listen Again',
-                                                          textAlign:
-                                                              TextAlign.center,
-                                                          style: TextStyle(
-                                                              color:
-                                                                  Colors.white,
-                                                              fontSize: 12,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w600)),
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                if (isDownloaded)
-                                                  Padding(
-                                                    padding:
-                                                        const EdgeInsets.only(
-                                                            bottom: 8),
-                                                    child: SizedBox(
-                                                      width: double.infinity,
-                                                      child: GestureDetector(
-                                                        onTap: () =>
-                                                            _deleteDownload(
-                                                                dlKey),
-                                                        child: Container(
-                                                          padding:
-                                                              const EdgeInsets
-                                                                  .symmetric(
-                                                                  vertical: 9),
-                                                          decoration:
-                                                              BoxDecoration(
-                                                            borderRadius:
-                                                                BorderRadius
-                                                                    .circular(
-                                                                        11),
-                                                            border: Border.all(
-                                                                color: Colors
-                                                                    .white
-                                                                    .withValues(
-                                                                        alpha:
-                                                                            0.18)),
-                                                          ),
-                                                          child: const Text(
-                                                              'Delete Download',
-                                                              textAlign:
-                                                                  TextAlign
-                                                                      .center,
-                                                              style: TextStyle(
-                                                                  color: Colors
-                                                                      .white70,
-                                                                  fontSize: 12,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .w500)),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                SizedBox(
-                                                  width: double.infinity,
-                                                  child: GestureDetector(
-                                                    onTap: _removeFromAbsorbing,
-                                                    child: Container(
-                                                      padding: const EdgeInsets
-                                                          .symmetric(
-                                                          vertical: 9),
-                                                      decoration: BoxDecoration(
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(11),
-                                                        border: Border.all(
-                                                            color: Colors.white
-                                                                .withValues(
-                                                                    alpha:
-                                                                        0.18)),
-                                                      ),
-                                                      child: const Text(
-                                                          'Remove from Absorbing',
-                                                          textAlign:
-                                                              TextAlign.center,
-                                                          style: TextStyle(
-                                                              color: Colors
-                                                                  .white70,
-                                                              fontSize: 12,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w500)),
-                                                    ),
+                                                                alpha: 0.6),
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.w500)),
+                                                const SizedBox(height: 2),
+                                                Padding(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 16),
+                                                  child: Text(
+                                                    castService
+                                                            .connectedDeviceName ??
+                                                        'Device',
+                                                    style: TextStyle(
+                                                        color: accent,
+                                                        fontSize: 14,
+                                                        fontWeight:
+                                                            FontWeight.w700),
+                                                    textAlign: TextAlign.center,
+                                                    maxLines: 2,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
                                                   ),
                                                 ),
                                               ],
                                             ),
                                           ),
-                                        ),
+                                        ],
+                                        // Finished overlay
+                                        if (isFinished &&
+                                            !_autoRemoveFinished) ...[
+                                          Positioned.fill(
+                                            child: Container(
+                                              color: Colors.black
+                                                  .withValues(alpha: 0.78),
+                                            ),
+                                          ),
+                                          Positioned.fill(
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 14),
+                                              child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(
+                                                      Icons
+                                                          .check_circle_rounded,
+                                                      size: 32,
+                                                      color: isDark
+                                                          ? Colors
+                                                              .green.shade400
+                                                          : Colors
+                                                              .green.shade700),
+                                                  const SizedBox(height: 6),
+                                                  const Text('Finished',
+                                                      style: TextStyle(
+                                                          color: Colors.white,
+                                                          fontSize: 14,
+                                                          fontWeight:
+                                                              FontWeight.w700)),
+                                                  const SizedBox(height: 18),
+                                                  SizedBox(
+                                                    width: double.infinity,
+                                                    child: GestureDetector(
+                                                      onTap: _listenAgain,
+                                                      child: Container(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                                vertical: 9),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: Colors.white
+                                                              .withValues(
+                                                                  alpha: 0.18),
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(11),
+                                                          border: Border.all(
+                                                              color: Colors
+                                                                  .white
+                                                                  .withValues(
+                                                                      alpha:
+                                                                          0.25)),
+                                                        ),
+                                                        child: const Text(
+                                                            'Listen Again',
+                                                            textAlign: TextAlign
+                                                                .center,
+                                                            style: TextStyle(
+                                                                color: Colors
+                                                                    .white,
+                                                                fontSize: 12,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600)),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  if (isDownloaded)
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                              bottom: 8),
+                                                      child: SizedBox(
+                                                        width: double.infinity,
+                                                        child: GestureDetector(
+                                                          onTap: () =>
+                                                              _deleteDownload(
+                                                                  dlKey),
+                                                          child: Container(
+                                                            padding:
+                                                                const EdgeInsets
+                                                                    .symmetric(
+                                                                    vertical:
+                                                                        9),
+                                                            decoration:
+                                                                BoxDecoration(
+                                                              borderRadius:
+                                                                  BorderRadius
+                                                                      .circular(
+                                                                          11),
+                                                              border: Border.all(
+                                                                  color: Colors
+                                                                      .white
+                                                                      .withValues(
+                                                                          alpha:
+                                                                              0.18)),
+                                                            ),
+                                                            child: const Text(
+                                                                'Delete Download',
+                                                                textAlign:
+                                                                    TextAlign
+                                                                        .center,
+                                                                style: TextStyle(
+                                                                    color: Colors
+                                                                        .white70,
+                                                                    fontSize:
+                                                                        12,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w500)),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  SizedBox(
+                                                    width: double.infinity,
+                                                    child: GestureDetector(
+                                                      onTap:
+                                                          _removeFromAbsorbing,
+                                                      child: Container(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                                vertical: 9),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(11),
+                                                          border: Border.all(
+                                                              color: Colors
+                                                                  .white
+                                                                  .withValues(
+                                                                      alpha:
+                                                                          0.18)),
+                                                        ),
+                                                        child: const Text(
+                                                            'Remove from Absorbing',
+                                                            textAlign: TextAlign
+                                                                .center,
+                                                            style: TextStyle(
+                                                                color: Colors
+                                                                    .white70,
+                                                                fontSize: 12,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500)),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ],
-                                    ],
+                                    ),
                                   ),
                                 ),
                               ),
