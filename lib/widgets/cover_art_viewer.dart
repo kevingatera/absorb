@@ -100,44 +100,50 @@ class _CoverArtViewerPageState extends State<_CoverArtViewerPage> {
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: _close,
-                onVerticalDragUpdate: (details) {
-                  if (!_canSwipeDismiss || details.primaryDelta == null) return;
-                  setState(() {
-                    _dragOffset =
-                        (_dragOffset + details.primaryDelta!).clamp(0, 260);
-                  });
-                },
-                onVerticalDragEnd: (_) {
-                  if (_dragOffset > 120) {
-                    _close();
-                  } else {
-                    setState(() => _dragOffset = 0);
-                  }
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  transform: Matrix4.identity()
-                    ..translate(0.0, _dragOffset, 0.0)
-                    ..scale(1 - (_dragOffset / 1800)),
-                  child: InteractiveViewer(
-                    transformationController: _transformController,
-                    minScale: 1,
-                    maxScale: 5,
-                    panEnabled: true,
-                    clipBehavior: Clip.none,
-                    child: Center(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onTap: () {},
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 72, 20, 44),
-                          child: AspectRatio(
-                            aspectRatio: 1,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(24),
-                              child: image,
-                            ),
+                child: const SizedBox.expand(),
+              ),
+            ),
+            Positioned.fill(
+              child: Center(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragUpdate: (details) {
+                    if (!_canSwipeDismiss || details.primaryDelta == null)
+                      return;
+                    setState(() {
+                      _dragOffset =
+                          (_dragOffset + details.primaryDelta!).clamp(0, 260);
+                    });
+                  },
+                  onVerticalDragEnd: (_) {
+                    if (_dragOffset > 120) {
+                      _close();
+                    } else {
+                      setState(() => _dragOffset = 0);
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    transform: Matrix4.identity()
+                      ..translate(0.0, _dragOffset, 0.0)
+                      ..scale(1 - (_dragOffset / 1800)),
+                    child: InteractiveViewer(
+                      transformationController: _transformController,
+                      minScale: 1,
+                      maxScale: 5,
+                      panEnabled: true,
+                      constrained: false,
+                      boundaryMargin: const EdgeInsets.all(80),
+                      clipBehavior: Clip.none,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 72, 20, 44),
+                        child: SizedBox(
+                          width: MediaQuery.of(context).size.width - 40,
+                          height: MediaQuery.of(context).size.width - 40,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(24),
+                            child: image,
                           ),
                         ),
                       ),
