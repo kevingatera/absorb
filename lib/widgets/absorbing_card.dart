@@ -21,6 +21,7 @@ import 'chromecast_button.dart';
 import '../services/chromecast_service.dart';
 import '../services/progress_sync_service.dart';
 import 'expanded_card.dart';
+import '../screens/car_mode_screen.dart';
 
 class AbsorbingCard extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -1020,6 +1021,12 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
           accent: Colors.red.shade300, isActive: true, alwaysEnabled: true, large: large,
           onTap: _removeFromAbsorbing,
         );
+      case 'car':
+        return CardWideButton(
+          icon: Icons.directions_car_rounded, label: 'Car Mode',
+          accent: accent, isActive: true, alwaysEnabled: true, large: large,
+          onTap: () => _openCarMode(context),
+        );
       default:
         return const SizedBox.shrink();
     }
@@ -1122,9 +1129,30 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
           accent: Colors.red.shade300,
           onTap: () { Navigator.pop(ctx); _removeFromAbsorbing(); },
         );
+      case 'car':
+        return MoreMenuItem(
+          icon: Icons.directions_car_rounded, label: 'Car Mode', accent: accent,
+          onTap: () { Navigator.pop(ctx); _openCarMode(context); },
+        );
       default:
         return const SizedBox.shrink();
     }
+  }
+
+  void _openCarMode(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => CarModeScreen(
+        player: widget.player,
+        itemId: _itemId,
+        fallbackTitle: _title,
+        fallbackAuthor: _author,
+        fallbackCoverUrl: _coverUrl,
+        fallbackDuration: _effectiveDuration,
+        fallbackChapters: _chapters,
+        episodeId: _episodeId,
+        episodeTitle: _recentEpisode?['title'] as String?,
+      ),
+    ));
   }
 
   void _handleCastTap(BuildContext context, Color accent) {

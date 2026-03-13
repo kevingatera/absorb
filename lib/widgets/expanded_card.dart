@@ -19,6 +19,7 @@ import 'card_playback_controls.dart';
 import 'card_buttons.dart';
 import 'chromecast_button.dart';
 import 'sleep_timer_sheet.dart';
+import '../screens/car_mode_screen.dart';
 
 // ─── Custom route: slide-up + fade ────────────────────────────
 
@@ -1095,6 +1096,12 @@ class _ExpandedCardState extends State<ExpandedCard> {
           accent: Colors.red.shade300, isActive: true, alwaysEnabled: true, large: large,
           onTap: () { _removeFromAbsorbing(); _dismissExpanded(); },
         );
+      case 'car':
+        return CardWideButton(
+          icon: Icons.directions_car_rounded, label: 'Car Mode',
+          accent: accent, isActive: true, alwaysEnabled: true, large: large,
+          onTap: () => _openCarMode(context),
+        );
       default:
         return const SizedBox.shrink();
     }
@@ -1197,9 +1204,30 @@ class _ExpandedCardState extends State<ExpandedCard> {
           accent: Colors.red.shade300,
           onTap: () { Navigator.pop(ctx); _removeFromAbsorbing(); _dismissExpanded(); },
         );
+      case 'car':
+        return MoreMenuItem(
+          icon: Icons.directions_car_rounded, label: 'Car Mode', accent: accent,
+          onTap: () { Navigator.pop(ctx); _openCarMode(context); },
+        );
       default:
         return const SizedBox.shrink();
     }
+  }
+
+  void _openCarMode(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => CarModeScreen(
+        player: widget.player,
+        itemId: _itemId,
+        fallbackTitle: _title,
+        fallbackAuthor: _author,
+        fallbackCoverUrl: _coverUrl,
+        fallbackDuration: _effectiveDuration,
+        fallbackChapters: _chapters,
+        episodeId: _episodeId,
+        episodeTitle: _recentEpisode?['title'] as String?,
+      ),
+    ));
   }
 
   void _handleCastTap(BuildContext context, Color accent) {

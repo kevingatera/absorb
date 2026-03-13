@@ -4,6 +4,7 @@ import '../services/bookmark_service.dart';
 import '../services/chromecast_service.dart';
 import '../services/sleep_timer_service.dart';
 import 'absorb_slider.dart';
+import 'audio_output_sheet.dart';
 import 'card_button_config.dart';
 import 'sleep_timer_sheet.dart';
 
@@ -625,6 +626,17 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
     return _buildNormalMode(cs, tt);
   }
 
+  void _showAudioOutputPicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => AudioOutputSheet(accent: widget.accent),
+    );
+  }
+
   Widget _buildNormalMode(ColorScheme cs, TextTheme tt) {
     return Container(
       decoration: BoxDecoration(
@@ -638,11 +650,21 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Drag handle + edit button
+              // Drag handle + audio output button + edit button
               Stack(
                 alignment: Alignment.center,
                 children: [
                   Container(width: 40, height: 4, decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2))),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: GestureDetector(
+                      onTap: () => _showAudioOutputPicker(context),
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Icon(Icons.volume_up_rounded, size: 18, color: cs.onSurface.withValues(alpha: 0.5)),
+                      ),
+                    ),
+                  ),
                   Align(
                     alignment: Alignment.centerRight,
                     child: GestureDetector(

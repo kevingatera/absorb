@@ -17,6 +17,7 @@ const allCardButtons = [
   CardButtonDef('cast', 'Cast to Device', Icons.cast_rounded),
   CardButtonDef('history', 'Playback History', Icons.history_rounded),
   CardButtonDef('remove', 'Remove from Absorbing', Icons.remove_circle_outline_rounded),
+  CardButtonDef('car', 'Car Mode', Icons.directions_car_rounded),
 ];
 
 /// Look up a button definition by ID.
