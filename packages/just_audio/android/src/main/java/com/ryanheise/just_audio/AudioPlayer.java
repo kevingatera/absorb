@@ -1,6 +1,8 @@
 package com.ryanheise.just_audio;
 
 import android.content.Context;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
 import android.media.audiofx.AudioEffect;
 import android.media.audiofx.Equalizer;
 import android.media.audiofx.LoudnessEnhancer;
@@ -557,6 +559,23 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
                 setAudioAttributes(call.argument("contentType"), call.argument("flags"), call.argument("usage"));
                 result.success(new HashMap<String, Object>());
                 break;
+            case "setPreferredAudioDevice":
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && player != null) {
+                    Integer deviceId = call.argument("deviceId");
+                    if (deviceId == null || deviceId == 0) {
+                        player.setPreferredAudioDevice(null);
+                    } else {
+                        AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+                        AudioDeviceInfo[] devices = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+                        AudioDeviceInfo target = null;
+                        for (AudioDeviceInfo d : devices) {
+                            if (d.getId() == deviceId) { target = d; break; }
+                        }
+                        player.setPreferredAudioDevice(target);
+                    }
+                }
+                result.success(new HashMap<String, Object>());
+                break;
             case "audioEffectSetEnabled":
                 audioEffectSetEnabled(call.argument("type"), call.argument("enabled"));
                 result.success(new HashMap<String, Object>());
@@ -875,6 +894,12 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
                 builder.setLivePlaybackSpeedControl(livePlaybackSpeedControl);
             }
             player = builder.build();
+            final ExoPlayer p = player;
+            OutputDeviceController.register(device -> {
+                if (p != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    p.setPreferredAudioDevice(device);
+                }
+            });
             // player.setTrackSelectionParameters(
             //     player.getTrackSelectionParameters()
             //         .buildUpon()
