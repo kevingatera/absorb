@@ -766,17 +766,6 @@ class LibraryProvider extends ChangeNotifier {
     SocketService().softReconnect();
   }
 
-  /// Go offline due to a network error. Builds offline sections and starts
-  /// pinging the server for recovery if the device still has connectivity.
-  void _goOffline() {
-    if (_networkOffline) return;
-    debugPrint('[Library] Network error — going offline');
-    _networkOffline = true;
-    _buildOfflineSections();
-    notifyListeners();
-    if (_deviceHasConnectivity && !_manualOffline) _startServerPingTimer();
-  }
-
   /// Handle a progress update pushed from the server (cross-device sync).
   void _onRemoteProgressUpdated(Map<String, dynamic> mp) {
     final itemId = mp['libraryItemId'] as String?;
