@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'author_books_sheet.dart';
@@ -274,27 +275,35 @@ class _PersonNameLink extends StatelessWidget {
     final navigableTargets = targets.where(_isNavigable).toList();
     final clickable = displayedName.isNotEmpty && navigableTargets.isNotEmpty;
 
-    final text = Text(
-      displayedName,
-      textAlign: textAlign,
-      maxLines: maxLines,
-      overflow: overflow,
-      style: _interactiveStyle(context, clickable),
-    );
+    final textStyle = _interactiveStyle(context, clickable);
+    final text = clickable
+        ? Text.rich(
+            TextSpan(
+              text: displayedName,
+              style: textStyle,
+              recognizer: TapGestureRecognizer()
+                ..onTap = () {
+                  if (navigableTargets.length == 1) {
+                    _openTarget(context, navigableTargets.first);
+                  } else {
+                    _openChooser(context, navigableTargets);
+                  }
+                },
+            ),
+            textAlign: textAlign,
+            maxLines: maxLines,
+            overflow: overflow ?? TextOverflow.clip,
+          )
+        : Text(
+            displayedName,
+            textAlign: textAlign,
+            maxLines: maxLines,
+            overflow: overflow,
+            style: textStyle,
+          );
 
     if (!clickable) return text;
-
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onTap: () {
-        if (navigableTargets.length == 1) {
-          _openTarget(context, navigableTargets.first);
-        } else {
-          _openChooser(context, navigableTargets);
-        }
-      },
-      child: text,
-    );
+    return text;
   }
 }
 
