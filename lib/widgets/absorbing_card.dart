@@ -127,7 +127,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
 
   String? get _viewerCoverUrl {
     final lib = context.read<LibraryProvider>();
-    return lib.getCoverUrl(_itemId, width: 2000);
+    return lib.getCoverUrl(_itemId, width: 2400);
   }
 
   bool get _isLocalCover => _coverUrl != null && _coverUrl!.startsWith('/');

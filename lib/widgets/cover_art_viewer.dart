@@ -29,7 +29,7 @@ void showCoverArtViewer(
   );
 }
 
-class _CoverArtViewerPage extends StatelessWidget {
+class _CoverArtViewerPage extends StatefulWidget {
   final String title;
   final String coverUrl;
   final Map<String, String> httpHeaders;
@@ -41,23 +41,49 @@ class _CoverArtViewerPage extends StatelessWidget {
   });
 
   @override
+  State<_CoverArtViewerPage> createState() => _CoverArtViewerPageState();
+}
+
+class _CoverArtViewerPageState extends State<_CoverArtViewerPage> {
+  final TransformationController _transformController =
+      TransformationController();
+  double _dragOffset = 0;
+
+  bool get _canSwipeDismiss =>
+      _transformController.value.getMaxScaleOnAxis() <= 1.02;
+
+  void _close() {
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  void dispose() {
+    _transformController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-    final isLocal = coverUrl.startsWith('/');
+    final isLocal = widget.coverUrl.startsWith('/');
 
     Widget image;
     if (isLocal) {
       image = Image.file(
-        File(coverUrl),
+        File(widget.coverUrl),
         fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
         errorBuilder: (_, __, ___) => const _ViewerPlaceholder(),
       );
     } else {
       image = CachedNetworkImage(
-        imageUrl: coverUrl,
-        httpHeaders: httpHeaders,
+        imageUrl: widget.coverUrl,
+        httpHeaders: widget.httpHeaders,
         fit: BoxFit.contain,
+        fadeInDuration: const Duration(milliseconds: 120),
+        memCacheWidth: 2400,
+        maxWidthDiskCache: 2400,
         placeholder: (_, __) => const Center(
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
@@ -71,19 +97,49 @@ class _CoverArtViewerPage extends StatelessWidget {
         child: Stack(
           children: [
             Positioned.fill(
-              child: InteractiveViewer(
-                minScale: 1,
-                maxScale: 5,
-                panEnabled: true,
-                clipBehavior: Clip.none,
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 72, 20, 44),
-                    child: AspectRatio(
-                      aspectRatio: 1,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
-                        child: image,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _close,
+                onVerticalDragUpdate: (details) {
+                  if (!_canSwipeDismiss || details.primaryDelta == null) return;
+                  setState(() {
+                    _dragOffset =
+                        (_dragOffset + details.primaryDelta!).clamp(0, 260);
+                  });
+                },
+                onVerticalDragEnd: (_) {
+                  if (_dragOffset > 120) {
+                    _close();
+                  } else {
+                    setState(() => _dragOffset = 0);
+                  }
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  transform: Matrix4.identity()
+                    ..translate(0.0, _dragOffset, 0.0)
+                    ..scale(1 - (_dragOffset / 1800)),
+                  child: InteractiveViewer(
+                    transformationController: _transformController,
+                    minScale: 1,
+                    maxScale: 5,
+                    panEnabled: true,
+                    clipBehavior: Clip.none,
+                    child: Center(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: () {},
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 72, 20, 44),
+                          child: AspectRatio(
+                            aspectRatio: 1,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(24),
+                              child: image,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -97,7 +153,7 @@ class _CoverArtViewerPage extends StatelessWidget {
               child: Row(
                 children: [
                   IconButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: _close,
                     icon: const Icon(Icons.close_rounded),
                     style: IconButton.styleFrom(
                       backgroundColor: Colors.white.withValues(alpha: 0.08),
@@ -107,7 +163,7 @@ class _CoverArtViewerPage extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      title,
+                      widget.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: tt.titleMedium?.copyWith(
@@ -135,7 +191,7 @@ class _CoverArtViewerPage extends StatelessWidget {
                     ),
                   ),
                   child: Text(
-                    'Pinch to zoom and drag to inspect',
+                    'Pinch to zoom, drag to inspect, swipe down to close',
                     style: tt.labelMedium?.copyWith(
                       color: Colors.white.withValues(alpha: 0.9),
                       fontWeight: FontWeight.w500,
