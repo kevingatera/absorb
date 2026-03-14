@@ -87,7 +87,7 @@ class DownloadInfo {
               ?.map((e) => e as String)
               .toList() ??
           [],
-      sessionData: json['sessionData'] as String?,
+      sessionData: _stripLibraryItem(json['sessionData'] as String?),
       title: title,
       author: author,
       coverUrl: coverUrl,
@@ -113,6 +113,20 @@ class _QueuedDownload {
     this.coverUrl,
     this.episodeId,
   });
+}
+
+/// Strip the bulky `libraryItem` from persisted session data.
+/// For podcasts this contains ALL episodes and can be hundreds of KB.
+String? _stripLibraryItem(String? sessionJson) {
+  if (sessionJson == null) return null;
+  try {
+    final session = jsonDecode(sessionJson) as Map<String, dynamic>;
+    if (session.containsKey('libraryItem')) {
+      session.remove('libraryItem');
+      return jsonEncode(session);
+    }
+  } catch (_) {}
+  return sessionJson;
 }
 
 /// Sanitize a string for use as a filesystem directory/file name.
@@ -319,7 +333,15 @@ class DownloadService extends ChangeNotifier {
         if (entry.value.status != DownloadStatus.downloaded) continue;
         bool allExist = true;
         for (final path in entry.value.localPaths) {
-          if (!await File(path).exists()) {
+          try {
+            final exists = await File(path).exists()
+                .timeout(const Duration(seconds: 3));
+            if (!exists) {
+              allExist = false;
+              break;
+            }
+          } catch (_) {
+            // Timeout or permission error — treat as missing
             allExist = false;
             break;
           }
@@ -793,15 +815,23 @@ class DownloadService extends ChangeNotifier {
       final sessionId = sessionData['id'] as String?;
       if (sessionId != null) {
         try {
-          await api.closePlaybackSession(sessionId);
+          await api.closePlaybackSession(sessionId)
+              .timeout(const Duration(seconds: 10));
         } catch (_) {}
       }
+
+      // Strip large nested objects from session data before persisting.
+      // libraryItem contains the full item (with ALL episodes for podcasts)
+      // and can be hundreds of KB - storing one per downloaded episode
+      // bloats SharedPreferences and can cause ANR/OOM.
+      final slimSession = Map<String, dynamic>.from(sessionData);
+      slimSession.remove('libraryItem');
 
       _downloads[itemId] = DownloadInfo(
         itemId: itemId,
         status: DownloadStatus.downloaded,
         localPaths: completedPaths,
-        sessionData: jsonEncode(sessionData),
+        sessionData: jsonEncode(slimSession),
         title: title,
         author: author,
         coverUrl: coverUrl,
@@ -879,6 +909,7 @@ class DownloadService extends ChangeNotifier {
 
     _activeDownloadIds.remove(itemId);
     _downloadSlots.remove(itemId);
+    try { _httpClients[itemId]?.close(); } catch (_) {}
     _httpClients.remove(itemId);
     _cancelledIds.remove(itemId);
 
