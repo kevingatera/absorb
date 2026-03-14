@@ -473,8 +473,6 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             // ── Header ──
             AbsorbPageHeader(
               title: 'Absorbing',
-              brandingColor: muted,
-              titleColor: cs.onSurface,
               padding: const EdgeInsets.fromLTRB(20, 12, 12, 0),
               actions: [
                 // Offline mode toggle

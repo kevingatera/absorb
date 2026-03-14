@@ -30,7 +30,6 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with TickerPr
   double? _bookDragValue;
   bool _showBookSlider = false;
   bool _speedAdjustedTime = true;
-  late AnimationController _waveController;
   late AnimationController _smoothTicker;
 
   // Smooth position tracking
@@ -45,8 +44,7 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with TickerPr
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _waveController = AnimationController(vsync: this, duration: const Duration(milliseconds: 2500))..repeat();
-    _smoothTicker = AnimationController(vsync: this, duration: const Duration(days: 999))..repeat();
+    _smoothTicker = AnimationController(vsync: this, duration: const Duration(days: 999));
     _loadSettings();
     _subscribePosition();
     PlayerSettings.settingsChanged.addListener(_loadSettings);
@@ -76,6 +74,14 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with TickerPr
     if (old.isActive != widget.isActive) _subscribePosition();
   }
 
+  void _syncTicker() {
+    if (_isPlaying && widget.isActive) {
+      if (!_smoothTicker.isAnimating) _smoothTicker.repeat();
+    } else {
+      if (_smoothTicker.isAnimating) _smoothTicker.stop();
+    }
+  }
+
   void _subscribePosition() {
     _posSub?.cancel();
     final cast = ChromecastService();
@@ -86,12 +92,14 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with TickerPr
       _lastPosTime = DateTime.now();
       _currentSpeed = cast.castSpeed;
       _isPlaying = cast.isPlaying;
+      _syncTicker();
       _posSub = cast.castPositionStream?.listen((dur) {
         final posSeconds = dur.inMilliseconds / 1000.0;
         _lastKnownPos = posSeconds;
         _lastPosTime = DateTime.now();
         _currentSpeed = cast.castSpeed;
         _isPlaying = cast.isPlaying;
+        _syncTicker();
       });
     } else if (widget.isActive) {
       // Reset to the seed on a fresh subscription — clears stale position from a
@@ -114,6 +122,7 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with TickerPr
             _lastPosTime = DateTime.now();
             _currentSpeed = widget.player.speed;
             _isPlaying = widget.player.isPlaying;
+            _syncTicker();
             // Stream has caught up — clear the seek target so subsequent
             // position updates flow through normally without filtering.
             widget.player.clearSeekTarget();
@@ -132,9 +141,11 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with TickerPr
         _lastPosTime = DateTime.now();
         _currentSpeed = widget.player.speed;
         _isPlaying = widget.player.isPlaying;
+        _syncTicker();
       });
       _currentSpeed = widget.player.speed;
       _isPlaying = widget.player.isPlaying;
+      _syncTicker();
     }
   }
 
@@ -161,7 +172,6 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with TickerPr
     PlayerSettings.settingsChanged.removeListener(_loadSettings);
     ChromecastService().removeListener(_onCastChanged);
     _posSub?.cancel();
-    _waveController.dispose();
     _smoothTicker.dispose();
     super.dispose();
   }

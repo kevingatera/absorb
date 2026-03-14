@@ -462,18 +462,30 @@ class _AnimatedWaveIconState extends State<_AnimatedWaveIcon>
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
-    )..repeat();
-    _player.addListener(_rebuild);
+    );
+    _player.addListener(_onPlayerChanged);
+    _syncAnimation();
   }
 
   @override
   void dispose() {
     _ctrl.dispose();
-    _player.removeListener(_rebuild);
+    _player.removeListener(_onPlayerChanged);
     super.dispose();
   }
 
-  void _rebuild() { if (mounted) setState(() {}); }
+  void _onPlayerChanged() {
+    _syncAnimation();
+    if (mounted) setState(() {});
+  }
+
+  void _syncAnimation() {
+    if (_player.isPlaying) {
+      if (!_ctrl.isAnimating) _ctrl.repeat();
+    } else {
+      if (_ctrl.isAnimating) _ctrl.stop();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

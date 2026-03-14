@@ -221,6 +221,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
+  Widget _infoIcon(String title, String content) {
+    final cs = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: () => showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Got it'))],
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4),
+        child: Icon(Icons.info_outline_rounded, size: 16, color: cs.onSurfaceVariant),
+      ),
+    );
+  }
+
   Future<void> _saveRewind(AutoRewindSettings s) async {
     setState(() => _rewindSettings = s);
     await s.save();
@@ -643,7 +661,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('When absorbed', style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+                        Row(children: [
+                          Text('When absorbed', style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+                          _infoIcon('When Absorbed', 'Controls what happens to an absorbing card when you finish a book or episode.\n\nShow Overlay: A completion overlay appears on the card, letting you choose what to do next.\n\nAuto-release: The finished card is automatically removed from your Absorbing screen.'),
+                        ]),
                         const SizedBox(height: 4),
                         Text('What happens to the absorbing card when a book or episode finishes',
                           style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
@@ -663,7 +684,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ]),
                     ),
                     SwitchListTile(
-                      title: const Text('Merge libraries'),
+                      title: Row(children: [
+                        const Text('Merge libraries'),
+                        _infoIcon('Merge Libraries', 'When enabled, the Absorbing screen shows all your in-progress books and podcasts from every library in a single view. When disabled, only items from the library you currently have selected are shown.'),
+                      ]),
                       subtitle: Text(
                         _mergeAbsorbingLibraries
                             ? 'Absorbing page shows items from all libraries'
@@ -1179,7 +1203,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     SwitchListTile(
-                      title: const Text('Auto download on Wi-Fi'),
+                      title: Row(children: [
+                        const Text('Auto download on Wi-Fi'),
+                        _infoIcon('Auto Download on Wi-Fi', 'When you start streaming a book over Wi-Fi, it will automatically begin downloading the full book in the background. This way you\'ll have it available offline without having to manually start the download.'),
+                      ]),
                       subtitle: Text(
                         _autoDownloadOnStream
                             ? 'Books download in the background when you start streaming on Wi-Fi'
@@ -1231,7 +1258,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Keep next', style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+                          Row(children: [
+                            Text('Keep next', style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+                            _infoIcon('Keep Next', 'The number of items to keep downloaded, including the one you\'re currently listening to. For example, "Keep next 3" means the current book plus the next 2 in the series or podcast will stay downloaded.'),
+                          ]),
                           const SizedBox(height: 8),
                           SizedBox(width: double.infinity, child: SegmentedButton<int>(
                             segments: const [
@@ -1251,7 +1281,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     SwitchListTile(
-                      title: const Text('Delete absorbed downloads'),
+                      title: Row(children: [
+                        const Text('Delete absorbed downloads'),
+                        _infoIcon('Delete Absorbed Downloads', 'When enabled, downloaded books or episodes are automatically deleted from your device after you finish listening to them. This helps free up storage space as you work through your library.'),
+                      ]),
                       subtitle: Text(
                         _rollingDownloadDeleteFinished
                             ? 'Finished items are removed to save space'
@@ -1305,7 +1338,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const SizedBox(height: 12),
-                          Text('Streaming cache', style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+                          Row(children: [
+                            Text('Streaming cache', style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+                            _infoIcon('Streaming Cache', 'Caches streamed audio to disk so it doesn\'t need to be re-downloaded if you seek back or re-listen to sections. The cache is automatically managed - oldest files are removed when the size limit is reached. This is separate from fully downloaded books.'),
+                          ]),
                           const SizedBox(height: 4),
                           Text(
                             _streamingCacheSizeMb == 0
@@ -1570,7 +1606,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onExpansionChanged: (v) => _onSectionExpanded('Advanced', v),
                   children: [
                     SwitchListTile(
-                      title: const Text('Local server'),
+                      title: Row(children: [
+                        const Text('Local server'),
+                        _infoIcon('Local Server', 'If you run your Audiobookshelf server at home, you can set a local/LAN URL here. Absorb will automatically switch to the faster local connection when it detects you\'re on your home network, and fall back to your remote URL when you\'re away.'),
+                      ]),
                       subtitle: Text(
                         _localServerEnabled
                             ? (auth.useLocalServer
@@ -1661,7 +1700,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     SwitchListTile(
-                      title: const Text('Disable audio focus'),
+                      title: Row(children: [
+                        const Text('Disable audio focus'),
+                        _infoIcon('Audio Focus', 'By default, Android gives audio "focus" to one app at a time - when Absorb plays, other audio (music, videos) will pause. Disabling audio focus lets Absorb play alongside other apps. Phone calls will still pause playback regardless of this setting.'),
+                      ]),
                       subtitle: Text(
                         _disableAudioFocus
                             ? 'On - plays alongside other audio (still pauses for calls)'

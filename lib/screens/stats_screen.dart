@@ -188,11 +188,11 @@ class _StatsScreenState extends State<StatsScreen>
     final topItems = _topItems();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
       children: [
         const AbsorbPageHeader(
           title: 'Your Stats',
-          padding: EdgeInsets.only(top: 4),
+          padding: EdgeInsets.only(top: 12),
         ),
         const SizedBox(height: 24),
 

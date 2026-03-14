@@ -336,8 +336,11 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     handleInterruptions: false,
     audioLoadConfiguration: const AudioLoadConfiguration(
       androidLoadControl: AndroidLoadControl(
+        minBufferDuration: Duration(minutes: 5),
+        maxBufferDuration: Duration(minutes: 5),
         bufferForPlaybackDuration: Duration(milliseconds: 500),
         bufferForPlaybackAfterRebufferDuration: Duration(milliseconds: 2000),
+        backBufferDuration: Duration(minutes: 5),
       ),
     ),
   );
@@ -356,13 +359,21 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   }
 
   AudioPlayerHandler() {
-    // Manually subscribe instead of .pipe() so we can handle errors.
-    // Without onError, a stream error (e.g. network timeout during streaming)
-    // would break the audio_service notification pipeline and crash the app.
+    _subscribePlaybackEvents();
+  }
+
+  /// Subscribe to the player's playback event stream and forward state to
+  /// the system MediaSession. If the stream errors (e.g. network timeout),
+  /// re-subscribe so system media controls stay alive.
+  void _subscribePlaybackEvents() {
     _player.playbackEventStream.map(_transformEvent).listen(
       playbackState.add,
       onError: (Object e, StackTrace st) {
-        debugPrint('[Player] playbackEvent error (suppressed): $e');
+        debugPrint('[Player] playbackEvent error - re-subscribing: $e');
+        // Push the last known good state so the notification doesn't go stale
+        refreshPlaybackState();
+        // Re-subscribe so future events still reach the MediaSession
+        _subscribePlaybackEvents();
       },
     );
   }
@@ -1240,14 +1251,21 @@ class AudioPlayerService extends ChangeNotifier {
       // Still pause when headphones/BT disconnect
       _noisySub?.cancel();
       _noisySub = session.becomingNoisyEventStream.listen((_) async {
-        final service = _instance;
-        debugPrint('[AudioSession] Becoming noisy - pausing');
-        _noisyPause = true;
-        service._wasPlayingBeforeInterrupt = false;
-        _handler?.cancelPendingClick();
-        if (service.isPlaying) {
-          await service.pause();
+        try {
+          final service = _instance;
+          debugPrint('[AudioSession] Becoming noisy - pausing');
+          _noisyPause = true;
+          service._wasPlayingBeforeInterrupt = false;
+          _handler?.cancelPendingClick();
+          if (service.isPlaying) {
+            await service.pause();
+          }
+        } catch (e) {
+          debugPrint('[AudioSession] Noisy handler error: $e');
         }
+      }, onError: (e) {
+        debugPrint('[AudioSession] Noisy stream error - re-subscribing: $e');
+        _configureAudioSession();
       });
       return;
     }
@@ -1257,67 +1275,81 @@ class AudioPlayerService extends ChangeNotifier {
 
     _interruptSub?.cancel();
     _interruptSub = session.interruptionEventStream.listen((event) async {
-      final service = _instance;
+      try {
+        final service = _instance;
 
-      if (event.begin) {
-        if (service.isPlaying) {
-          debugPrint('[AudioSession] Interrupted (${event.type}) — pausing');
-          _wasOnBluetooth = await _isBluetoothAudioConnected();
-          debugPrint('[AudioSession] Was on BT: $_wasOnBluetooth');
-          // Pause the underlying player directly — NOT service.pause() —
-          // to keep the interruption lightweight. service.pause() saves progress,
-          // syncs to server, clears _wasPlayingBeforeInterrupt, and sets
-          // _lastPauseTime (triggering auto-rewind on resume). For transient
-          // notification interruptions we just need to duck the audio briefly.
-          await service._player?.pause();
-          service._wasPlayingBeforeInterrupt = true;
-        }
-      } else {
-        // Don't auto-resume if the pause was caused by BT/headphone disconnect.
-        // Some devices fire interruption-end AFTER becoming-noisy, which would
-        // resume playback on the phone speaker.
-        if (_noisyPause) {
-          debugPrint('[AudioSession] Interruption ended after noisy — skipping resume');
-          service._wasPlayingBeforeInterrupt = false;
-          return;
-        }
-        if (service._wasPlayingBeforeInterrupt) {
-          service._wasPlayingBeforeInterrupt = false;
-          await Future.delayed(const Duration(milliseconds: 600));
-          // Re-check: another event (like becoming-noisy) might have fired
-          // during the delay.
-          if (_noisyPause) return;
-          // If we were on BT when interrupted, check if BT is still connected.
-          // Some car head units never send AUDIO_BECOMING_NOISY on disconnect,
-          // so _noisyPause alone is not enough.
-          if (_wasOnBluetooth) {
-            final stillOnBt = await _isBluetoothAudioConnected();
-            debugPrint('[AudioSession] Interruption ended — was BT, still BT: $stillOnBt');
-            if (!stillOnBt) {
-              debugPrint('[AudioSession] BT disconnected during interruption — skipping resume');
-              _noisyPause = true;
-              return;
-            }
+        if (event.begin) {
+          if (service.isPlaying) {
+            debugPrint('[AudioSession] Interrupted (${event.type}) — pausing');
+            _wasOnBluetooth = await _isBluetoothAudioConnected();
+            debugPrint('[AudioSession] Was on BT: $_wasOnBluetooth');
+            // Pause the underlying player directly — NOT service.pause() —
+            // to keep the interruption lightweight. service.pause() saves progress,
+            // syncs to server, clears _wasPlayingBeforeInterrupt, and sets
+            // _lastPauseTime (triggering auto-rewind on resume). For transient
+            // notification interruptions we just need to duck the audio briefly.
+            await service._player?.pause();
+            service._wasPlayingBeforeInterrupt = true;
           }
-          debugPrint('[AudioSession] Interruption ended — resuming');
-          await service.play();
+        } else {
+          // Don't auto-resume if the pause was caused by BT/headphone disconnect.
+          // Some devices fire interruption-end AFTER becoming-noisy, which would
+          // resume playback on the phone speaker.
+          if (_noisyPause) {
+            debugPrint('[AudioSession] Interruption ended after noisy — skipping resume');
+            service._wasPlayingBeforeInterrupt = false;
+            return;
+          }
+          if (service._wasPlayingBeforeInterrupt) {
+            service._wasPlayingBeforeInterrupt = false;
+            await Future.delayed(const Duration(milliseconds: 600));
+            // Re-check: another event (like becoming-noisy) might have fired
+            // during the delay.
+            if (_noisyPause) return;
+            // If we were on BT when interrupted, check if BT is still connected.
+            // Some car head units never send AUDIO_BECOMING_NOISY on disconnect,
+            // so _noisyPause alone is not enough.
+            if (_wasOnBluetooth) {
+              final stillOnBt = await _isBluetoothAudioConnected();
+              debugPrint('[AudioSession] Interruption ended — was BT, still BT: $stillOnBt');
+              if (!stillOnBt) {
+                debugPrint('[AudioSession] BT disconnected during interruption — skipping resume');
+                _noisyPause = true;
+                return;
+              }
+            }
+            debugPrint('[AudioSession] Interruption ended — resuming');
+            await service.play();
+          }
         }
+      } catch (e) {
+        debugPrint('[AudioSession] Interruption handler error: $e');
       }
+    }, onError: (e) {
+      debugPrint('[AudioSession] Interruption stream error - re-subscribing: $e');
+      _configureAudioSession();
     });
 
     // Headphones unplugged / BT disconnected — pause, no auto-resume
     _noisySub?.cancel();
     _noisySub = session.becomingNoisyEventStream.listen((_) async {
-      final service = _instance;
-      debugPrint('[AudioSession] Becoming noisy — pausing');
-      _noisyPause = true;
-      service._wasPlayingBeforeInterrupt = false;
-      // Cancel any pending media-button click from the BT disconnect so the
-      // delayed click handler doesn't resume playback on the phone speaker.
-      _handler?.cancelPendingClick();
-      if (service.isPlaying) {
-        await service.pause();
+      try {
+        final service = _instance;
+        debugPrint('[AudioSession] Becoming noisy — pausing');
+        _noisyPause = true;
+        service._wasPlayingBeforeInterrupt = false;
+        // Cancel any pending media-button click from the BT disconnect so the
+        // delayed click handler doesn't resume playback on the phone speaker.
+        _handler?.cancelPendingClick();
+        if (service.isPlaying) {
+          await service.pause();
+        }
+      } catch (e) {
+        debugPrint('[AudioSession] Noisy handler error: $e');
       }
+    }, onError: (e) {
+      debugPrint('[AudioSession] Noisy stream error - re-subscribing: $e');
+      _configureAudioSession();
     });
   }
 

@@ -284,7 +284,6 @@ class DownloadService extends ChangeNotifier {
     if (json != null) {
       try {
         final map = jsonDecode(json) as Map<String, dynamic>;
-        final orphanIds = <String>[];
         for (final entry in map.entries) {
           final info =
               DownloadInfo.fromJson(entry.value as Map<String, dynamic>);
@@ -293,37 +292,9 @@ class DownloadService extends ChangeNotifier {
               'cover=${info.coverUrl != null ? "yes" : "null"} '
               'sessionData=${info.sessionData != null ? "${info.sessionData!.length} chars" : "null"}');
           if (info.status == DownloadStatus.downloaded) {
-            bool allExist = true;
-            for (final path in info.localPaths) {
-              if (!await File(path).exists()) {
-                allExist = false;
-                break;
-              }
-            }
-            if (allExist) {
-              _downloads[entry.key] = info;
-            } else {
-              orphanIds.add(entry.key);
-            }
+            _downloads[entry.key] = info;
           } else {
-            // Stale downloading/error entries from a previous crash
-            orphanIds.add(entry.key);
-          }
-        }
-        // Clean up partial/orphaned files on disk
-        if (orphanIds.isNotEmpty) {
-          final basePath = await downloadBasePath;
-          final internalBase = await _internalBasePath;
-          for (final id in orphanIds) {
-            debugPrint('[Download] Cleaning up orphaned entry: $id');
-            try {
-              final dir = Directory('$basePath/$id');
-              if (await dir.exists()) await dir.delete(recursive: true);
-            } catch (_) {}
-            try {
-              final coverDir = Directory('$internalBase/$id');
-              if (await coverDir.exists()) await coverDir.delete(recursive: true);
-            } catch (_) {}
+            debugPrint('[Download] Skipping stale ${info.status} entry: ${entry.key}');
           }
         }
       } catch (e) {
@@ -333,6 +304,53 @@ class DownloadService extends ChangeNotifier {
     // Re-save to persist any metadata extracted from sessionData
     if (_downloads.isNotEmpty) await _save();
     notifyListeners();
+
+    // Validate files and clean up orphans in background after startup
+    _validateDownloads();
+  }
+
+  /// Validate that downloaded files still exist on disk and clean up orphans.
+  /// Runs in background so it doesn't block app startup.
+  Future<void> _validateDownloads() async {
+    try {
+      final orphanIds = <String>[];
+      final entries = Map<String, DownloadInfo>.from(_downloads);
+      for (final entry in entries.entries) {
+        if (entry.value.status != DownloadStatus.downloaded) continue;
+        bool allExist = true;
+        for (final path in entry.value.localPaths) {
+          if (!await File(path).exists()) {
+            allExist = false;
+            break;
+          }
+        }
+        if (!allExist) {
+          debugPrint('[Download] Files missing for ${entry.key}, removing');
+          _downloads.remove(entry.key);
+          orphanIds.add(entry.key);
+        }
+      }
+      if (orphanIds.isNotEmpty) {
+        await _save();
+        notifyListeners();
+        // Clean up partial/orphaned files on disk
+        final basePath = await downloadBasePath;
+        final internalBase = await _internalBasePath;
+        for (final id in orphanIds) {
+          debugPrint('[Download] Cleaning up orphaned entry: $id');
+          try {
+            final dir = Directory('$basePath/$id');
+            if (await dir.exists()) await dir.delete(recursive: true);
+          } catch (_) {}
+          try {
+            final coverDir = Directory('$internalBase/$id');
+            if (await coverDir.exists()) await coverDir.delete(recursive: true);
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      debugPrint('[Download] Validation error: $e');
+    }
   }
 
   /// Try to fill in missing metadata from the API (for old downloads).

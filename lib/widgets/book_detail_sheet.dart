@@ -58,6 +58,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   bool _hasLocalOverride = false;
   bool _showGoodreads = false;
   bool _ebookSaved = false;
+  bool _authorsExpanded = false;
 
   @override void initState() {
     super.initState();
@@ -227,14 +228,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
       Text(title, textAlign: TextAlign.center, style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
       const SizedBox(height: 4),
-      GestureDetector(
-        onTap: () => _openAuthor(context, metadata),
-        child: Text(authorName, textAlign: TextAlign.center, style: tt.bodyMedium?.copyWith(
-          color: cs.primary,
-          decoration: TextDecoration.underline,
-          decorationColor: cs.primary.withValues(alpha: 0.4),
-        )),
-      ),
+      _buildAuthorLinks(context, metadata, cs, tt),
       if (narrator.isNotEmpty) ...[const SizedBox(height: 2),
         Text('Narrated by $narrator', textAlign: TextAlign.center, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant))],
       // ─── AUDIBLE RATING (space always reserved) ─────────
@@ -683,26 +677,58 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     );
   }
 
-  void _openAuthor(BuildContext context, Map<String, dynamic> metadata) {
-    // Get first author with an ID from the authors array
+  Widget _buildAuthorLinks(BuildContext context, Map<String, dynamic> metadata, ColorScheme cs, TextTheme tt) {
     final authors = metadata['authors'] as List<dynamic>? ?? [];
-    String? authorId;
-    String authorName = metadata['authorName'] as String? ?? '';
-    for (final a in authors) {
-      if (a is Map<String, dynamic>) {
-        final id = a['id'] as String? ?? '';
-        if (id.isNotEmpty) {
-          authorId = id;
-          authorName = a['name'] as String? ?? authorName;
-          break;
-        }
-      }
+    // Fall back to authorName string if no structured authors array
+    if (authors.isEmpty) {
+      final name = metadata['authorName'] as String? ?? '';
+      if (name.isEmpty) return const SizedBox.shrink();
+      return Text(name, textAlign: TextAlign.center, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant));
     }
-    if (authorId == null || authorName.isEmpty) return;
-    // Close current sheet before opening author sheet
-    final nav = Navigator.of(context);
-    nav.pop();
-    showAuthorDetailSheet(nav.context, authorId: authorId, authorName: authorName);
+
+    const int collapsedCount = 3;
+    final showAll = _authorsExpanded || authors.length <= collapsedCount;
+    final visible = showAll ? authors : authors.sublist(0, collapsedCount);
+    final remaining = authors.length - collapsedCount;
+
+    final linkStyle = tt.bodyMedium?.copyWith(
+      color: cs.primary,
+      decoration: TextDecoration.underline,
+      decorationColor: cs.primary.withValues(alpha: 0.4),
+    );
+    final commaStyle = tt.bodyMedium?.copyWith(color: cs.primary);
+
+    return Wrap(
+      alignment: WrapAlignment.center,
+      children: [
+        for (int i = 0; i < visible.length; i++) ...[
+          GestureDetector(
+            onTap: () {
+              final a = visible[i] as Map<String, dynamic>? ?? {};
+              final id = a['id'] as String? ?? '';
+              final name = a['name'] as String? ?? '';
+              if (id.isEmpty || name.isEmpty) return;
+              final nav = Navigator.of(context);
+              nav.pop();
+              showAuthorDetailSheet(nav.context, authorId: id, authorName: name);
+            },
+            child: Text(
+              (visible[i] as Map<String, dynamic>?)?['name'] as String? ?? '',
+              style: linkStyle,
+            ),
+          ),
+          if (i < visible.length - 1 || (!showAll && remaining > 0))
+            Text(', ', style: commaStyle),
+        ],
+        if (!showAll)
+          GestureDetector(
+            onTap: () => setState(() => _authorsExpanded = true),
+            child: Text('and $remaining more', style: tt.bodyMedium?.copyWith(
+              color: cs.primary.withValues(alpha: 0.7),
+            )),
+          ),
+      ],
+    );
   }
 
   Future<void> _openSeries(BuildContext context, String? seriesId, String seriesName) async {

@@ -26,7 +26,7 @@ class AbsorbPageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
-    final bColor = brandingColor ?? cs.onSurface.withValues(alpha: 0.3);
+    final bColor = brandingColor ?? cs.onSurfaceVariant;
     final tColor = titleColor ?? cs.onSurface;
 
     return Padding(
@@ -37,33 +37,36 @@ class AbsorbPageHeader extends StatelessWidget {
           // Branding row — ABSORB + optional actions
           LayoutBuilder(
             builder: (ctx, lc) {
-              return Row(
-                children: [
-                  Text(
-                    'A B S O R B',
-                    style: tt.labelSmall?.copyWith(
-                      color: bColor,
-                      letterSpacing: 4,
-                      fontWeight: FontWeight.w300,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (actions != null)
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: (lc.maxWidth - 140).clamp(0.0, double.infinity),
+              return ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 32),
+                child: Row(
+                  children: [
+                    Text(
+                      'A B S O R B',
+                      style: tt.labelSmall?.copyWith(
+                        color: bColor,
+                        letterSpacing: 4,
+                        fontWeight: FontWeight.w300,
                       ),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerRight,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          spacing: 8,
-                          children: actions!,
+                    ),
+                    const Spacer(),
+                    if (actions != null)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: (lc.maxWidth - 140).clamp(0.0, double.infinity),
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            spacing: 8,
+                            children: actions!,
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               );
             },
           ),
