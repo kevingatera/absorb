@@ -323,6 +323,9 @@ class PlayerSettings {
   static Future<void> setLocalServerEnabled(bool value) =>
       _set('localServerEnabled', value);
 
+  static Future<int> getStartScreen() => _get('startScreen', 2);
+  static Future<void> setStartScreen(int value) => _set('startScreen', value);
+
   static Future<String> getLocalServerUrl() => _get('localServerUrl', '');
   static Future<void> setLocalServerUrl(String value) =>
       _set('localServerUrl', value);
