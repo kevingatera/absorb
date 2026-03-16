@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -311,34 +310,34 @@ class _PersonNameLink extends StatelessWidget {
     final clickable = displayedName.isNotEmpty && navigableTargets.isNotEmpty;
 
     final textStyle = _interactiveStyle(context, clickable);
-    final text = clickable
-        ? Text.rich(
-            TextSpan(
-              text: displayedName,
-              style: textStyle,
-              recognizer: TapGestureRecognizer()
-                ..onTap = () async {
-                  if (navigableTargets.length == 1) {
-                    await _openTarget(context, navigableTargets.first);
-                  } else {
-                    _openChooser(context, navigableTargets);
-                  }
-                },
-            ),
-            textAlign: textAlign,
-            maxLines: maxLines,
-            overflow: overflow ?? TextOverflow.clip,
-          )
-        : Text(
-            displayedName,
-            textAlign: textAlign,
-            maxLines: maxLines,
-            overflow: overflow,
-            style: textStyle,
-          );
+    final text = Text(
+      displayedName,
+      textAlign: textAlign,
+      maxLines: maxLines,
+      overflow: overflow,
+      style: textStyle,
+    );
 
     if (!clickable) return text;
-    return text;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () async {
+          if (navigableTargets.length == 1) {
+            await _openTarget(context, navigableTargets.first);
+          } else {
+            _openChooser(context, navigableTargets);
+          }
+        },
+        borderRadius: BorderRadius.circular(6),
+        splashFactory: NoSplash.splashFactory,
+        highlightColor: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1),
+          child: text,
+        ),
+      ),
+    );
   }
 }
 
