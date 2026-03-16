@@ -142,6 +142,22 @@ class PlayerSettings {
   static Future<String> getQueueMode() => _get('queueMode', 'off');
   static Future<void> setQueueMode(String value) => _set('queueMode', value);
 
+  static Future<String> getBookQueueMode() async {
+    final value = await ScopedPrefs.getString('bookQueueMode');
+    return value ?? await getQueueMode();
+  }
+
+  static Future<void> setBookQueueMode(String value) =>
+      _set('bookQueueMode', value);
+
+  static Future<String> getPodcastQueueMode() async {
+    final value = await ScopedPrefs.getString('podcastQueueMode');
+    return value ?? await getQueueMode();
+  }
+
+  static Future<void> setPodcastQueueMode(String value) =>
+      _set('podcastQueueMode', value);
+
   /// One-time migration from the old boolean auto-play settings to queueMode.
   static Future<void> migrateQueueMode() async {
     if (await ScopedPrefs.containsKey('queueMode')) return;
@@ -149,6 +165,14 @@ class PlayerSettings {
     final autoPod = await ScopedPrefs.getBool('autoPlayNextPodcast') ?? false;
     await ScopedPrefs.setString(
         'queueMode', (autoBook || autoPod) ? 'auto_next' : 'off');
+  }
+
+  /// One-time migration from unified queueMode to per-type queue modes.
+  static Future<void> migrateBookPodcastQueueMode() async {
+    if (await ScopedPrefs.containsKey('bookQueueMode')) return;
+    final existing = await getQueueMode();
+    await setBookQueueMode(existing);
+    await setPodcastQueueMode(existing);
   }
 
   // Legacy getters kept for backup service compatibility
@@ -359,6 +383,34 @@ class PlayerSettings {
 
   static Future<void> setCardButtonOrder(List<String> order) async {
     await ScopedPrefs.setStringList('card_button_order', order);
+    _notify();
+  }
+
+  // ── Card button layout ──
+
+  static const defaultButtonLayout = 'standard';
+
+  static int buttonCountForLayout(String layout) {
+    switch (layout) {
+      case 'compact':
+        return 3;
+      case 'standard':
+        return 4;
+      case 'row':
+        return 5;
+      case 'expanded':
+        return 6;
+      case 'full':
+        return 9;
+      default:
+        return 4;
+    }
+  }
+
+  static Future<String> getCardButtonLayout() =>
+      _get('card_button_layout', defaultButtonLayout);
+  static Future<void> setCardButtonLayout(String value) async {
+    await _set('card_button_layout', value);
     _notify();
   }
 
