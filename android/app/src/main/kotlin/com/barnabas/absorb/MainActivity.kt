@@ -27,6 +27,12 @@ class MainActivity : AudioServiceActivity() {
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var currentSessionId: Int = 0
     private var selectedOutputDeviceId: Int? = null  // user's manual override
+    private var eqLoudnessGainMb: Int = 0  // extra gain from EQ loudness slider
+
+    companion object {
+        // Always-on base volume boost (3 dB) to match loudness of other media apps
+        private const val BASE_BOOST_MB = 300
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -152,19 +158,22 @@ class MainActivity : AudioServiceActivity() {
                 return
             }
 
-            equalizer = Equalizer(0, sessionId).apply { enabled = true }
+            equalizer = Equalizer(0, sessionId).apply { enabled = false }
             bassBoost = try {
-                BassBoost(0, sessionId).apply { enabled = true }
+                BassBoost(0, sessionId).apply { enabled = false }
             } catch (e: Exception) {
                 Log.w(TAG, "BassBoost not supported: ${e.message}"); null
             }
             virtualizer = try {
-                Virtualizer(0, sessionId).apply { enabled = true }
+                Virtualizer(0, sessionId).apply { enabled = false }
             } catch (e: Exception) {
                 Log.w(TAG, "Virtualizer not supported: ${e.message}"); null
             }
             loudnessEnhancer = try {
-                LoudnessEnhancer(sessionId).apply { enabled = true }
+                LoudnessEnhancer(sessionId).apply {
+                    setTargetGain(BASE_BOOST_MB + eqLoudnessGainMb)
+                    enabled = true
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "LoudnessEnhancer not supported: ${e.message}"); null
             }
@@ -182,7 +191,7 @@ class MainActivity : AudioServiceActivity() {
             equalizer?.enabled = enabled
             bassBoost?.enabled = enabled
             virtualizer?.enabled = enabled
-            loudnessEnhancer?.enabled = enabled
+            // LoudnessEnhancer is always on (base boost); only EQ loudness gain changes
             result.success(true)
         } catch (e: Exception) {
             result.error("EQ_ERROR", e.message, null)
@@ -218,7 +227,8 @@ class MainActivity : AudioServiceActivity() {
 
     private fun handleSetLoudness(gain: Int, result: MethodChannel.Result) {
         try {
-            loudnessEnhancer?.setTargetGain(gain)
+            eqLoudnessGainMb = gain
+            loudnessEnhancer?.setTargetGain(BASE_BOOST_MB + gain)
             result.success(true)
         } catch (e: Exception) {
             result.error("EQ_ERROR", e.message, null)
@@ -328,6 +338,7 @@ class MainActivity : AudioServiceActivity() {
         bassBoost = null
         virtualizer = null
         loudnessEnhancer = null
+        eqLoudnessGainMb = 0
     }
 
     private fun isBluetoothAudioConnected(): Boolean {

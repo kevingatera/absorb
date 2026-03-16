@@ -200,7 +200,12 @@ class EqualizerService extends ChangeNotifier {
     try {
       await _channel.invokeMethod('attachSession', {'sessionId': sessionId});
       debugPrint('[EQ] Attached to audio session $sessionId');
-      if (_enabled) _applyCurrentSettings();
+      if (_enabled) {
+        _applyCurrentSettings();
+      } else {
+        // Ensure effects stay disabled even though the native side creates them disabled by default
+        _channel.invokeMethod('setEnabled', {'enabled': false});
+      }
     } catch (e) {
       debugPrint('[EQ] attachSession failed: $e');
     }
