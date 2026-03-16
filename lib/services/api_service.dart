@@ -1345,6 +1345,33 @@ class ApiService {
     return false;
   }
 
+  /// Check a single podcast for new episodes from its RSS feed
+  /// GET /api/podcasts/:id/checknew
+  Future<bool> checkNewPodcastEpisodes(String podcastId) async {
+    try {
+      final r = await http.get(
+        Uri.parse('$_cleanBaseUrl/api/podcasts/$podcastId/checknew'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('checkNewPodcastEpisodes error: $e'); }
+    return false;
+  }
+
+  /// Update podcast media settings (auto-download, etc.)
+  /// PATCH /api/items/:id/media  body: mediaUpdates at the media level
+  Future<bool> updatePodcastMedia(String itemId, Map<String, dynamic> mediaUpdates) async {
+    try {
+      final r = await http.patch(
+        Uri.parse('$_cleanBaseUrl/api/items/$itemId/media'),
+        headers: _headers,
+        body: jsonEncode(mediaUpdates),
+      ).timeout(const Duration(seconds: 15));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('updatePodcastMedia error: $e'); }
+    return false;
+  }
+
   /// Delete a podcast episode
   Future<bool> deletePodcastEpisode(String podcastId, String episodeId) async {
     try {

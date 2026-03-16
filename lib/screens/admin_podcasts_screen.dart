@@ -676,7 +676,7 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
   void initState() {
     super.initState();
     _item = Map<String, dynamic>.from(widget.item);
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(length: 3, vsync: this);
     _reloadItem(); // Load full item with episodes
     _loadFeed(); // Pre-load feed so it's ready when user switches tabs
     _pollDownloadQueue(); // Check for any in-progress downloads
@@ -827,7 +827,7 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
           indicatorColor: cs.primary,
           indicatorSize: TabBarIndicatorSize.label,
           dividerColor: cs.onSurface.withValues(alpha: 0.06),
-          tabs: const [Tab(text: 'Downloaded'), Tab(text: 'Feed')],
+          tabs: const [Tab(text: 'Downloaded'), Tab(text: 'Feed'), Tab(text: 'Settings')],
           onTap: (i) { if (i == 1 && _feedEpisodes.isEmpty && !_loadingFeed) _loadFeed(); },
         ),
 
@@ -835,6 +835,7 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
         Expanded(child: TabBarView(controller: _tabCtrl, children: [
           _buildDownloadedTab(cs, tt),
           _buildFeedTab(cs, tt),
+          _buildSettingsTab(cs, tt),
         ])),
       ])),
     );
@@ -985,6 +986,209 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
     );
   }
 
+  // ─── Settings Tab ───────────────────────────────────────────
+
+  Widget _buildSettingsTab(ColorScheme cs, TextTheme tt) {
+    final autoDownload = _media['autoDownloadEpisodes'] == true;
+
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 32), children: [
+      // Check for new episodes
+      GestureDetector(
+        onTap: () async {
+          final api = context.read<AuthProvider>().apiService;
+          if (api == null) return;
+          _msg('Checking for new episodes...');
+          final ok = await api.checkNewPodcastEpisodes(_podcastId);
+          if (!mounted) return;
+          if (ok) {
+            _reloadItem();
+            _loadFeed();
+            _msg('Episode check complete');
+          } else {
+            _msg('Failed to check for new episodes');
+          }
+        },
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(color: cs.surfaceContainerHigh, borderRadius: BorderRadius.circular(14)),
+          child: Row(children: [
+            Icon(Icons.refresh_rounded, size: 20, color: cs.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Check for New Episodes', style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
+              const SizedBox(height: 2),
+              Text('Scan RSS feed for new episodes', style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+            ])),
+            Icon(Icons.chevron_right_rounded, size: 20, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+          ]),
+        ),
+      ),
+
+      // Auto-download toggle
+      StatefulBuilder(builder: (ctx, setLocalState) {
+        final isOn = _media['autoDownloadEpisodes'] == true;
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(color: cs.surfaceContainerHigh, borderRadius: BorderRadius.circular(14)),
+          child: Row(children: [
+            Icon(Icons.downloading_rounded, size: 20, color: cs.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Auto-Download New Episodes', style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
+              const SizedBox(height: 2),
+              Text(
+                isOn ? 'Server downloads new episodes automatically' : 'New episodes are not auto-downloaded',
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              ),
+            ])),
+            SizedBox(
+              height: 32,
+              child: FittedBox(fit: BoxFit.contain, child: Switch(
+                value: isOn,
+                onChanged: (v) async {
+                  final api = context.read<AuthProvider>().apiService;
+                  if (api == null) return;
+                  final ok = await api.updatePodcastMedia(_podcastId, {
+                    'autoDownloadEpisodes': v,
+                    if (!isOn) 'autoDownloadSchedule': '0 * * * *',
+                  });
+                  if (ok && mounted) {
+                    _media['autoDownloadEpisodes'] = v;
+                    if (!v) _media.remove('autoDownloadSchedule');
+                    setState(() {}); // rebuild entire settings tab
+                    widget.onChanged();
+                  }
+                },
+              )),
+            ),
+          ]),
+        );
+      }),
+
+      // Schedule picker
+      if (autoDownload)
+        StatefulBuilder(builder: (ctx, setScheduleState) {
+          final currentCron = _media['autoDownloadSchedule'] as String? ?? '0 * * * *';
+          final parsed = _parseCron(currentCron);
+          final freq = parsed.$1;      // 'hourly', 'daily', 'weekly'
+          final hour = parsed.$2;      // 0-23
+          final minute = parsed.$3;    // 0-59
+          final dayOfWeek = parsed.$4; // 0-6 (Sun-Sat)
+
+          void saveCron(String f, int h, int m, int d) {
+            String cron;
+            if (f == 'hourly') {
+              cron = '0 * * * *';
+            } else if (f == 'daily') {
+              cron = '$m $h * * *';
+            } else {
+              cron = '$m $h * * $d';
+            }
+            final api = context.read<AuthProvider>().apiService;
+            if (api == null) return;
+            api.updatePodcastMedia(_podcastId, {'autoDownloadSchedule': cron}).then((ok) {
+              if (ok && mounted) {
+                _media['autoDownloadSchedule'] = cron;
+                setScheduleState(() {});
+                widget.onChanged();
+              }
+            });
+          }
+
+          const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          String timeLabel(int h, int m) {
+            final period = h < 12 ? 'am' : 'pm';
+            final displayH = h == 0 ? 12 : h > 12 ? h - 12 : h;
+            return m == 0 ? '$displayH$period' : '$displayH:${m.toString().padLeft(2, '0')}$period';
+          }
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(color: cs.surfaceContainerHigh, borderRadius: BorderRadius.circular(14)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Icon(Icons.schedule_rounded, size: 20, color: cs.onSurfaceVariant),
+                const SizedBox(width: 12),
+                Text('Check Schedule', style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
+              ]),
+              const SizedBox(height: 10),
+              // Frequency
+              Text('Frequency', style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant, fontSize: 10)),
+              const SizedBox(height: 6),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final f in [('hourly', 'Hourly'), ('daily', 'Daily'), ('weekly', 'Weekly')])
+                  _scheduleChip(cs, tt, f.$2, f.$1, freq, () => saveCron(f.$1, hour, minute, dayOfWeek)),
+              ]),
+              // Day of week (weekly only)
+              if (freq == 'weekly') ...[
+                const SizedBox(height: 12),
+                Text('Day', style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant, fontSize: 10)),
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  for (int i = 0; i < 7; i++)
+                    _scheduleChip(cs, tt, days[i], i.toString(), dayOfWeek.toString(), () => saveCron(freq, hour, minute, i)),
+                ]),
+              ],
+              // Time (daily/weekly only)
+              if (freq != 'hourly') ...[
+                const SizedBox(height: 12),
+                Text('Time', style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant, fontSize: 10)),
+                const SizedBox(height: 6),
+                GestureDetector(
+                  onTap: () async {
+                    final picked = await showTimePicker(
+                      context: context,
+                      initialTime: TimeOfDay(hour: hour, minute: minute),
+                      builder: (ctx, child) => MediaQuery(
+                        data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: false),
+                        child: child!,
+                      ),
+                    );
+                    if (picked != null) saveCron(freq, picked.hour, picked.minute, dayOfWeek);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: cs.primary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: cs.primary.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.access_time_rounded, size: 16, color: cs.primary),
+                      const SizedBox(width: 6),
+                      Text(timeLabel(hour, minute), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: cs.primary)),
+                    ]),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Text(currentCron, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.4), fontFamily: 'monospace', fontSize: 10)),
+            ]),
+          );
+        }),
+
+      // Feed URL
+      if (_feedUrl.isNotEmpty)
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(color: cs.surfaceContainerHigh, borderRadius: BorderRadius.circular(14)),
+          child: Row(children: [
+            Icon(Icons.rss_feed_rounded, size: 20, color: cs.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Feed URL', style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
+              const SizedBox(height: 2),
+              Text(_feedUrl, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant), maxLines: 2, overflow: TextOverflow.ellipsis),
+            ])),
+          ]),
+        ),
+    ]);
+  }
+
   void _showEpisodeDetail(Map<String, dynamic> ep, bool alreadyDownloaded) {
     final isRoot = context.read<AuthProvider>().isRoot;
     showModalBottomSheet(
@@ -1019,6 +1223,42 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
           Navigator.pop(context);
           _deleteEpisode(epId, epTitle);
         },
+      ),
+    );
+  }
+
+  /// Parse a cron string into (frequency, hour, minute, dayOfWeek).
+  (String, int, int, int) _parseCron(String cron) {
+    final parts = cron.split(' ');
+    if (parts.length < 5) return ('hourly', 0, 0, 1);
+    final minPart = parts[0];
+    final hourPart = parts[1];
+    final dowPart = parts[4];
+    if (hourPart == '*' || hourPart.startsWith('*/')) return ('hourly', 0, 0, 1);
+    final hour = int.tryParse(hourPart) ?? 0;
+    final minute = int.tryParse(minPart) ?? 0;
+    if (dowPart != '*') {
+      final dow = int.tryParse(dowPart) ?? 1;
+      return ('weekly', hour, minute, dow);
+    }
+    return ('daily', hour, minute, 1);
+  }
+
+  Widget _scheduleChip(ColorScheme cs, TextTheme tt, String label, String value, String current, VoidCallback onTap) {
+    final selected = current == value;
+    return GestureDetector(
+      onTap: selected ? null : onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? cs.primary.withValues(alpha: 0.15) : cs.onSurface.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: selected ? cs.primary.withValues(alpha: 0.4) : cs.onSurface.withValues(alpha: 0.08)),
+        ),
+        child: Text(label, style: TextStyle(
+          fontSize: 12, fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+          color: selected ? cs.primary : cs.onSurfaceVariant,
+        )),
       ),
     );
   }
