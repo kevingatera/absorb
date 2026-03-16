@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/library_provider.dart';
 import '../services/download_service.dart';
+import 'author_name_link.dart';
 import 'book_detail_sheet.dart';
 import 'episode_list_sheet.dart';
 
@@ -43,9 +44,12 @@ class BookCard extends StatelessWidget {
     final headers = lib.mediaHeaders;
 
     if (isWide) {
-      return _buildWideCard(context, cs, tt, title, authorName, coverUrl, progress, headers);
+      return _buildWideCard(
+          context, cs, tt, title, authorName, coverUrl, progress, headers);
     }
-    return _buildCompactCard(context, cs, tt, title, authorName, coverUrl, progress, headers, isFinished: isFinished, isDownloaded: isDownloaded);
+    return _buildCompactCard(
+        context, cs, tt, title, authorName, coverUrl, progress, headers,
+        isFinished: isFinished, isDownloaded: isDownloaded);
   }
 
   void _navigateToDetail(BuildContext context) {
@@ -92,10 +96,16 @@ class BookCard extends StatelessWidget {
               height: 120,
               child: Stack(
                 children: [
-                  _CoverImage(coverUrl: coverUrl, cs: cs, fit: BoxFit.contain, httpHeaders: headers),
-                  if (DownloadService().isDownloaded(item['id'] as String? ?? ''))
+                  _CoverImage(
+                      coverUrl: coverUrl,
+                      cs: cs,
+                      fit: BoxFit.contain,
+                      httpHeaders: headers),
+                  if (DownloadService()
+                      .isDownloaded(item['id'] as String? ?? ''))
                     Positioned(
-                      top: 4, right: 4,
+                      top: 4,
+                      right: 4,
                       child: Container(
                         padding: const EdgeInsets.all(3),
                         decoration: BoxDecoration(
@@ -112,7 +122,8 @@ class BookCard extends StatelessWidget {
             // Info section
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -129,8 +140,9 @@ class BookCard extends StatelessWidget {
                     ),
                     if (authorName.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Text(
-                        authorName,
+                      AuthorNameLink(
+                        item: item,
+                        authorName: authorName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: tt.bodySmall?.copyWith(
@@ -231,9 +243,11 @@ class BookCard extends StatelessWidget {
                       right: 0,
                       bottom: 0,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 3),
                         decoration: BoxDecoration(
-                          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                          borderRadius: const BorderRadius.vertical(
+                              bottom: Radius.circular(12)),
                           gradient: LinearGradient(
                             begin: Alignment.bottomCenter,
                             end: Alignment.topCenter,
@@ -249,13 +263,20 @@ class BookCard extends StatelessWidget {
                           children: [
                             if (isFinished) ...[
                               Icon(Icons.check_circle_rounded,
-                                  size: 10, color: Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400] : Colors.green.shade700),
+                                  size: 10,
+                                  color: Theme.of(context).brightness ==
+                                          Brightness.dark
+                                      ? Colors.greenAccent[400]
+                                      : Colors.green.shade700),
                               const SizedBox(width: 3),
                               Text('Done',
                                   style: TextStyle(
                                       fontSize: 9,
                                       fontWeight: FontWeight.w600,
-                                      color: Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400] : Colors.green.shade700)),
+                                      color: Theme.of(context).brightness ==
+                                              Brightness.dark
+                                          ? Colors.greenAccent[400]
+                                          : Colors.green.shade700)),
                             ],
                             if (isFinished && isDownloaded)
                               const SizedBox(width: 6),
@@ -295,8 +316,9 @@ class BookCard extends StatelessWidget {
         if (authorName.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: Text(
-              authorName,
+            child: AuthorNameLink(
+              item: item,
+              authorName: authorName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: tt.labelSmall?.copyWith(
@@ -316,7 +338,11 @@ class _CoverImage extends StatelessWidget {
   final BoxFit fit;
   final Map<String, String> httpHeaders;
 
-  const _CoverImage({required this.coverUrl, required this.cs, this.fit = BoxFit.cover, this.httpHeaders = const {}});
+  const _CoverImage(
+      {required this.coverUrl,
+      required this.cs,
+      this.fit = BoxFit.cover,
+      this.httpHeaders = const {}});
 
   @override
   Widget build(BuildContext context) {
@@ -328,7 +354,8 @@ class _CoverImage extends StatelessWidget {
     if (coverUrl!.startsWith('/')) {
       final file = File(coverUrl!);
       if (file.existsSync()) {
-        return Image.file(file, fit: fit, errorBuilder: (_, __, ___) => _placeholder());
+        return Image.file(file,
+            fit: fit, errorBuilder: (_, __, ___) => _placeholder());
       }
       return _placeholder();
     }
