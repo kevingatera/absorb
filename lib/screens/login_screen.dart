@@ -12,7 +12,8 @@ import '../services/backup_service.dart';
 import '../services/oidc_service.dart';
 import '../services/user_account_service.dart';
 import '../widgets/absorb_wave_icon.dart';
-import '../main.dart' show oledNotifier;
+import '../services/audio_player_service.dart';
+import '../main.dart' show applyTrustAllCerts, oledNotifier;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -48,6 +49,7 @@ class _LoginScreenState extends State<LoginScreen>
 
   // Custom headers (advanced)
   bool _showAdvanced = false;
+  bool _trustAllCerts = false;
   final List<(TextEditingController, TextEditingController)> _headerControllers = [];
 
   // App version
@@ -81,6 +83,10 @@ class _LoginScreenState extends State<LoginScreen>
     try {
       final info = await PackageInfo.fromPlatform();
       if (mounted) setState(() => _appVersion = 'v${info.version}');
+    } catch (_) {}
+    try {
+      final trust = await PlayerSettings.getTrustAllCerts();
+      if (mounted) setState(() => _trustAllCerts = trust);
     } catch (_) {}
   }
 
@@ -583,6 +589,32 @@ class _LoginScreenState extends State<LoginScreen>
                                           ],
                                         ),
                                       ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Divider(height: 1),
+                                    const SizedBox(height: 4),
+                                    Text('Self-signed Certificates', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.onSurfaceVariant.withValues(alpha: 0.7))),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            'Trust all certificates (for self-signed / custom CA setups)',
+                                            style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+                                          ),
+                                        ),
+                                        Transform.scale(
+                                          scale: 0.8,
+                                          child: Switch(
+                                            value: _trustAllCerts,
+                                            onChanged: (v) async {
+                                              setState(() => _trustAllCerts = v);
+                                              await PlayerSettings.setTrustAllCerts(v);
+                                              applyTrustAllCerts(v);
+                                              _revalidateServer();
+                                            },
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ],
 

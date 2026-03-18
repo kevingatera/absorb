@@ -21,7 +21,7 @@ import '../screens/app_shell.dart';
 import '../screens/admin_screen.dart';
 import '../screens/downloads_screen.dart';
 import '../screens/bookmarks_screen.dart';
-import '../main.dart' show applyThemeMode, oledNotifier, snappyTransitionsNotifier, colorSourceNotifier;
+import '../main.dart' show applyThemeMode, applyTrustAllCerts, oledNotifier, snappyTransitionsNotifier, colorSourceNotifier;
 import '../widgets/absorb_page_header.dart';
 import '../widgets/absorb_slider.dart';
 
@@ -77,6 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _localServerUrl = '';
   late final TextEditingController _localServerController;
   bool _disableAudioFocus = false;
+  bool _trustAllCerts = false;
   bool _loaded = false;
   String _downloadLocationLabel = 'App Internal Storage (Default)';
   int _totalDownloadSizeBytes = 0;
@@ -163,6 +164,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       PlayerSettings.getPodcastQueueMode(),                      // 37
       PlayerSettings.getCardButtonLayout(),                        // 38
       PlayerSettings.getRectangleCovers(),                           // 39
+      PlayerSettings.getTrustAllCerts(),                               // 40
     ]);
     final s = results[0] as AutoRewindSettings;
     final speed = results[1] as double;
@@ -204,6 +206,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final podcastQueueMode = results[37] as String;
     final cardBtnLayout = results[38] as String;
     final rectCovers = results[39] as bool;
+    final trustCerts = results[40] as bool;
     if (mounted) setState(() {
       _rewindSettings = s;
       _defaultSpeed = speed;
@@ -249,6 +252,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _startScreen = startScreen;
       _cardButtonLayout = cardBtnLayout;
       _rectangleCovers = rectCovers;
+      _trustAllCerts = trustCerts;
       _loaded = true;
     });
   }
@@ -1891,6 +1895,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         if (restart == true) {
                           SystemChannels.platform.invokeMethod('SystemNavigator.pop', true);
                         }
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    SwitchListTile(
+                      title: Row(children: [
+                        const Text('Trust all certificates'),
+                        _infoIcon('Self-signed Certificates',
+                          'Enable this if your Audiobookshelf server uses a self-signed certificate or a custom root CA. '
+                          'When enabled, Absorb will skip TLS certificate verification for all connections. '
+                          'Only enable this if you trust your network.'),
+                      ]),
+                      subtitle: Text(
+                        _trustAllCerts
+                            ? 'On - accepting all certificates'
+                            : 'Off - only trusted certificates accepted',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _trustAllCerts,
+                      onChanged: _loaded ? (v) async {
+                        setState(() => _trustAllCerts = v);
+                        await PlayerSettings.setTrustAllCerts(v);
+                        applyTrustAllCerts(v);
                       } : null,
                     ),
                   ],

@@ -44,6 +44,22 @@ final ValueNotifier<String> colorSourceNotifier = ValueNotifier('wallpaper');
 /// null when nothing is playing or cover hasn't loaded yet.
 final ValueNotifier<ColorScheme?> coverSchemeNotifier = ValueNotifier(null);
 
+/// Allows Dart's HTTP stack to trust user-installed / self-signed certificates.
+/// Android's network_security_config.xml only covers the native layer; Dart's
+/// BoringSSL ignores it, so we override badCertificateCallback globally.
+class _TrustAllCertsOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback = (_, __, ___) => true;
+  }
+}
+
+/// Enable or disable the global trust-all-certs override.
+void applyTrustAllCerts(bool enabled) {
+  HttpOverrides.global = enabled ? _TrustAllCertsOverrides() : null;
+}
+
 /// Global key so non-widget code (e.g. providers) can show snackbars.
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
@@ -97,6 +113,13 @@ void main() async {
               ? Brightness.light : Brightness.dark,
         );
       }
+    }
+  } catch (_) {}
+
+  // Trust user-installed / self-signed certificates if the user opted in
+  try {
+    if (await PlayerSettings.getTrustAllCerts()) {
+      applyTrustAllCerts(true);
     }
   } catch (_) {}
 

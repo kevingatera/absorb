@@ -414,51 +414,78 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
 
     final useClientFilter = _filter == LibraryFilter.downloaded;
     final fetchAll = _sort == LibrarySort.random || useClientFilter;
-    final limit = fetchAll ? 1000 : _pageSize;
 
-    final result = await api.getLibraryItems(
-      lib.selectedLibraryId!,
-      page: fetchAll ? 0 : _page,
-      limit: limit,
-      sort: sort,
-      desc: desc,
-      filter: filter,
-      collapseSeries: _collapseSeries && !useClientFilter && !lib.isPodcastLibrary,
-    );
-
-    if (result != null && mounted && gen == _loadGeneration) {
-      final results = (result['results'] as List<dynamic>?) ?? [];
-      final total = (result['total'] as int?) ?? 0;
-      setState(() {
-        _totalItems = total;
+    if (fetchAll) {
+      // Paginate through ALL items for client-side filters / random sort
+      const fetchLimit = 500;
+      int fetchPage = 0;
+      int total = 0;
+      while (mounted && gen == _loadGeneration) {
+        final result = await api.getLibraryItems(
+          lib.selectedLibraryId!,
+          page: fetchPage,
+          limit: fetchLimit,
+          sort: sort,
+          desc: desc,
+          filter: filter,
+          collapseSeries: _collapseSeries && !useClientFilter && !lib.isPodcastLibrary,
+        );
+        if (result == null || !mounted || gen != _loadGeneration) break;
+        final results = (result['results'] as List<dynamic>?) ?? [];
+        total = (result['total'] as int?) ?? 0;
         for (final r in results) {
           if (r is Map<String, dynamic>) {
-            // Register updatedAt for cover cache-busting
             final id = r['id'] as String?;
             final ts = r['updatedAt'] as num?;
             if (id != null && ts != null) lib.registerUpdatedAt(id, ts.toInt());
-            // Client-side filters
-            if (_filter == LibraryFilter.downloaded) {
-              final id = r['id'] as String? ?? '';
-              if (!DownloadService().isDownloaded(id)) continue;
-            }
+            if (useClientFilter && !DownloadService().isDownloaded(id ?? '')) continue;
             if (_hideEbookOnly && PlayerSettings.isEbookOnly(r)) continue;
             _items.add(r);
           }
         }
-        if (_sort == LibrarySort.random) {
-          _items.shuffle(Random(_randomSeed));
+        fetchPage++;
+        if (fetchPage * fetchLimit >= total) break;
+      }
+      if (mounted && gen == _loadGeneration) {
+        setState(() {
+          _totalItems = total;
+          if (_sort == LibrarySort.random) _items.shuffle(Random(_randomSeed));
           _hasMore = false;
-        } else if (useClientFilter) {
-          _hasMore = false; // All loaded and filtered at once
-        } else {
+          _isLoadingPage = false;
+        });
+      }
+    } else {
+      final result = await api.getLibraryItems(
+        lib.selectedLibraryId!,
+        page: _page,
+        limit: _pageSize,
+        sort: sort,
+        desc: desc,
+        filter: filter,
+        collapseSeries: _collapseSeries && !lib.isPodcastLibrary,
+      );
+
+      if (result != null && mounted && gen == _loadGeneration) {
+        final results = (result['results'] as List<dynamic>?) ?? [];
+        final total = (result['total'] as int?) ?? 0;
+        setState(() {
+          _totalItems = total;
+          for (final r in results) {
+            if (r is Map<String, dynamic>) {
+              final id = r['id'] as String?;
+              final ts = r['updatedAt'] as num?;
+              if (id != null && ts != null) lib.registerUpdatedAt(id, ts.toInt());
+              if (_hideEbookOnly && PlayerSettings.isEbookOnly(r)) continue;
+              _items.add(r);
+            }
+          }
           _page++;
           _hasMore = _items.length < total;
-        }
-        _isLoadingPage = false;
-      });
-    } else if (mounted && gen == _loadGeneration) {
-      setState(() => _isLoadingPage = false);
+          _isLoadingPage = false;
+        });
+      } else if (mounted && gen == _loadGeneration) {
+        setState(() => _isLoadingPage = false);
+      }
     }
   }
 
