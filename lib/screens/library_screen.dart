@@ -960,21 +960,33 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
 
     return Scaffold(
       backgroundColor: scaffoldBg,
-      body: Container(
-        decoration: oledNotifier.value ? null : BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            stops: const [0.0, 0.22, 0.72, 1.0],
-            colors: [
-              cs.primary.withValues(alpha: 0.06),
-              cs.surface,
-              lowerFade,
-              scaffoldBg,
-            ],
-          ),
-        ),
-        child: SafeArea(
+      body: Stack(
+        children: [
+          if (!oledNotifier.value)
+            OverflowBox(
+              maxHeight: MediaQuery.of(context).size.height,
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height,
+                width: double.infinity,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: const [0.0, 0.22, 0.72, 1.0],
+                      colors: [
+                        cs.primary.withValues(alpha: 0.06),
+                        cs.surface,
+                        lowerFade,
+                        scaffoldBg,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          SafeArea(
         child: Column(
           children: [
             AbsorbPageHeader(
@@ -1070,6 +1082,7 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
           ],
         ),
       ),
+        ],
       ),
     );
   }
