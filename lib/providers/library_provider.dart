@@ -556,6 +556,13 @@ class LibraryProvider extends ChangeNotifier {
         }
       });
       ChromecastService.setOnBookFinishedCallback(markFinishedLocally);
+      ChromecastService.setOnPlaybackStateChangedCallback((playing) {
+        if (playing) {
+          onPlaybackStarted();
+        } else {
+          onPlaybackStopped();
+        }
+      });
 
       restoreOfflineMode().then((_) async {
         debugPrint(
@@ -643,8 +650,20 @@ class LibraryProvider extends ChangeNotifier {
         _stopServerPingTimer();
         setNetworkOffline(true, reason: 'initial-no-connectivity');
       } else if (_networkOffline && !_manualOffline) {
-        // Device has connectivity but we're still offline — server was unreachable
-        _startServerPingTimer();
+        // Device has connectivity but we're still offline — server was unreachable.
+        // If on WiFi, try local server first before falling back to ping timer.
+        if (result.contains(ConnectivityResult.wifi)) {
+          _auth?.checkLocalServer().then((_) {
+            if (_auth?.serverReachable == true ||
+                _auth?.useLocalServer == true) {
+              setNetworkOffline(false);
+            } else {
+              _startServerPingTimer();
+            }
+          });
+        } else {
+          _startServerPingTimer();
+        }
       }
     });
     // Then listen for changes
@@ -688,6 +707,23 @@ class LibraryProvider extends ChangeNotifier {
         return;
       }
       _logOfflineState('server ping tick');
+      // Try local server first if enabled and on WiFi
+      final auth = _auth;
+      if (auth != null &&
+          auth.localServerEnabled &&
+          auth.localServerUrl.isNotEmpty) {
+        final localReachable = await ApiService.pingServer(
+          auth.localServerUrl,
+          customHeaders: auth.customHeaders,
+        ).timeout(const Duration(seconds: 3), onTimeout: () => false);
+        if (localReachable) {
+          debugPrint('[Library] Local server ping succeeded — going online');
+          await auth.checkLocalServer();
+          _stopServerPingTimer();
+          setNetworkOffline(false);
+          return;
+        }
+      }
       final reachable = await ApiService.pingServer(
         serverUrl,
         customHeaders: _auth?.customHeaders ?? {},
@@ -761,7 +797,13 @@ class LibraryProvider extends ChangeNotifier {
   }
 
   void _softReconnectSocket() {
-    if (!_socketSoftDisconnected || _manualOffline) return;
+    if (_manualOffline) return;
+    // If socket died on its own (reconnection exhausted), reset the flag
+    // so we can attempt a fresh connection.
+    if (!_socketSoftDisconnected && !SocketService().hasSocket) {
+      _socketSoftDisconnected = true;
+    }
+    if (!_socketSoftDisconnected) return;
     _socketSoftDisconnected = false;
     SocketService().softReconnect();
   }
@@ -775,6 +817,25 @@ class LibraryProvider extends ChangeNotifier {
     // Don't let a stale socket event overwrite a local mark-finished.
     // The server will confirm isFinished on the next full refresh.
     if (_locallyFinishedItems.contains(key) && mp['isFinished'] != true) return;
+    // Don't let socket echoes overwrite local progress for the currently
+    // playing item. The player is the source of truth while active.
+    // This prevents rollbacks when the network drops and reconnects with
+    // stale server progress.
+    // Exception: if the server marked the item finished (e.g. user paused
+    // near the end and the server's "mark finished with N seconds remaining"
+    // threshold fired) AND the player is paused, update the finished state
+    // so the absorbing card reflects it. Don't interrupt active playback -
+    // let _onPlaybackComplete handle that naturally.
+    final player = AudioPlayerService();
+    final playingKey = player.currentEpisodeId != null
+        ? '${player.currentItemId}-${player.currentEpisodeId}'
+        : player.currentItemId;
+    if (key == playingKey && player.hasBook) {
+      if (mp['isFinished'] == true && !player.isPlaying) {
+        markFinishedLocally(key, skipAutoAdvance: true);
+      }
+      return;
+    }
     _progressMap[key] = mp;
     _localProgressOverrides.remove(key);
     _resetItems.remove(key);
@@ -1834,6 +1895,10 @@ class LibraryProvider extends ChangeNotifier {
       for (final key in continueSeriesKeys) {
         if (!existingIds.contains(key)) {
           _absorbingIdsAdd(key, afterKey: _lastFinishedItemId);
+          // Protect from pruning on future refreshes (the server may not
+          // include it in continue-series again until the user starts it).
+          _manualAbsorbAdds.add(key);
+          _manualAbsorbRemoves.remove(key);
           newContinueSeriesKey ??= key; // first new item is the next in series
         }
       }
@@ -2196,62 +2261,12 @@ class LibraryProvider extends ChangeNotifier {
     // Slide the rolling download window forward for the finished item's series
     _checkRollingDownloads(itemId);
 
-    // Auto-delete finished download if this item's series/show is opted in
-    if (_rollingDownloadSeries.isNotEmpty &&
-        DownloadService().isDownloaded(itemId)) {
+    // Auto-delete finished download if the setting is enabled
+    if (DownloadService().isDownloaded(itemId)) {
       PlayerSettings.getRollingDownloadDeleteFinished().then((delete) {
         if (!delete) return;
-        bool optedIn = false;
-        if (itemId.length > 36) {
-          optedIn = _rollingDownloadSeries.contains(itemId.substring(0, 36));
-        } else {
-          final data = _itemDataWithSeries(itemId);
-          if (data != null) {
-            final (seriesId, _) = _extractSeries(data);
-            optedIn =
-                seriesId != null && _rollingDownloadSeries.contains(seriesId);
-          }
-        }
-        if (optedIn) {
-          DownloadService().deleteDownload(itemId, skipStopCheck: true);
-          _showRollingSnackBar('Deleted finished download');
-        }
-      });
-    }
-
-    // Auto-delete for queue-based downloads (manual queue + queueAutoDownload)
-    if (DownloadService().isDownloaded(itemId)) {
-      final isPodcastItem = itemId.length > 36;
-      Future.wait([
-        isPodcastItem
-            ? PlayerSettings.getPodcastQueueMode()
-            : PlayerSettings.getBookQueueMode(),
-        PlayerSettings.getQueueAutoDownload(),
-        PlayerSettings.getRollingDownloadDeleteFinished(),
-      ]).then((results) {
-        final qMode = results[0] as String;
-        final qAutoDl = results[1] as bool;
-        final deleteFin = results[2] as bool;
-        if (qMode != 'manual' || !qAutoDl || !deleteFin) return;
-        // Skip if already handled by series-based block above
-        bool handledBySeries = false;
-        if (_rollingDownloadSeries.isNotEmpty) {
-          if (itemId.length > 36) {
-            handledBySeries =
-                _rollingDownloadSeries.contains(itemId.substring(0, 36));
-          } else {
-            final data = _itemDataWithSeries(itemId);
-            if (data != null) {
-              final (seriesId, _) = _extractSeries(data);
-              handledBySeries =
-                  seriesId != null && _rollingDownloadSeries.contains(seriesId);
-            }
-          }
-        }
-        if (!handledBySeries) {
-          DownloadService().deleteDownload(itemId, skipStopCheck: true);
-          _showRollingSnackBar('Deleted finished download');
-        }
+        DownloadService().deleteDownload(itemId, skipStopCheck: true);
+        _showRollingSnackBar('Deleted finished download');
       });
     }
 

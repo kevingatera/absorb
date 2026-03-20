@@ -3,9 +3,9 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:dynamic_color/dynamic_color.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'l10n/app_localizations.dart';
 
 import 'package:device_info_plus/device_info_plus.dart';
 
@@ -37,12 +37,35 @@ final ValueNotifier<bool> oledNotifier = ValueNotifier(false);
 /// Whether to disable the fade animation when switching bottom nav tabs.
 final ValueNotifier<bool> snappyTransitionsNotifier = ValueNotifier(false);
 
-/// Color source: 'wallpaper' (system dynamic) or 'cover' (playing book art).
-final ValueNotifier<String> colorSourceNotifier = ValueNotifier('wallpaper');
 
 /// Cover-art-derived ColorScheme for the currently playing item.
 /// null when nothing is playing or cover hasn't loaded yet.
 final ValueNotifier<ColorScheme?> coverSchemeNotifier = ValueNotifier(null);
+
+/// Whether to trust all certificates (for self-signed / custom CA setups).
+/// Checked dynamically by [_CertOverrides] when any HttpClient is created.
+bool trustAllCerts = false;
+
+/// Allows Dart's HTTP stack to trust user-installed / self-signed certificates.
+/// Android's network_security_config.xml only covers the native layer; Dart's
+/// BoringSSL ignores it, so we override badCertificateCallback globally.
+/// Installed once at startup; checks [trustAllCerts] at HttpClient creation time
+/// so that CachedNetworkImage / flutter_cache_manager pick up the setting.
+class _CertOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    final client = super.createHttpClient(context);
+    if (trustAllCerts) {
+      client.badCertificateCallback = (_, __, ___) => true;
+    }
+    return client;
+  }
+}
+
+/// Enable or disable the global trust-all-certs override.
+void applyTrustAllCerts(bool enabled) {
+  trustAllCerts = enabled;
+}
 
 /// Global key so non-widget code (e.g. providers) can show snackbars.
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
@@ -63,6 +86,7 @@ void applyThemeMode(String value) {
 }
 
 void main() async {
+  HttpOverrides.global = _CertOverrides();
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
 
   // These calls use platform channels that require an Activity. When Android
@@ -85,9 +109,8 @@ void main() async {
     final savedTheme = await PlayerSettings.getThemeMode();
     applyThemeMode(savedTheme);
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
-    colorSourceNotifier.value = await PlayerSettings.getColorSource();
-    // Restore last cover seed color so the theme doesn't flash wallpaper colors
-    if (colorSourceNotifier.value == 'cover') {
+    // Restore last cover seed color so the theme doesn't flash on startup
+    {
       final seedInt = await PlayerSettings.getCoverSeedColor();
       if (seedInt != null) {
         final seedColor = Color(seedInt);
@@ -98,6 +121,11 @@ void main() async {
         );
       }
     }
+  } catch (_) {}
+
+  // Trust user-installed / self-signed certificates if the user opted in
+  try {
+    trustAllCerts = await PlayerSettings.getTrustAllCerts();
   } catch (_) {}
 
   // Capture Flutter framework errors (widget build failures, etc.)
@@ -142,9 +170,6 @@ class AbsorbApp extends StatelessWidget {
         return ValueListenableBuilder<bool>(
           valueListenable: oledNotifier,
           builder: (context, isOled, _) {
-        return ValueListenableBuilder<String>(
-          valueListenable: colorSourceNotifier,
-          builder: (context, colorSource, _) {
         return ValueListenableBuilder<ColorScheme?>(
           valueListenable: coverSchemeNotifier,
           builder: (context, coverScheme, _) {
@@ -160,53 +185,30 @@ class AbsorbApp extends StatelessWidget {
           systemNavigationBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
         ));
 
-        final useCover = colorSource == 'cover' && coverScheme != null;
+        const defaultSeed = Color(0xFF7C6FBF); // deep muted purple
+        final seedColor = coverScheme?.primary ?? defaultSeed;
 
-        return DynamicColorBuilder(
-          builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
-            // Absorb is dark-first — use dynamic dark colors or our custom palette
-            ColorScheme darkScheme;
-            if (useCover) {
-              darkScheme = ColorScheme.fromSeed(
-                seedColor: coverScheme.primary,
-                brightness: Brightness.dark,
-              );
-            } else if (darkDynamic != null) {
-              darkScheme = darkDynamic.harmonized();
-            } else {
-              darkScheme = ColorScheme.fromSeed(
-                seedColor: const Color(0xFF7C6FBF), // deep muted purple
-                brightness: Brightness.dark,
-              );
-            }
+        ColorScheme darkScheme = ColorScheme.fromSeed(
+          seedColor: seedColor,
+          brightness: Brightness.dark,
+        );
 
-            // OLED: pure black surfaces so OLED pixels turn fully off
-            if (isOled) {
-              darkScheme = darkScheme.copyWith(
-                surface: Colors.black,
-                surfaceContainerLowest: Colors.black,
-                surfaceContainerLow: Colors.black,
-                surfaceContainer: const Color(0xFF050505),
-                surfaceContainerHigh: const Color(0xFF0A0A0A),
-                surfaceContainerHighest: const Color(0xFF0F0F0F),
-              );
-            }
+        // OLED: pure black surfaces so OLED pixels turn fully off
+        if (isOled) {
+          darkScheme = darkScheme.copyWith(
+            surface: Colors.black,
+            surfaceContainerLowest: Colors.black,
+            surfaceContainerLow: Colors.black,
+            surfaceContainer: const Color(0xFF050505),
+            surfaceContainerHigh: const Color(0xFF0A0A0A),
+            surfaceContainerHighest: const Color(0xFF0F0F0F),
+          );
+        }
 
-            // Light scheme for users who prefer it
-            ColorScheme lightScheme;
-            if (useCover) {
-              lightScheme = ColorScheme.fromSeed(
-                seedColor: coverScheme.primary,
-                brightness: Brightness.light,
-              );
-            } else if (lightDynamic != null) {
-              lightScheme = lightDynamic.harmonized();
-            } else {
-              lightScheme = ColorScheme.fromSeed(
-                seedColor: const Color(0xFF7C6FBF),
-                brightness: Brightness.light,
-              );
-            }
+        final lightScheme = ColorScheme.fromSeed(
+          seedColor: seedColor,
+          brightness: Brightness.light,
+        );
 
             const pageTransition = PageTransitionsTheme(builders: {
                     TargetPlatform.android: CupertinoPageTransitionsBuilder(),
@@ -217,6 +219,8 @@ class AbsorbApp extends StatelessWidget {
               scaffoldMessengerKey: scaffoldMessengerKey,
               title: 'Absorb',
               debugShowCheckedModeBanner: false,
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
               themeMode: currentMode,
               theme: ThemeData(
                 useMaterial3: true,
@@ -330,10 +334,6 @@ class AbsorbApp extends StatelessWidget {
               ),
               home: const AuthGate(),
             );
-          },
-        );
-        },
-        );
         },
         );
         },
@@ -381,8 +381,8 @@ class _AuthGateState extends State<AuthGate> {
     final scopedTheme = await PlayerSettings.getThemeMode();
     applyThemeMode(scopedTheme);
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
-    colorSourceNotifier.value = await PlayerSettings.getColorSource();
-    if (colorSourceNotifier.value == 'cover') {
+    // Restore cover seed color
+    {
       final seedInt = await PlayerSettings.getCoverSeedColor();
       if (seedInt != null) {
         coverSchemeNotifier.value = ColorScheme.fromSeed(
@@ -454,11 +454,13 @@ class _AuthGateState extends State<AuthGate> {
       debugPrint('[Init] Permission request failed: $e');
     }
 
-    // Initialize Chromecast
-    try {
-      await ChromecastService().init();
-    } catch (e) {
-      debugPrint('[Init] Chromecast init failed: $e');
+    // Initialize Chromecast (Android only)
+    if (Platform.isAndroid) {
+      try {
+        await ChromecastService().init();
+      } catch (e) {
+        debugPrint('[Init] Chromecast init failed: $e');
+      }
     }
 
     // Initialize download tracker and progress sync
@@ -467,10 +469,12 @@ class _AuthGateState extends State<AuthGate> {
       await ProgressSyncService().init();
       await EqualizerService().init();
       await SleepTimerService().loadAutoSleepSettings();
-      // Pre-populate Android Auto browse tree in background.
-      Future.microtask(() => AndroidAutoService().refresh());
-      // Initialize homescreen widget
-      await HomeWidgetService().init();
+      if (Platform.isAndroid) {
+        // Pre-populate Android Auto browse tree in background.
+        Future.microtask(() => AndroidAutoService().refresh());
+        // Initialize homescreen widget
+        await HomeWidgetService().init();
+      }
     } catch (e) {
       debugPrint('[Init] Service init failed: $e');
     }

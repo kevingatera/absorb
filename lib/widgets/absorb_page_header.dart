@@ -11,6 +11,7 @@ class AbsorbPageHeader extends StatelessWidget {
   final Color? brandingColor;
   final Color? titleColor;
   final List<Widget>? actions;
+  final Widget? trailing;
   final EdgeInsetsGeometry padding;
 
   const AbsorbPageHeader({
@@ -19,6 +20,7 @@ class AbsorbPageHeader extends StatelessWidget {
     this.brandingColor,
     this.titleColor,
     this.actions,
+    this.trailing,
     this.padding = const EdgeInsets.fromLTRB(20, 12, 20, 0),
   });
 
@@ -49,6 +51,10 @@ class AbsorbPageHeader extends StatelessWidget {
                         fontWeight: FontWeight.w300,
                       ),
                     ),
+                    if (trailing != null) ...[
+                      const SizedBox(width: 8),
+                      trailing!,
+                    ],
                     const Spacer(),
                     if (actions != null)
                       ConstrainedBox(

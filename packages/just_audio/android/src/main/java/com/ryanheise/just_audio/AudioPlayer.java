@@ -870,6 +870,33 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
             // Upmix mono sources to stereo so Android AudioTrack handles them reliably
             monoProcessor.putChannelMixingMatrix(
                 new androidx.media3.common.audio.ChannelMixingMatrix(1, 2, new float[]{1f, 1f}));
+            // Downmix 5.1 surround (6ch) to stereo so devices that can't output
+            // multi-channel PCM don't crash. Standard ITU-R BS.775 coefficients:
+            // L = FL + 0.707*FC + 0.707*SL + 0.5*LFE
+            // R = FR + 0.707*FC + 0.707*SR + 0.5*LFE
+            // Channel order: FL, FR, FC, LFE, SL, SR
+            monoProcessor.putChannelMixingMatrix(
+                new androidx.media3.common.audio.ChannelMixingMatrix(6, 2, new float[]{
+                    1.0f, 0.0f,   // FL  -> L, R
+                    0.0f, 1.0f,   // FR  -> L, R
+                    0.707f, 0.707f, // FC -> L, R
+                    0.5f, 0.5f,   // LFE -> L, R
+                    0.707f, 0.0f, // SL  -> L, R
+                    0.0f, 0.707f  // SR  -> L, R
+                }));
+            // Downmix 7.1 surround (8ch) to stereo
+            // Channel order: FL, FR, FC, LFE, SL, SR, BL, BR
+            monoProcessor.putChannelMixingMatrix(
+                new androidx.media3.common.audio.ChannelMixingMatrix(8, 2, new float[]{
+                    1.0f, 0.0f,   // FL  -> L, R
+                    0.0f, 1.0f,   // FR  -> L, R
+                    0.707f, 0.707f, // FC -> L, R
+                    0.5f, 0.5f,   // LFE -> L, R
+                    0.707f, 0.0f, // SL  -> L, R
+                    0.0f, 0.707f, // SR  -> L, R
+                    0.5f, 0.0f,   // BL  -> L, R
+                    0.0f, 0.5f    // BR  -> L, R
+                }));
             sMonoProcessor = monoProcessor;
             MonoController.register(AudioPlayer::setMonoEnabled);
             RenderersFactory renderersFactory = new DefaultRenderersFactory(context) {

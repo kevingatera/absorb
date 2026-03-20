@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
@@ -21,7 +21,7 @@ import '../screens/app_shell.dart';
 import '../screens/admin_screen.dart';
 import '../screens/downloads_screen.dart';
 import '../screens/bookmarks_screen.dart';
-import '../main.dart' show applyThemeMode, oledNotifier, snappyTransitionsNotifier, colorSourceNotifier;
+import '../main.dart' show applyThemeMode, applyTrustAllCerts, oledNotifier, snappyTransitionsNotifier;
 import '../widgets/absorb_page_header.dart';
 import '../widgets/absorb_slider.dart';
 
@@ -61,21 +61,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _queueAutoDownload = false;
   bool _mergeAbsorbingLibraries = false;
   int _maxConcurrentDownloads = 1;
-  String _whenFinished = 'overlay';
   bool _hideEbookOnly = false;
   bool _showGoodreadsButton = false;
   bool _loggingEnabled = false;
   bool _fullScreenPlayer = false;
   String _cardButtonLayout = 'standard';
   bool _snappyTransitions = false;
+  bool _rectangleCovers = false;
+  bool _coverPlayButton = false;
   String _themeMode = 'dark';
-  String _colorSource = 'wallpaper';
   int _startScreen = 2;
   int _streamingCacheSizeMb = 0;
   bool _localServerEnabled = false;
   String _localServerUrl = '';
   late final TextEditingController _localServerController;
   bool _disableAudioFocus = false;
+  bool _trustAllCerts = false;
   bool _loaded = false;
   String _downloadLocationLabel = 'App Internal Storage (Default)';
   int _totalDownloadSizeBytes = 0;
@@ -89,22 +90,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   GlobalKey _keyFor(String section) => _sectionKeys.putIfAbsent(section, () => GlobalKey());
 
   void _onSectionExpanded(String section, bool expanded) {
-    setState(() {
-      if (expanded) {
-        _expandedSection = section;
-      } else if (_expandedSection == section) {
-        _expandedSection = null;
-      }
-    });
-    if (expanded) {
-      // Wait for the collapse/expand animations to finish before scrolling
-      Future.delayed(const Duration(milliseconds: 350), () {
-        final ctx = _keyFor(section).currentContext;
-        if (ctx != null && mounted) {
-          Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 250), curve: Curves.easeOut, alignment: 0.3);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        if (expanded) {
+          _expandedSection = section;
+        } else if (_expandedSection == section) {
+          _expandedSection = null;
         }
       });
-    }
+      if (expanded) {
+        Future.delayed(const Duration(milliseconds: 350), () {
+          final ctx = _keyFor(section).currentContext;
+          if (ctx != null && mounted) {
+            Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 250), curve: Curves.easeOut, alignment: 0.3);
+          }
+        });
+      }
+    });
   }
 
   @override
@@ -140,27 +143,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
       PlayerSettings.getQueueAutoDownload(),                  // 15
       PlayerSettings.getMergeAbsorbingLibraries(),            // 16
       PlayerSettings.getMaxConcurrentDownloads(),             // 17
-      PlayerSettings.getWhenFinished(),                       // 18
-      PlayerSettings.getHideEbookOnly(),                      // 19
-      PlayerSettings.getShowGoodreadsButton(),                // 20
-      PlayerSettings.getLoggingEnabled(),                     // 21
-      PlayerSettings.getFullScreenPlayer(),                   // 22
-      PlayerSettings.getThemeMode(),                          // 23
-      PlayerSettings.getSnappyTransitions(),                  // 24
-      DownloadService().downloadLocationLabel,                // 25
-      DownloadService().totalDownloadSize,                    // 26
-      DownloadService.getDeviceStorage(),                     // 27
-      AutoSleepSettings.load(),                               // 28
+      PlayerSettings.getHideEbookOnly(),                      // 18
+      PlayerSettings.getShowGoodreadsButton(),                // 19
+      PlayerSettings.getLoggingEnabled(),                     // 20
+      PlayerSettings.getFullScreenPlayer(),                   // 21
+      PlayerSettings.getThemeMode(),                          // 22
+      PlayerSettings.getSnappyTransitions(),                  // 23
+      DownloadService().downloadLocationLabel,                // 24
+      DownloadService().totalDownloadSize,                    // 25
+      DownloadService.getDeviceStorage(),                     // 26
+      AutoSleepSettings.load(),                               // 27
       PackageInfo.fromPlatform(),                             // 29
       PlayerSettings.getStreamingCacheSizeMb(),               // 30
       PlayerSettings.getLocalServerEnabled(),                  // 31
       PlayerSettings.getLocalServerUrl(),                      // 32
       PlayerSettings.getDisableAudioFocus(),                   // 33
       PlayerSettings.getAutoDownloadOnStream(),                  // 34
-      PlayerSettings.getColorSource(),                           // 35
       PlayerSettings.getStartScreen(),                           // 36
       PlayerSettings.getPodcastQueueMode(),                      // 37
       PlayerSettings.getCardButtonLayout(),                        // 38
+      PlayerSettings.getRectangleCovers(),                           // 39
+      PlayerSettings.getTrustAllCerts(),                               // 40
+      PlayerSettings.getCoverPlayButton(),                             // 41
     ]);
     final s = results[0] as AutoRewindSettings;
     final speed = results[1] as double;
@@ -180,27 +184,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final queueAutoDl = results[15] as bool;
     final mergeLibs = results[16] as bool;
     final maxConc = results[17] as int;
-    final whenFinished = results[18] as String;
-    final hideEbook = results[19] as bool;
-    final showGoodreads = results[20] as bool;
-    final logging = results[21] as bool;
-    final fullScreen = results[22] as bool;
-    final theme = results[23] as String;
-    final snappyTrans = results[24] as bool;
-    final dlLabel = results[25] as String;
-    final dlSize = results[26] as int;
-    final deviceStorage = results[27] as Map<String, int>?;
-    final autoSleep = results[28] as AutoSleepSettings;
-    final pkgInfo = results[29] as PackageInfo;
-    final cacheSizeMb = results[30] as int;
-    final localEnabled = results[31] as bool;
-    final localUrl = results[32] as String;
-    final audioFocusOff = results[33] as bool;
-    final autoDlStream = results[34] as bool;
-    final colorSource = results[35] as String;
-    final startScreen = results[36] as int;
-    final podcastQueueMode = results[37] as String;
-    final cardBtnLayout = results[38] as String;
+    final hideEbook = results[18] as bool;
+    final showGoodreads = results[19] as bool;
+    final logging = results[20] as bool;
+    final fullScreen = results[21] as bool;
+    final theme = results[22] as String;
+    final snappyTrans = results[23] as bool;
+    final dlLabel = results[24] as String;
+    final dlSize = results[25] as int;
+    final deviceStorage = results[26] as Map<String, int>?;
+    final autoSleep = results[27] as AutoSleepSettings;
+    final pkgInfo = results[28] as PackageInfo;
+    final cacheSizeMb = results[29] as int;
+    final localEnabled = results[30] as bool;
+    final localUrl = results[31] as String;
+    final audioFocusOff = results[32] as bool;
+    final autoDlStream = results[33] as bool;
+    final startScreen = results[34] as int;
+    final podcastQueueMode = results[35] as String;
+    final cardBtnLayout = results[36] as String;
+    final rectCovers = results[37] as bool;
+    final trustCerts = results[38] as bool;
+    final coverPlay = results[39] as bool;
     if (mounted) setState(() {
       _rewindSettings = s;
       _defaultSpeed = speed;
@@ -222,14 +227,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _queueAutoDownload = queueAutoDl;
       _mergeAbsorbingLibraries = mergeLibs;
       _maxConcurrentDownloads = maxConc;
-      _whenFinished = whenFinished;
       _hideEbookOnly = hideEbook;
       _showGoodreadsButton = showGoodreads;
       _loggingEnabled = logging;
       _fullScreenPlayer = fullScreen;
       _snappyTransitions = snappyTrans;
       _themeMode = theme;
-      _colorSource = colorSource;
       _downloadLocationLabel = dlLabel;
       _totalDownloadSizeBytes = dlSize;
       if (deviceStorage != null) {
@@ -245,6 +248,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _disableAudioFocus = audioFocusOff;
       _startScreen = startScreen;
       _cardButtonLayout = cardBtnLayout;
+      _rectangleCovers = rectCovers;
+      _coverPlayButton = coverPlay;
+      _trustAllCerts = trustCerts;
       _loaded = true;
     });
   }
@@ -304,9 +310,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 desc: 'Long-press the bookmark button on any card to instantly drop a bookmark at your current position without opening the bookmark sheet.',
               ),
               _tipCard(cs, tt,
-                icon: Icons.fullscreen_rounded,
-                title: 'Full Screen Player',
-                desc: 'Tap the cover art on the active card to open a full screen player view. Swipe down to dismiss it. You can also enable "Full screen player" in Settings to auto-open it whenever playback starts.',
+                icon: Icons.touch_app_rounded,
+                title: 'Cover Play/Pause',
+                desc: 'Tap the cover art on any card to play or pause. A faint pause icon shows when playing so you know it\'s tappable. Use the expand icon in the top-right corner to open the full screen player.',
               ),
               _tipCard(cs, tt,
                 icon: Icons.edit_note_rounded,
@@ -362,8 +368,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               _tipCard(cs, tt,
                 icon: Icons.stop_rounded,
-                title: 'Stop & Sync',
-                desc: 'The "Stop & Sync" button in the Absorbing header fully stops playback and syncs your progress to the server. Use it when you\'re done listening for the day.',
+                title: 'Stop Playback',
+                desc: 'The Stop button in the Absorbing header ends your listening session and saves your progress. Your progress syncs automatically in the background.',
               ),
               _tipCard(cs, tt,
                 icon: Icons.download_rounded,
@@ -606,36 +612,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 16),
-                          Text('Color source', style: tt.titleSmall),
-                          const SizedBox(height: 4),
-                          Text(
-                            _colorSource == 'cover'
-                                ? 'App colors follow the currently playing book cover'
-                                : 'App colors follow your system wallpaper',
-                            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: SegmentedButton<String>(
-                              showSelectedIcon: false,
-                              segments: const [
-                                ButtonSegment(value: 'wallpaper', label: Text('Wallpaper')),
-                                ButtonSegment(value: 'cover', label: Text('Now Playing')),
-                              ],
-                              selected: {_colorSource},
-                              onSelectionChanged: _loaded ? (selected) {
-                                final source = selected.first;
-                                setState(() => _colorSource = source);
-                                PlayerSettings.setColorSource(source);
-                                colorSourceNotifier.value = source;
-                              } : null,
-                              style: const ButtonStyle(
-                                visualDensity: VisualDensity.compact,
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -689,6 +665,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         snappyTransitionsNotifier.value = v;
                       } : null,
                     ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    SwitchListTile(
+                      title: const Text('Rectangle book covers'),
+                      subtitle: Text(
+                        _rectangleCovers ? 'Covers display in 2:3 book proportion' : 'Covers are square',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _rectangleCovers,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _rectangleCovers = v);
+                        PlayerSettings.setRectangleCovers(v);
+                      } : null,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -705,7 +693,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SwitchListTile(
                       title: const Text('Full screen player'),
                       subtitle: Text(
-                        _fullScreenPlayer ? 'On — books open in full screen when played' : 'Off — play within card view',
+                        _fullScreenPlayer ? 'On - books open in full screen when played' : 'Off - play within card view',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _fullScreenPlayer,
                       onChanged: _loaded ? (v) {
@@ -715,9 +703,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     SwitchListTile(
+                      title: const Text('Cover play/pause'),
+                      subtitle: Text(
+                        _coverPlayButton ? 'On - tap cover art to play/pause' : 'Off - dedicated play/pause button in controls',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _coverPlayButton,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _coverPlayButton = v);
+                        PlayerSettings.setCoverPlayButton(v);
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    SwitchListTile(
                       title: const Text('Full book scrubber'),
                       subtitle: Text(
-                        _showBookSlider ? 'On — seekable slider across entire book' : 'Off — progress bar only',
+                        _showBookSlider ? 'On - seekable slider across entire book' : 'Off - progress bar only',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _showBookSlider,
                       onChanged: _loaded ? (v) {
@@ -729,7 +729,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SwitchListTile(
                       title: const Text('Speed-adjusted time'),
                       subtitle: Text(
-                        _speedAdjustedTime ? 'On — remaining time reflects playback speed' : 'Off — showing raw audio duration',
+                        _speedAdjustedTime ? 'On - remaining time reflects playback speed' : 'Off - showing raw audio duration',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _speedAdjustedTime,
                       onChanged: _loaded ? (v) {
@@ -769,31 +769,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ]),
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Row(children: [
-                          Text('When absorbed', style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
-                          _infoIcon('When Absorbed', 'Controls what happens to an absorbing card when you finish a book or episode.\n\nShow Overlay: A completion overlay appears on the card, letting you choose what to do next.\n\nAuto-release: The finished card is automatically removed from your Absorbing screen.'),
-                        ]),
-                        const SizedBox(height: 4),
-                        Text('What happens to the absorbing card when a book or episode finishes',
-                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                        const SizedBox(height: 8),
-                        SizedBox(width: double.infinity, child: SegmentedButton<String>(
-                          segments: const [
-                            ButtonSegment(value: 'overlay', icon: Icon(Icons.layers_rounded), label: Text('Show Overlay')),
-                            ButtonSegment(value: 'auto_remove', icon: Icon(Icons.auto_delete_rounded), label: Text('Auto-release')),
-                          ],
-                          selected: {_whenFinished},
-                          onSelectionChanged: _loaded ? (s) {
-                            setState(() => _whenFinished = s.first);
-                            PlayerSettings.setWhenFinished(s.first);
-                          } : null,
-                          style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                        )),
-                      ]),
-                    ),
                     SwitchListTile(
                       title: Row(children: [
                         const Text('Merge libraries'),
@@ -911,7 +886,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             subtitle: Text(
                               _queueAutoDownload
                                   ? 'Keep next $_rollingDownloadCount items downloaded'
-                                  : 'Off — manual downloads only',
+                                  : 'Off - manual downloads only',
                               style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                             value: _queueAutoDownload,
                             onChanged: _loaded ? (v) {
@@ -952,7 +927,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                      child: Text('New books start at this speed — each book remembers its own',
+                      child: Text('New books start at this speed - each book remembers its own',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant, fontSize: 11)),
                     ),
                     AbsorbSlider(
@@ -1032,7 +1007,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SwitchListTile(
                       title: const Text('Chapter progress in notification'),
                       subtitle: Text(
-                        _notifChapterProgress ? 'On — lockscreen shows chapter progress' : 'Off — lockscreen shows full book progress',
+                        _notifChapterProgress ? 'On - lockscreen shows chapter progress' : 'Off - lockscreen shows full book progress',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _notifChapterProgress,
                       onChanged: _loaded ? (v) {
@@ -1046,7 +1021,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: const Text('Auto-rewind on resume'),
                       subtitle: Text(
                         _rewindSettings.enabled
-                            ? 'On — ${_rewindSettings.minRewind.round()}s to ${_rewindSettings.maxRewind.round()}s based on pause length'
+                            ? 'On -${_rewindSettings.minRewind.round()}s to ${_rewindSettings.maxRewind.round()}s based on pause length'
                             : 'Off',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _rewindSettings.enabled,
@@ -1111,6 +1086,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ? 'Rewinds every time you resume, even after quick interruptions'
                             : 'Only rewinds if paused for ${_rewindSettings.activationDelay.round()}+ seconds',
                           style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant, fontSize: 11)),
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      SwitchListTile(
+                        title: const Text('Chapter barrier'),
+                        subtitle: Text(
+                          "Don't rewind past the start of the current chapter",
+                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                        value: _rewindSettings.chapterBarrier,
+                        onChanged: (v) => _saveRewind(AutoRewindSettings(
+                          enabled: true,
+                          minRewind: _rewindSettings.minRewind,
+                          maxRewind: _rewindSettings.maxRewind,
+                          activationDelay: _rewindSettings.activationDelay,
+                          chapterBarrier: v,
+                        )),
                       ),
                       const Divider(height: 1, indent: 16, endIndent: 16),
                       Padding(
@@ -1342,7 +1332,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SwitchListTile(
                       title: const Text('Download over Wi-Fi only'),
                       subtitle: Text(
-                        _wifiOnlyDownloads ? 'On — mobile data blocked for downloads' : 'Off — downloads on any connection',
+                        _wifiOnlyDownloads ? 'On - mobile data blocked for downloads' : 'Off - downloads on any connection',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _wifiOnlyDownloads,
                       onChanged: _loaded ? (v) {
@@ -1437,7 +1427,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: Text(
                         _rollingDownloadDeleteFinished
                             ? 'Finished items are removed to save space'
-                            : 'Off — finished downloads kept',
+                            : 'Off - finished downloads kept',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _rollingDownloadDeleteFinished,
                       onChanged: _loaded ? (v) {
@@ -1494,8 +1484,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           const SizedBox(height: 4),
                           Text(
                             _streamingCacheSizeMb == 0
-                                ? 'Off — audio is streamed without caching'
-                                : '$_streamingCacheSizeMb MB — recently streamed audio is cached to disk',
+                                ? 'Off - audio is streamed without caching'
+                                : '$_streamingCacheSizeMb MB - recently streamed audio is cached to disk',
                             style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                           const SizedBox(height: 8),
                           SizedBox(width: double.infinity, child: SegmentedButton<int>(
@@ -1547,7 +1537,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: Text(
                         _hideEbookOnly
                             ? 'Books with no audio files are hidden'
-                            : 'Off — all library items shown',
+                            : 'Off - all library items shown',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _hideEbookOnly,
                       onChanged: _loaded ? (v) {
@@ -1561,7 +1551,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: Text(
                         _showGoodreadsButton
                             ? 'Book detail sheet shows a link to Goodreads'
-                            : 'Off — Goodreads button hidden',
+                            : 'Off - Goodreads button hidden',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _showGoodreadsButton,
                       onChanged: _loaded ? (v) {
@@ -1623,6 +1613,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         }
                       },
                     ),
+                    if (Platform.isAndroid) ...[
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     ListTile(
                       leading: const Icon(Icons.battery_saver_outlined),
@@ -1631,24 +1622,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
                       onTap: () async {
-                        if (Platform.isAndroid) {
-                          final status = await Permission.ignoreBatteryOptimizations.status;
-                          if (status.isGranted) {
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                duration: const Duration(seconds: 2),
-                                content: const Text('Battery already unrestricted'),
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ));
-                            }
-                          } else {
-                            final result = await Permission.ignoreBatteryOptimizations.request();
-                            if (result.isPermanentlyDenied && mounted) await openAppSettings();
+                        final status = await Permission.ignoreBatteryOptimizations.status;
+                        if (status.isGranted) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              duration: const Duration(seconds: 2),
+                              content: const Text('Battery already unrestricted'),
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ));
                           }
+                        } else {
+                          final result = await Permission.ignoreBatteryOptimizations.request();
+                          if (result.isPermanentlyDenied && mounted) await openAppSettings();
                         }
                       },
                     ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -1703,8 +1693,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: const Text('Enable logging'),
                       subtitle: Text(
                         _loggingEnabled
-                            ? 'On — logs saved to file (restart to apply)'
-                            : 'Off — no logs captured',
+                            ? 'On - logs saved to file (restart to apply)'
+                            : 'Off - no logs captured',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _loggingEnabled,
                       onChanged: _loaded ? (v) {
@@ -1712,8 +1702,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         PlayerSettings.setLoggingEnabled(v);
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                           content: Text(v
-                              ? 'Logging enabled — restart app to start capturing'
-                              : 'Logging disabled — restart app to stop capturing'),
+                              ? 'Logging enabled - restart app to start capturing'
+                              : 'Logging disabled - restart app to stop capturing'),
                         ));
                       } : null,
                     ),
@@ -1839,16 +1829,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             : 'Off - other audio pauses when Absorb plays',
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _disableAudioFocus,
-                      onChanged: _loaded ? (v) {
+                      onChanged: _loaded ? (v) async {
                         setState(() => _disableAudioFocus = v);
-                        PlayerSettings.setDisableAudioFocus(v);
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text(v
-                              ? 'Audio focus disabled - restart app to apply'
-                              : 'Audio focus enabled - restart app to apply'),
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ));
+                        await PlayerSettings.setDisableAudioFocus(v);
+                        if (!context.mounted) return;
+                        final restart = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Restart Required'),
+                            content: Text(
+                              'Audio focus change requires a full restart to take effect. '
+                              'Close the app now?',
+                            ),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Later')),
+                              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Close App')),
+                            ],
+                          ),
+                        );
+                        if (restart == true) {
+                          SystemChannels.platform.invokeMethod('SystemNavigator.pop', true);
+                        }
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    SwitchListTile(
+                      title: Row(children: [
+                        const Text('Trust all certificates'),
+                        _infoIcon('Self-signed Certificates',
+                          'Enable this if your Audiobookshelf server uses a self-signed certificate or a custom root CA. '
+                          'When enabled, Absorb will skip TLS certificate verification for all connections. '
+                          'Only enable this if you trust your network.'),
+                      ]),
+                      subtitle: Text(
+                        _trustAllCerts
+                            ? 'On - accepting all certificates'
+                            : 'Off - only trusted certificates accepted',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _trustAllCerts,
+                      onChanged: _loaded ? (v) async {
+                        setState(() => _trustAllCerts = v);
+                        await PlayerSettings.setTrustAllCerts(v);
+                        applyTrustAllCerts(v);
                       } : null,
                     ),
                   ],
@@ -2034,7 +2056,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           }),
                           const SizedBox(height: 6),
                         ],
-                        // Add Account button — always visible
+                        // Add Account button - always visible
                         Material(
                           color: cs.surfaceContainerHigh,
                           borderRadius: BorderRadius.circular(14),

@@ -40,9 +40,9 @@ class DownloadNotificationService {
 
     const androidSettings = AndroidInitializationSettings('drawable/ic_notification');
     const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: false,
+      requestAlertPermission: true,
       requestBadgePermission: false,
-      requestSoundPermission: false,
+      requestSoundPermission: true,
     );
     const settings = InitializationSettings(android: androidSettings, iOS: iosSettings);
     await _plugin.initialize(settings);
@@ -313,7 +313,10 @@ class DownloadNotificationService {
       _progressNotifId(slot),
       'Downloading: $title',
       subtitle,
-      NotificationDetails(android: androidDetails),
+      NotificationDetails(
+        android: androidDetails,
+        iOS: const DarwinNotificationDetails(),
+      ),
     );
   }
 
@@ -342,7 +345,10 @@ class DownloadNotificationService {
       alertId,
       title,
       body,
-      const NotificationDetails(android: androidDetails),
+      const NotificationDetails(
+        android: androidDetails,
+        iOS: DarwinNotificationDetails(),
+      ),
     );
   }
 }

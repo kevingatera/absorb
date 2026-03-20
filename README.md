@@ -2,7 +2,7 @@
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/BarnabasApps)
 
-A modern audiobookshelf client for Android with a card-based player experience.
+A modern audiobookshelf client with a card-based player experience.
 
 ## Screenshots
 
@@ -62,7 +62,40 @@ Absorb supports Android Auto for browsing and listening from your car. To use it
 >
 > This is required because Absorb is not distributed through Google Play's production track.
 
+## iOS TestFlight
+
+Absorb is now available on iOS via [TestFlight](https://testflight.apple.com/join/GgUbDbve). Core functionality works, but some features are still Android-only or in progress.
+
+### Working
+If any of these aren't working as expected, please [open an issue](../../issues).
+
+- [x] Library browsing, search, filtering, sorting
+- [x] Streaming and offline playback
+- [x] Downloads (app sandbox storage)
+- [x] Podcast support
+- [x] Sleep timer, bookmarks, chapter navigation
+- [x] Playback speed with per-book memory
+- [x] Auto-rewind after pause
+- [x] Bluetooth media controls (play/pause, skip, rewind)
+- [x] Background audio
+- [x] Lock screen / Control Center controls
+- [x] Multi-account and server switching
+- [x] Backup & restore
+- [x] Dynamic theming
+- [x] OIDC/SSO login
+- [x] Custom headers
+- [x] Listening stats
+- [x] Auto-pause on Bluetooth disconnect
+
+### Not yet available on iOS
+- [ ] Equalizer
+- [ ] Chromecast
+- [ ] CarPlay (Android Auto equivalent)
+- [ ] Home screen / Lock Screen widgets
+- [ ] Audio output device switcher
+- [ ] Custom download location (iOS sandbox only)
+
 ## Requirements
 
 - An [audiobookshelf](https://www.audiobookshelf.org/) server (self-hosted)
-- Android 7.0+
+- Android 7.0+ / iOS 16+

@@ -12,9 +12,16 @@ class LogService {
 
   static const supportEmail = 'barnabas.absorb@gmail.com';
 
+  // Keep 3MB max, trim to 2MB. At ~100 bytes/line this retains ~20k lines
+  // which covers multiple sessions across several days of normal use.
+  static const _maxSize = 3 * 1024 * 1024; // 3 MB
+  static const _keepSize = 2 * 1024 * 1024; // 2 MB
+  static const _rotateCheckInterval = 500; // check every N writes
+
   File? _logFile;
   bool _enabled = false;
   DebugPrintCallback? _originalDebugPrint;
+  int _writeCount = 0;
 
   bool get enabled => _enabled;
 
@@ -27,16 +34,8 @@ class LogService {
     final dir = await getApplicationDocumentsDirectory();
     _logFile = File('${dir.path}/absorb_logs.txt');
 
-    // Rotate: if file > 1MB, keep the last 512KB
-    if (await _logFile!.exists()) {
-      final size = await _logFile!.length();
-      if (size > 1024 * 1024) {
-        final contents = await _logFile!.readAsString();
-        await _logFile!.writeAsString(
-          contents.substring(contents.length - (512 * 1024)),
-        );
-      }
-    }
+    // Rotate on startup if needed
+    await _rotateIfNeeded();
 
     // Session header
     final now = DateTime.now().toIso8601String();
@@ -58,6 +57,7 @@ class LogService {
         '[$ts] $message\n',
         mode: FileMode.append,
       );
+      _maybeRotate();
     }
   }
 
@@ -69,6 +69,40 @@ class LogService {
         '[$ts] $message\n',
         mode: FileMode.append,
       );
+      _maybeRotate();
+    }
+  }
+
+  /// Periodic runtime rotation - check file size every [_rotateCheckInterval]
+  /// writes so the log never grows much past [_maxSize] even during long
+  /// sessions. This keeps the most recent entries and trims the oldest.
+  void _maybeRotate() {
+    _writeCount++;
+    if (_writeCount < _rotateCheckInterval) return;
+    _writeCount = 0;
+    // Run async rotation in the background - don't block the write path.
+    // Writes between the check and the trim are fine; they just append
+    // and the next rotation pass will catch them.
+    _rotateIfNeeded();
+  }
+
+  /// If the log file exceeds [_maxSize], keep only the last [_keepSize] bytes.
+  /// Trims at a newline boundary so partial lines aren't left at the top.
+  Future<void> _rotateIfNeeded() async {
+    try {
+      if (_logFile == null || !await _logFile!.exists()) return;
+      final size = await _logFile!.length();
+      if (size <= _maxSize) return;
+
+      final contents = await _logFile!.readAsString();
+      final trimStart = contents.length - _keepSize;
+      // Find the next newline after the trim point so we don't start
+      // mid-line, which makes logs confusing to read.
+      var cutAt = contents.indexOf('\n', trimStart);
+      if (cutAt < 0) cutAt = trimStart;
+      await _logFile!.writeAsString(contents.substring(cutAt + 1));
+    } catch (_) {
+      // Don't let rotation errors break logging
     }
   }
 

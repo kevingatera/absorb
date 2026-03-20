@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -42,7 +43,9 @@ class _CarModeScreenState extends State<CarModeScreen>
     with SingleTickerProviderStateMixin {
   int _backSkip = 10;
   int _forwardSkip = 30;
+  bool _preferChapterBar = false;
   late AnimationController _playPauseController;
+  Timer? _displayTimer;
 
   @override
   void initState() {
@@ -55,6 +58,11 @@ class _CarModeScreenState extends State<CarModeScreen>
     _loadSkipSettings();
     PlayerSettings.settingsChanged.addListener(_loadSkipSettings);
     widget.player.addListener(_onPlayerChanged);
+    // Tick every second so the speed-adjusted time display updates smoothly
+    // even when the position stream fires less often (e.g. at 0.5x speed).
+    _displayTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && widget.player.isPlaying) setState(() {});
+    });
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
     ]);
@@ -67,6 +75,9 @@ class _CarModeScreenState extends State<CarModeScreen>
     PlayerSettings.getForwardSkip().then((v) {
       if (mounted && v != _forwardSkip) setState(() => _forwardSkip = v);
     });
+    PlayerSettings.getNotificationChapterProgress().then((v) {
+      if (mounted && v != _preferChapterBar) setState(() => _preferChapterBar = v);
+    });
   }
 
   void _onPlayerChanged() {
@@ -75,6 +86,7 @@ class _CarModeScreenState extends State<CarModeScreen>
 
   @override
   void dispose() {
+    _displayTimer?.cancel();
     PlayerSettings.settingsChanged.removeListener(_loadSkipSettings);
     widget.player.removeListener(_onPlayerChanged);
     _playPauseController.dispose();
@@ -135,6 +147,7 @@ class _CarModeScreenState extends State<CarModeScreen>
     final chapters = widget.player.chapters;
     if (chapters.isEmpty) return (0, Duration.zero, Duration.zero);
     final pos = widget.player.position.inSeconds.toDouble();
+    final speed = widget.player.speed;
     for (final ch in chapters) {
       final start = (ch['start'] as num?)?.toDouble() ?? 0;
       final end = (ch['end'] as num?)?.toDouble() ?? 0;
@@ -144,8 +157,8 @@ class _CarModeScreenState extends State<CarModeScreen>
         final progress = chLen > 0 ? (chPos / chLen).clamp(0.0, 1.0) : 0.0;
         return (
           progress,
-          Duration(seconds: chPos.round()),
-          Duration(seconds: (chLen - chPos).round()),
+          Duration(seconds: (chPos / speed).round()),
+          Duration(seconds: ((chLen - chPos) / speed).round()),
         );
       }
     }
@@ -173,34 +186,33 @@ class _CarModeScreenState extends State<CarModeScreen>
     final author = player.currentAuthor ?? widget.fallbackAuthor ?? '';
     final coverUrl = _getCoverUrl(context);
     final auth = context.read<AuthProvider>();
-    final chapterTitle = _currentChapterTitle();
     final hasChapters = player.chapters.length > 1;
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
+        bottom: false,
         child: LayoutBuilder(builder: (context, constraints) {
           final h = constraints.maxHeight;
-          // Compact when in multi-window / small height
-          final compact = h < 500;
-          final titleSize = compact ? 20.0 : 28.0;
-          final authorSize = compact ? 15.0 : 20.0;
-          final chapterTitleSize = compact ? 13.0 : 17.0;
-          final timeSize = compact ? 14.0 : 18.0;
-          final labelSize = compact ? 12.0 : 14.0;
-          final playSize = compact ? 72.0 : 96.0;
-          final playIconSize = compact ? 36.0 : 48.0;
-          final skipSize = compact ? 60.0 : 80.0;
-          final skipIconSize = compact ? 40.0 : 52.0;
-          final skipGap = compact ? 16.0 : 24.0;
-          final hPad = compact ? 24.0 : 32.0;
-          final coverPad = compact ? 32.0 : 48.0;
-          final bottomIconSize = compact ? 28.0 : 36.0;
-          final closeSize = compact ? 26.0 : 32.0;
+          // Three tiers: ultra (<380), compact (<520), full
+          final ultra = h < 380;
+          final compact = h < 520;
+          final titleSize = ultra ? 15.0 : compact ? 18.0 : 24.0;
+          final authorSize = ultra ? 12.0 : compact ? 14.0 : 17.0;
+          final timeSize = ultra ? 10.0 : compact ? 12.0 : 15.0;
+          final skipSize = ultra ? 44.0 : compact ? 56.0 : 72.0;
+          final skipIconSize = ultra ? 30.0 : compact ? 38.0 : 48.0;
+          final hPad = ultra ? 16.0 : compact ? 24.0 : 32.0;
+          final closeSize = ultra ? 22.0 : compact ? 26.0 : 32.0;
+          final bottomIconSize = ultra ? 24.0 : compact ? 28.0 : 36.0;
+          // In ultra mode, only show one bar based on user's notification preference
+          final showBookProgress = !ultra || !_preferChapterBar || !hasChapters;
+          final showChapterProgress = hasChapters && (!ultra || _preferChapterBar);
+          final showAuthor = author.isNotEmpty && !ultra;
 
           return Column(
             children: [
-              // Top bar
+              // ── Header ──
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: compact ? 0 : 4),
                 child: Row(
@@ -218,28 +230,176 @@ class _CarModeScreenState extends State<CarModeScreen>
                 ),
               ),
 
-              // Book progress bar
-              StreamBuilder<Duration>(
+              // ── Book progress ──
+              if (showBookProgress) StreamBuilder<Duration>(
                 stream: player.positionStream,
-                builder: (context, snapshot) {
-                  final pos = snapshot.data ?? player.position;
+                builder: (context, _) {
+                  final pos = player.position;
                   final total = Duration(seconds: player.totalDuration.round());
+                  final speed = player.speed;
                   final bookProgress = total.inMilliseconds > 0
                       ? (pos.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0)
                       : 0.0;
-                  final bookRemaining = total - pos;
+                  final bookElapsed = Duration(milliseconds: (pos.inMilliseconds / speed).round());
+                  final bookRemaining = Duration(milliseconds: ((total - pos).inMilliseconds / speed).round());
 
                   return Padding(
                     padding: EdgeInsets.symmetric(horizontal: hPad),
-                    child: Column(
-                      children: [
-                        if (!compact)
-                          Text('Book', style: TextStyle(color: Colors.white70, fontSize: labelSize, fontWeight: FontWeight.w700)),
-                        SizedBox(height: compact ? 2 : 6),
+                    child: Column(children: [
+                      SizedBox(height: compact ? 2 : 4),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: bookProgress,
+                          minHeight: compact ? 4 : 6,
+                          backgroundColor: Colors.white12,
+                          valueColor: const AlwaysStoppedAnimation(Colors.white70),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(_formatDuration(bookElapsed),
+                              style: TextStyle(color: Colors.white54, fontSize: timeSize, fontWeight: FontWeight.w600)),
+                          Text(_formatRemaining(bookRemaining),
+                              style: TextStyle(color: Colors.white54, fontSize: timeSize, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ]),
+                  );
+                },
+              ),
+
+              SizedBox(height: ultra ? 2 : compact ? 4 : 10),
+
+              // ── Title & Author ──
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: hPad),
+                child: Text(
+                  title,
+                  style: TextStyle(color: Colors.white, fontSize: titleSize, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (showAuthor) ...[
+                SizedBox(height: compact ? 2 : 4),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: hPad),
+                  child: Text(
+                    author,
+                    style: TextStyle(color: Colors.white60, fontSize: authorSize, fontWeight: FontWeight.w500),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+
+              // ── Cover (play/pause toggle) ──
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: hPad + (ultra ? 4 : 16), vertical: ultra ? 2 : compact ? 6 : 12),
+                  child: Center(
+                    child: StreamBuilder<PlayerState>(
+                      stream: player.hasBook ? player.playerStateStream : const Stream.empty(),
+                      builder: (_, snapshot) {
+                        final playing = snapshot.data?.playing ?? player.isPlaying;
+                        final processingState = snapshot.data?.processingState ?? ProcessingState.ready;
+                        final isLoading = _isStarting || (player.hasBook &&
+                            (processingState == ProcessingState.loading ||
+                             processingState == ProcessingState.buffering));
+
+                        if (playing) {
+                          _playPauseController.forward();
+                        } else {
+                          _playPauseController.reverse();
+                        }
+
+                        return AspectRatio(
+                          aspectRatio: 1,
+                          child: GestureDetector(
+                            onTap: player.hasBook
+                                ? player.togglePlayPause
+                                : widget.itemId != null ? _startPlayback : null,
+                            child: Stack(
+                              children: [
+                                Positioned.fill(
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(compact ? 12 : 20),
+                                    child: coverUrl != null
+                                        ? (_isLocalCover
+                                            ? Image.file(File(coverUrl), fit: BoxFit.cover,
+                                                errorBuilder: (_, __, ___) => _placeholderCover(cs))
+                                            : CachedNetworkImage(
+                                                imageUrl: coverUrl,
+                                                fit: BoxFit.cover,
+                                                httpHeaders: auth.apiService?.mediaHeaders ?? {},
+                                                errorWidget: (_, __, ___) => _placeholderCover(cs),
+                                              ))
+                                        : _placeholderCover(cs),
+                                  ),
+                                ),
+                                // Play/pause overlay
+                                Positioned.fill(
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(compact ? 12 : 20),
+                                      color: playing ? Colors.transparent : Colors.black.withValues(alpha: 0.3),
+                                    ),
+                                    child: Center(
+                                      child: isLoading
+                                          ? SizedBox(
+                                              width: compact ? 40 : 56,
+                                              height: compact ? 40 : 56,
+                                              child: const CircularProgressIndicator(strokeWidth: 3, color: Colors.white),
+                                            )
+                                          : AnimatedOpacity(
+                                              opacity: playing ? 0.15 : 0.8,
+                                              duration: const Duration(milliseconds: 200),
+                                              child: Icon(
+                                                playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                                size: compact ? 64 : 88, color: Colors.white,
+                                              ),
+                                            ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── Chapter progress ──
+              if (showChapterProgress)
+                StreamBuilder<Duration>(
+                  stream: player.positionStream,
+                  builder: (context, snapshot) {
+                    final (chProgress, chElapsed, chRemaining) = _chapterProgress();
+                    final chapterTitle = _currentChapterTitle();
+
+                    return Padding(
+                      padding: EdgeInsets.symmetric(horizontal: hPad),
+                      child: Column(children: [
+                        if (chapterTitle.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(chapterTitle,
+                              style: TextStyle(color: Colors.white54, fontSize: compact ? 12.0 : 14.0, fontWeight: FontWeight.w600),
+                              textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          ),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
                           child: LinearProgressIndicator(
-                            value: bookProgress,
+                            value: chProgress,
                             minHeight: compact ? 4 : 6,
                             backgroundColor: Colors.white12,
                             valueColor: const AlwaysStoppedAnimation(Colors.white70),
@@ -249,228 +409,62 @@ class _CarModeScreenState extends State<CarModeScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(_formatDuration(pos),
-                                style: TextStyle(color: Colors.white70, fontSize: timeSize, fontWeight: FontWeight.w700)),
-                            Text(_formatRemaining(bookRemaining),
-                                style: TextStyle(color: Colors.white70, fontSize: timeSize, fontWeight: FontWeight.w700)),
+                            Text(_formatDuration(chElapsed),
+                                style: TextStyle(color: Colors.white54, fontSize: timeSize, fontWeight: FontWeight.w600)),
+                            Text(_formatRemaining(chRemaining),
+                                style: TextStyle(color: Colors.white54, fontSize: timeSize, fontWeight: FontWeight.w600)),
                           ],
                         ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-
-              // Cover art - fills remaining space
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: coverPad, vertical: compact ? 4 : 8),
-                  child: Center(
-                    child: AspectRatio(
-                      aspectRatio: 1,
-                      child: coverUrl != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(compact ? 10 : 16),
-                              child: _isLocalCover
-                                  ? Image.file(File(coverUrl), fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => _placeholderCover(cs))
-                                  : CachedNetworkImage(
-                                      imageUrl: coverUrl,
-                                      fit: BoxFit.cover,
-                                      httpHeaders: auth.apiService?.mediaHeaders ?? {},
-                                      errorWidget: (_, __, ___) => _placeholderCover(cs),
-                                    ),
-                            )
-                          : _placeholderCover(cs),
-                    ),
-                  ),
-                ),
-              ),
-
-              // Title
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: hPad),
-                child: Text(
-                  title,
-                  style: TextStyle(color: Colors.white, fontSize: titleSize, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
-                  maxLines: compact ? 1 : 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (author.isNotEmpty) ...[
-                SizedBox(height: compact ? 2 : 6),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: hPad),
-                  child: Text(
-                    author,
-                    style: TextStyle(color: Colors.white70, fontSize: authorSize, fontWeight: FontWeight.w600),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-              if (chapterTitle.isNotEmpty) ...[
-                SizedBox(height: compact ? 2 : 8),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: hPad),
-                  child: Text(
-                    chapterTitle,
-                    style: TextStyle(color: Colors.white54, fontSize: chapterTitleSize, fontWeight: FontWeight.w600),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-
-              SizedBox(height: compact ? 4 : 12),
-
-              // Chapter progress
-              if (hasChapters && !compact)
-                StreamBuilder<Duration>(
-                  stream: player.positionStream,
-                  builder: (context, snapshot) {
-                    final (chProgress, chElapsed, chRemaining) = _chapterProgress();
-
-                    return Padding(
-                      padding: EdgeInsets.symmetric(horizontal: hPad),
-                      child: Column(
-                        children: [
-                          Text('Chapter', style: TextStyle(color: Colors.white70, fontSize: labelSize, fontWeight: FontWeight.w700)),
-                          const SizedBox(height: 6),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: chProgress,
-                              minHeight: 6,
-                              backgroundColor: Colors.white12,
-                              valueColor: const AlwaysStoppedAnimation(Colors.white70),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(_formatDuration(chElapsed),
-                                  style: TextStyle(color: Colors.white70, fontSize: timeSize, fontWeight: FontWeight.w700)),
-                              Text(_formatRemaining(chRemaining),
-                                  style: TextStyle(color: Colors.white70, fontSize: timeSize, fontWeight: FontWeight.w700)),
-                            ],
-                          ),
-                        ],
-                      ),
+                      ]),
                     );
                   },
                 ),
 
-              SizedBox(height: compact ? 4 : 16),
+              SizedBox(height: ultra ? 2 : compact ? 6 : 14),
 
-              // Playback controls
-              StreamBuilder<PlayerState>(
-                stream: player.hasBook ? player.playerStateStream : const Stream.empty(),
-                builder: (_, snapshot) {
-                  final playing = snapshot.data?.playing ?? player.isPlaying;
-                  final processingState = snapshot.data?.processingState ?? ProcessingState.ready;
-                  final isLoading = _isStarting || (player.hasBook &&
-                      (processingState == ProcessingState.loading ||
-                       processingState == ProcessingState.buffering));
-
-                  if (playing) {
-                    _playPauseController.forward();
-                  } else {
-                    _playPauseController.reverse();
-                  }
-
-                  return Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      GestureDetector(
-                        onTap: player.hasBook
-                            ? () => player.skipBackward(_backSkip)
-                            : null,
-                        child: SizedBox(
-                          width: skipSize,
-                          height: skipSize,
-                          child: Center(
-                            child: _buildSkipIcon(_backSkip, false, player.hasBook, skipIconSize),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: skipGap),
-                      GestureDetector(
-                        onTap: player.hasBook
-                            ? player.togglePlayPause
-                            : widget.itemId != null ? _startPlayback : null,
-                        child: Container(
-                          width: playSize,
-                          height: playSize,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.white.withValues(alpha: 0.15),
-                                blurRadius: 30,
-                                spreadRadius: -5,
-                              ),
-                            ],
-                          ),
-                          child: isLoading
-                              ? Center(
-                                  child: SizedBox(
-                                    width: playIconSize * 0.75,
-                                    height: playIconSize * 0.75,
-                                    child: const CircularProgressIndicator(
-                                      strokeWidth: 3,
-                                      color: Colors.black,
-                                    ),
-                                  ),
-                                )
-                              : Center(
-                                  child: AnimatedIcon(
-                                    icon: AnimatedIcons.play_pause,
-                                    progress: _playPauseController,
-                                    size: playIconSize,
-                                    color: Colors.black,
-                                  ),
-                                ),
-                        ),
-                      ),
-                      SizedBox(width: skipGap),
-                      GestureDetector(
-                        onTap: player.hasBook
-                            ? () => player.skipForward(_forwardSkip)
-                            : null,
-                        child: SizedBox(
-                          width: skipSize,
-                          height: skipSize,
-                          child: Center(
-                            child: _buildSkipIcon(_forwardSkip, true, player.hasBook, skipIconSize),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
+              // ── Skip + Chapter controls ──
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: hPad),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    GestureDetector(
+                      onTap: player.hasBook ? player.skipToPreviousChapter : null,
+                      child: SizedBox(width: skipSize, height: skipSize,
+                        child: Center(child: Icon(Icons.skip_previous_rounded,
+                          size: skipIconSize * 0.85,
+                          color: player.hasBook ? Colors.white70 : Colors.white24))),
+                    ),
+                    GestureDetector(
+                      onTap: player.hasBook ? () => player.skipBackward(_backSkip) : null,
+                      child: SizedBox(width: skipSize, height: skipSize,
+                        child: Center(child: _buildSkipIcon(_backSkip, false, player.hasBook, skipIconSize))),
+                    ),
+                    GestureDetector(
+                      onTap: player.hasBook ? () => player.skipForward(_forwardSkip) : null,
+                      child: SizedBox(width: skipSize, height: skipSize,
+                        child: Center(child: _buildSkipIcon(_forwardSkip, true, player.hasBook, skipIconSize))),
+                    ),
+                    GestureDetector(
+                      onTap: player.hasBook ? player.skipToNextChapter : null,
+                      child: SizedBox(width: skipSize, height: skipSize,
+                        child: Center(child: Icon(Icons.skip_next_rounded,
+                          size: skipIconSize * 0.85,
+                          color: player.hasBook ? Colors.white70 : Colors.white24))),
+                    ),
+                  ],
+                ),
               ),
 
-              SizedBox(height: compact ? 2 : 8),
+              SizedBox(height: ultra ? 0 : compact ? 4 : 10),
 
-              // Bottom row
+              // ── Speed & Bookmark ──
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   IconButton(
-                    icon: Icon(Icons.skip_previous_rounded, size: bottomIconSize),
-                    color: Colors.white70,
-                    onPressed: player.hasBook ? player.skipToPreviousChapter : null,
-                  ),
-                  SizedBox(width: compact ? 12 : 20),
-                  IconButton(
-                    icon: Icon(Icons.speed_rounded, size: bottomIconSize * 0.9),
-                    color: Colors.white70,
+                    icon: Icon(Icons.speed_rounded, size: bottomIconSize),
+                    color: Colors.white54,
                     onPressed: () {
                       showModalBottomSheet(
                         context: context,
@@ -484,10 +478,10 @@ class _CarModeScreenState extends State<CarModeScreen>
                       );
                     },
                   ),
-                  SizedBox(width: compact ? 12 : 20),
+                  SizedBox(width: ultra ? 16 : compact ? 24 : 40),
                   IconButton(
-                    icon: Icon(Icons.bookmark_add_outlined, size: bottomIconSize * 0.9),
-                    color: Colors.white70,
+                    icon: Icon(Icons.bookmark_add_outlined, size: bottomIconSize),
+                    color: Colors.white54,
                     onPressed: player.hasBook ? () {
                       final pos = player.position.inMilliseconds / 1000.0;
                       final chTitle = _currentChapterTitle();
@@ -509,16 +503,10 @@ class _CarModeScreenState extends State<CarModeScreen>
                       );
                     } : null,
                   ),
-                  SizedBox(width: compact ? 12 : 20),
-                  IconButton(
-                    icon: Icon(Icons.skip_next_rounded, size: bottomIconSize),
-                    color: Colors.white70,
-                    onPressed: player.hasBook ? player.skipToNextChapter : null,
-                  ),
                 ],
               ),
 
-              SizedBox(height: compact ? 2 : 8),
+              SizedBox(height: (compact ? 4 : 8) + MediaQuery.of(context).viewPadding.bottom),
             ],
           );
         }),

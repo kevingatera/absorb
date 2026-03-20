@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 
 class CardButtonDef {
@@ -7,7 +8,10 @@ class CardButtonDef {
   const CardButtonDef(this.id, this.label, this.icon);
 }
 
-const allCardButtons = [
+/// Button IDs that are hidden on iOS (features not yet supported).
+final Set<String> _iosHiddenButtons = Platform.isIOS ? const {'cast', 'equalizer'} : const {};
+
+const _allCardButtons = [
   CardButtonDef('chapters', 'Chapters', Icons.list_rounded),
   CardButtonDef('speed', 'Speed', Icons.speed_rounded),
   CardButtonDef('sleep', 'Sleep Timer', Icons.bedtime_outlined),
@@ -20,6 +24,10 @@ const allCardButtons = [
   CardButtonDef('car', 'Car Mode', Icons.directions_car_rounded),
   CardButtonDef('notes', 'Notes', Icons.note_rounded),
 ];
+
+/// Card buttons filtered for the current platform.
+final List<CardButtonDef> allCardButtons =
+    _allCardButtons.where((b) => !_iosHiddenButtons.contains(b.id)).toList();
 
 /// Look up a button definition by ID.
 CardButtonDef? buttonDefById(String id) {

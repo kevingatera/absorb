@@ -33,6 +33,23 @@ import AVFoundation
         result(FlutterMethodNotImplemented)
       }
     }
+
+    let storageChannel = FlutterMethodChannel(name: "com.absorb.storage",
+                                              binaryMessenger: controller.binaryMessenger)
+    storageChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "getDeviceStorage":
+        if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()),
+           let total = (attrs[.systemSize] as? NSNumber)?.int64Value,
+           let free = (attrs[.systemFreeSize] as? NSNumber)?.int64Value {
+          result(["totalBytes": total, "availableBytes": free])
+        } else {
+          result(nil)
+        }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 
   private func getAudioOutputDevices() -> [[String: Any]] {

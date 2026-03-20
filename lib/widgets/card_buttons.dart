@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../services/audio_player_service.dart';
 import '../services/bookmark_service.dart';
@@ -711,6 +712,7 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
                 alignment: Alignment.center,
                 children: [
                   Container(width: 40, height: 4, decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2))),
+                  if (!Platform.isIOS)
                   Align(
                     alignment: Alignment.centerLeft,
                     child: GestureDetector(

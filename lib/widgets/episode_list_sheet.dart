@@ -60,6 +60,9 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
   bool _hideFinished = false;
   String _podcastAdvanceDir = 'oldest_first'; // 'oldest_first' or 'newest_first'
   bool _podcastAutoAdvanceOn = false;
+  bool _selectMode = false;
+  final Set<String> _selectedEpisodeIds = {};
+  bool _isBatchUpdating = false;
 
   String get _itemId => widget.podcastItem['id'] as String? ?? '';
 
@@ -72,6 +75,11 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
   String get _title => _metadata['title'] as String? ?? 'Unknown Podcast';
   String get _author => _metadata['author'] as String? ?? '';
   String get _description => _metadata['description'] as String? ?? '';
+  List<String> get _genres =>
+      (_metadata['genres'] as List<dynamic>?)?.cast<String>() ?? [];
+  String get _language => _metadata['language'] as String? ?? '';
+  bool get _explicit => _metadata['explicit'] == true;
+  String get _type => _metadata['type'] as String? ?? '';
 
   @override
   void initState() {
@@ -182,6 +190,60 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
     SharedPreferences.getInstance().then((prefs) {
       prefs.setBool('podcast_sort_newest_$_itemId', _newestFirst);
     });
+  }
+
+  Future<void> _batchMarkFinished(bool finished) async {
+    if (_selectedEpisodeIds.isEmpty) return;
+    final auth = context.read<AuthProvider>();
+    final api = auth.apiService;
+    if (api == null) return;
+    final lib = context.read<LibraryProvider>();
+
+    setState(() => _isBatchUpdating = true);
+
+    final ids = List<String>.from(_selectedEpisodeIds);
+    for (final epId in ids) {
+      final ep = _episodes.firstWhere(
+        (e) => (e as Map<String, dynamic>)['id'] == epId,
+        orElse: () => <String, dynamic>{},
+      ) as Map<String, dynamic>;
+      final duration = (ep['duration'] as num?)?.toDouble() ?? 0;
+      final key = '$_itemId-$epId';
+
+      if (finished) {
+        await api.updateEpisodeProgress(
+          _itemId, epId,
+          currentTime: duration,
+          duration: duration,
+          isFinished: true,
+        );
+        lib.markFinishedLocally(key, skipAutoAdvance: true);
+      } else {
+        final progressData = lib.getEpisodeProgressData(_itemId, epId);
+        final currentTime = (progressData?['currentTime'] as num?)?.toDouble() ?? 0;
+        await api.updateEpisodeProgress(
+          _itemId, epId,
+          currentTime: currentTime,
+          duration: duration,
+          isFinished: false,
+        );
+      }
+    }
+
+    await lib.refresh();
+    if (mounted) {
+      setState(() {
+        _isBatchUpdating = false;
+        _selectMode = false;
+        _selectedEpisodeIds.clear();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${ids.length} episode${ids.length == 1 ? '' : 's'} marked as ${finished ? 'finished' : 'unfinished'}'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    }
   }
 
   Future<void> _playEpisode(Map<String, dynamic> episode) async {
@@ -496,7 +558,7 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
                 const SizedBox(height: 10),
                 HtmlDescription(
                   html: _description,
-                  maxLines: 2,
+                  maxLines: 3,
                   style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant, height: 1.4),
                   linkColor: cs.primary,
                 ),
@@ -507,27 +569,78 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
               Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
                 if (!_isLoading) _chip(Icons.podcasts_rounded, '${_episodes.length} episode${_episodes.length == 1 ? '' : 's'}'),
                 if (_autoDownloadEnabled) _chip(Icons.downloading_rounded, 'Auto-Download'),
+                ..._genres.take(3).map((g) => _chip(Icons.tag_rounded, g)),
+                if (_language.isNotEmpty) _chip(Icons.language_rounded, _language.toUpperCase()),
+                if (_explicit) _chip(Icons.explicit_rounded, 'Explicit'),
+                if (_type.isNotEmpty && _type != 'episodic') _chip(Icons.list_rounded, _type[0].toUpperCase() + _type.substring(1)),
               ]),
 
               // Episodes section header
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Text('Episodes', style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: _toggleSortOrder,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(_newestFirst ? 'Newest' : 'Oldest',
-                          style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
-                        const SizedBox(width: 2),
-                        Icon(_newestFirst ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
-                          size: 14, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
-                      ],
+                  if (_selectMode) ...[
+                    GestureDetector(
+                      onTap: () => setState(() {
+                        _selectMode = false;
+                        _selectedEpisodeIds.clear();
+                      }),
+                      child: Icon(Icons.close_rounded, size: 20, color: cs.onSurfaceVariant),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    Text('${_selectedEpisodeIds.length} selected',
+                      style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () {
+                        final visible = _hideFinished
+                            ? _episodes.where((e) {
+                                final ep = e as Map<String, dynamic>;
+                                final epId = ep['id'] as String? ?? '';
+                                return lib.getEpisodeProgressData(_itemId, epId)?['isFinished'] != true;
+                              }).toList()
+                            : _episodes;
+                        setState(() {
+                          if (_selectedEpisodeIds.length == visible.length) {
+                            _selectedEpisodeIds.clear();
+                          } else {
+                            _selectedEpisodeIds.clear();
+                            for (final e in visible) {
+                              _selectedEpisodeIds.add((e as Map<String, dynamic>)['id'] as String? ?? '');
+                            }
+                          }
+                        });
+                      },
+                      child: Text('Select All',
+                        style: TextStyle(fontSize: 12, color: cs.primary, fontWeight: FontWeight.w500)),
+                    ),
+                  ] else ...[
+                    Text('Episodes', style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                  ],
+                  const Spacer(),
+                  if (!_selectMode) ...[
+                    GestureDetector(
+                      onTap: () => setState(() => _selectMode = true),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        child: Icon(Icons.checklist_rounded, size: 20, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: _toggleSortOrder,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(_newestFirst ? 'Newest' : 'Oldest',
+                            style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
+                          const SizedBox(width: 2),
+                          Icon(_newestFirst ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                            size: 14, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 4),
@@ -560,10 +673,45 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
                             : _episodes;
                         return ListView.builder(
                           controller: widget.scrollController,
-                          padding: EdgeInsets.only(bottom: 32 + MediaQuery.of(context).viewPadding.bottom),
+                          padding: EdgeInsets.only(bottom: (_selectMode && _selectedEpisodeIds.isNotEmpty ? 64.0 : 32.0) + MediaQuery.of(context).viewPadding.bottom),
                           itemCount: visibleEpisodes.length,
                           itemBuilder: (context, index) {
                             final ep = visibleEpisodes[index] as Map<String, dynamic>;
+                            final epId = ep['id'] as String? ?? '';
+                            if (_selectMode) {
+                              final selected = _selectedEpisodeIds.contains(epId);
+                              return InkWell(
+                                onTap: () => setState(() {
+                                  if (selected) {
+                                    _selectedEpisodeIds.remove(epId);
+                                  } else {
+                                    _selectedEpisodeIds.add(epId);
+                                  }
+                                }),
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                                  child: Row(children: [
+                                    Checkbox(
+                                      value: selected,
+                                      onChanged: (v) => setState(() {
+                                        if (v == true) {
+                                          _selectedEpisodeIds.add(epId);
+                                        } else {
+                                          _selectedEpisodeIds.remove(epId);
+                                        }
+                                      }),
+                                      visualDensity: VisualDensity.compact,
+                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(child: _SelectableEpisodeRow(
+                                      episode: ep,
+                                      itemId: _itemId,
+                                    )),
+                                  ]),
+                                ),
+                              );
+                            }
                             return _EpisodeRow(
                               episode: ep,
                               podcastItem: widget.podcastItem,
@@ -576,6 +724,38 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
                         );
                       }),
           ),
+
+          // ── Batch action bar ──
+          if (_selectMode && _selectedEpisodeIds.isNotEmpty)
+            Container(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 8 + MediaQuery.of(context).viewPadding.bottom),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainer,
+                border: Border(top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.3))),
+              ),
+              child: _isBatchUpdating
+                  ? Center(child: SizedBox(width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary)))
+                  : Row(children: [
+                      Expanded(child: FilledButton.tonalIcon(
+                        onPressed: () => _batchMarkFinished(true),
+                        icon: const Icon(Icons.check_circle_rounded, size: 18),
+                        label: const Text('Mark Finished'),
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      )),
+                      const SizedBox(width: 8),
+                      Expanded(child: OutlinedButton.icon(
+                        onPressed: () => _batchMarkFinished(false),
+                        icon: const Icon(Icons.radio_button_unchecked_rounded, size: 18),
+                        label: const Text('Mark Unfinished'),
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      )),
+                    ]),
+            ),
         ]),
       ]),
     );
@@ -1480,5 +1660,61 @@ class _EpisodeRowState extends State<_EpisodeRow> {
         ),
       ),
     );
+  }
+}
+
+// ── Compact episode row for selection mode ──
+
+class _SelectableEpisodeRow extends StatelessWidget {
+  final Map<String, dynamic> episode;
+  final String itemId;
+
+  const _SelectableEpisodeRow({
+    required this.episode,
+    required this.itemId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final lib = context.watch<LibraryProvider>();
+
+    final title = episode['title'] as String? ?? 'Episode';
+    final episodeId = episode['id'] as String? ?? '';
+    final duration = (episode['duration'] as num?)?.toDouble() ?? 0;
+
+    final progressData = lib.getEpisodeProgressData(itemId, episodeId);
+    final isFinished = progressData?['isFinished'] == true;
+
+    String durationLabel = '';
+    if (duration > 0) {
+      final h = (duration / 3600).floor();
+      final m = ((duration % 3600) / 60).floor();
+      durationLabel = h > 0 ? '${h}h ${m}m' : '${m}m';
+    }
+
+    return Row(children: [
+      if (isFinished)
+        Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: Icon(Icons.check_circle_rounded, size: 14, color: cs.primary.withValues(alpha: 0.6)),
+        ),
+      Expanded(
+        child: Text(title,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: isFinished ? cs.onSurfaceVariant.withValues(alpha: 0.5) : cs.onSurface,
+          ),
+          maxLines: 1, overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      if (durationLabel.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Text(durationLabel,
+            style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.5))),
+        ),
+    ]);
   }
 }

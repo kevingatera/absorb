@@ -23,7 +23,6 @@ class BackupService {
       // Legacy keys for backward compat with older app versions
       'autoPlayNextBook': (await PlayerSettings.getQueueMode()) == 'auto_next',
       'autoPlayNextPodcast': (await PlayerSettings.getQueueMode()) == 'auto_next',
-      'whenFinished': await PlayerSettings.getWhenFinished(),
       'showBookSlider': await PlayerSettings.getShowBookSlider(),
       'speedAdjustedTime': await PlayerSettings.getSpeedAdjustedTime(),
       'forwardSkip': await PlayerSettings.getForwardSkip(),
@@ -63,8 +62,13 @@ class BackupService {
       'authorSort': await PlayerSettings.getAuthorSort(),
       'authorSortAsc': await PlayerSettings.getAuthorSortAsc(),
       'disableAudioFocus': await PlayerSettings.getDisableAudioFocus(),
+      'trustAllCerts': await PlayerSettings.getTrustAllCerts(),
       'localServerEnabled': await PlayerSettings.getLocalServerEnabled(),
       'localServerUrl': await PlayerSettings.getLocalServerUrl(),
+      'startScreen': await PlayerSettings.getStartScreen(),
+      'cardButtonLayout': await PlayerSettings.getCardButtonLayout(),
+      'rectangleCovers': await PlayerSettings.getRectangleCovers(),
+      'coverPlayButton': await PlayerSettings.getCoverPlayButton(),
     };
 
     // AutoRewind (scoped)
@@ -74,6 +78,7 @@ class BackupService {
       'min': rewind.minRewind,
       'max': rewind.maxRewind,
       'delay': rewind.activationDelay,
+      'chapterBarrier': rewind.chapterBarrier,
     };
 
     // AutoSleep (scoped)
@@ -240,8 +245,13 @@ class BackupService {
     if (s['authorSort'] != null) PlayerSettings.setAuthorSort(s['authorSort'] as String);
     if (s['authorSortAsc'] != null) PlayerSettings.setAuthorSortAsc(s['authorSortAsc'] as bool);
     if (s['disableAudioFocus'] != null) PlayerSettings.setDisableAudioFocus(s['disableAudioFocus'] as bool);
+    if (s['trustAllCerts'] != null) PlayerSettings.setTrustAllCerts(s['trustAllCerts'] as bool);
     if (s['localServerEnabled'] != null) PlayerSettings.setLocalServerEnabled(s['localServerEnabled'] as bool);
     if (s['localServerUrl'] != null) PlayerSettings.setLocalServerUrl(s['localServerUrl'] as String);
+    if (s['startScreen'] != null) PlayerSettings.setStartScreen(s['startScreen'] as int);
+    if (s['cardButtonLayout'] != null) PlayerSettings.setCardButtonLayout(s['cardButtonLayout'] as String);
+    if (s['rectangleCovers'] != null) PlayerSettings.setRectangleCovers(s['rectangleCovers'] as bool);
+    if (s['coverPlayButton'] != null) PlayerSettings.setCoverPlayButton(s['coverPlayButton'] as bool);
 
     // AutoRewind (scoped via save())
     final r = data['autoRewind'] as Map<String, dynamic>?;
@@ -251,6 +261,7 @@ class BackupService {
         minRewind: (r['min'] as num?)?.toDouble() ?? 1.0,
         maxRewind: (r['max'] as num?)?.toDouble() ?? 30.0,
         activationDelay: (r['delay'] as num?)?.toDouble() ?? 0.0,
+        chapterBarrier: r['chapterBarrier'] as bool? ?? false,
       ).save();
     }
 

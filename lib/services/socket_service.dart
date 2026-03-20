@@ -11,6 +11,17 @@ class SocketService {
   String? _serverUrl;
 
   bool get isConnected => _socket?.connected ?? false;
+  bool get hasSocket => _socket != null;
+
+  /// Build socket.io options with capped reconnection to avoid
+  /// hammering an unreachable server (and draining battery).
+  Map<String, dynamic> _buildOptions() => IO.OptionBuilder()
+      .setTransports(['websocket'])
+      .enableReconnection()
+      .setReconnectionDelay(1000)
+      .setReconnectionDelayMax(30000)
+      .setReconnectionAttempts(5)
+      .build();
 
   /// Called when the server pushes a progress update (cross-device sync).
   void Function(Map<String, dynamic> progress)? onProgressUpdated;
@@ -37,10 +48,7 @@ class SocketService {
     _serverUrl = serverUrl;
 
     try {
-      _socket = IO.io(serverUrl, IO.OptionBuilder()
-          .setTransports(['websocket'])
-          .enableReconnection()
-          .build());
+      _socket = IO.io(serverUrl, _buildOptions());
 
       // onConnect fires on initial connect AND every reconnect
       _socket!.onConnect((_) {
@@ -122,6 +130,12 @@ class SocketService {
       _socket!.onConnectError((err) {
         debugPrint('[Socket] Connect error: $err');
       });
+
+      _socket!.on('reconnect_failed', (_) {
+        debugPrint('[Socket] Reconnection attempts exhausted — giving up');
+        _socket?.dispose();
+        _socket = null;
+      });
     } catch (e) {
       debugPrint('[Socket] Failed to connect: $e');
       _socket = null;
@@ -175,10 +189,7 @@ class SocketService {
     debugPrint('[Socket] Soft reconnect');
 
     try {
-      _socket = IO.io(url, IO.OptionBuilder()
-          .setTransports(['websocket'])
-          .enableReconnection()
-          .build());
+      _socket = IO.io(url, _buildOptions());
 
       _socket!.onConnect((_) {
         debugPrint('[Socket] Connected, sending auth');
@@ -229,6 +240,12 @@ class SocketService {
 
       _socket!.onConnectError((err) {
         debugPrint('[Socket] Connect error: $err');
+      });
+
+      _socket!.on('reconnect_failed', (_) {
+        debugPrint('[Socket] Reconnection attempts exhausted — giving up');
+        _socket?.dispose();
+        _socket = null;
       });
     } catch (e) {
       debugPrint('[Socket] Failed to reconnect: $e');

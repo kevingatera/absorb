@@ -8,8 +8,9 @@ import 'series_books_sheet.dart';
 
 class SeriesCard extends StatelessWidget {
   final Map<String, dynamic> series;
+  final double coverAspectRatio;
 
-  const SeriesCard({super.key, required this.series});
+  const SeriesCard({super.key, required this.series, this.coverAspectRatio = 1.0});
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +68,7 @@ class SeriesCard extends StatelessWidget {
         children: [
           // Stacked covers
           AspectRatio(
-            aspectRatio: 1,
+            aspectRatio: coverAspectRatio,
             child: _StackedCovers(
               coverUrls: coverUrls,
               numBooks: bookCount,

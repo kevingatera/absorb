@@ -12,7 +12,8 @@ import '../services/backup_service.dart';
 import '../services/oidc_service.dart';
 import '../services/user_account_service.dart';
 import '../widgets/absorb_wave_icon.dart';
-import '../main.dart' show oledNotifier;
+import '../services/audio_player_service.dart';
+import '../main.dart' show applyTrustAllCerts, oledNotifier;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -48,6 +49,7 @@ class _LoginScreenState extends State<LoginScreen>
 
   // Custom headers (advanced)
   bool _showAdvanced = false;
+  bool _trustAllCerts = false;
   final List<(TextEditingController, TextEditingController)> _headerControllers = [];
 
   // App version
@@ -81,6 +83,10 @@ class _LoginScreenState extends State<LoginScreen>
     try {
       final info = await PackageInfo.fromPlatform();
       if (mounted) setState(() => _appVersion = 'v${info.version}');
+    } catch (_) {}
+    try {
+      final trust = await PlayerSettings.getTrustAllCerts();
+      if (mounted) setState(() => _trustAllCerts = trust);
     } catch (_) {}
   }
 
@@ -238,9 +244,12 @@ class _LoginScreenState extends State<LoginScreen>
         setState(() {
           _loginError = auth.errorMessage ?? 'Login failed';
         });
-      } else if (Navigator.of(context).canPop()) {
-        // If pushed as a route (e.g. Add Account), pop back
-        Navigator.of(context).pop();
+      } else {
+        FocusManager.instance.primaryFocus?.unfocus();
+        if (Navigator.of(context).canPop()) {
+          // If pushed as a route (e.g. Add Account), pop back
+          Navigator.of(context).pop();
+        }
       }
     }
   }
@@ -269,6 +278,7 @@ class _LoginScreenState extends State<LoginScreen>
 
     final result = await oidc.handleCallback(callbackUri);
     if (result != null && mounted) {
+      FocusManager.instance.primaryFocus?.unfocus();
       final auth = context.read<AuthProvider>();
       final success = await auth.loginWithOidc(
         serverUrl: fullUrl,
@@ -584,6 +594,32 @@ class _LoginScreenState extends State<LoginScreen>
                                         ),
                                       ),
                                     ),
+                                    const SizedBox(height: 8),
+                                    const Divider(height: 1),
+                                    const SizedBox(height: 4),
+                                    Text('Self-signed Certificates', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.onSurfaceVariant.withValues(alpha: 0.7))),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            'Trust all certificates (for self-signed / custom CA setups)',
+                                            style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+                                          ),
+                                        ),
+                                        Transform.scale(
+                                          scale: 0.8,
+                                          child: Switch(
+                                            value: _trustAllCerts,
+                                            onChanged: (v) async {
+                                              setState(() => _trustAllCerts = v);
+                                              await PlayerSettings.setTrustAllCerts(v);
+                                              applyTrustAllCerts(v);
+                                              _revalidateServer();
+                                            },
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ],
 
                                   // SSO / OIDC button — only shown when server supports it
@@ -855,12 +891,15 @@ class _LoginScreenState extends State<LoginScreen>
     void Function(String)? onFieldSubmitted,
     String? Function(String?)? validator,
   }) {
+    final isUrl = keyboardType == TextInputType.url;
     return TextFormField(
       controller: controller,
       focusNode: focusNode,
       keyboardType: keyboardType,
       textInputAction: textInputAction,
       obscureText: obscureText,
+      autocorrect: !isUrl,
+      enableSuggestions: !isUrl,
       onFieldSubmitted: onFieldSubmitted,
       validator: validator,
       style: TextStyle(color: cs.onSurface),
