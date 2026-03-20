@@ -26,12 +26,14 @@ class AutoRewindSettings {
   final double maxRewind;
   final double
       activationDelay; // seconds — how long pause must be before rewind kicks in
+  final bool chapterBarrier;
 
   const AutoRewindSettings({
     this.enabled = true,
     this.minRewind = 1.0,
     this.maxRewind = 30.0,
     this.activationDelay = 0.0, // 0 = always rewind on resume
+    this.chapterBarrier = false,
   });
 
   static Future<AutoRewindSettings> load() async {
@@ -40,6 +42,8 @@ class AutoRewindSettings {
       minRewind: await ScopedPrefs.getDouble('autoRewind_min') ?? 1.0,
       maxRewind: await ScopedPrefs.getDouble('autoRewind_max') ?? 30.0,
       activationDelay: await ScopedPrefs.getDouble('autoRewind_delay') ?? 0.0,
+      chapterBarrier:
+          await ScopedPrefs.getBool('autoRewind_chapterBarrier') ?? false,
     );
   }
 
@@ -48,6 +52,7 @@ class AutoRewindSettings {
     await ScopedPrefs.setDouble('autoRewind_min', minRewind);
     await ScopedPrefs.setDouble('autoRewind_max', maxRewind);
     await ScopedPrefs.setDouble('autoRewind_delay', activationDelay);
+    await ScopedPrefs.setBool('autoRewind_chapterBarrier', chapterBarrier);
   }
 }
 
@@ -333,12 +338,32 @@ class PlayerSettings {
   static Future<void> setSnappyTransitions(bool value) =>
       _set('snappyTransitions', value);
 
+  static Future<bool> getRectangleCovers() => _get('rectangleCovers', false);
+  static Future<void> setRectangleCovers(bool value) =>
+      _set('rectangleCovers', value, notify: true);
+
+  static Future<bool> getCoverPlayButton() => _get('coverPlayButton', false);
+  static Future<void> setCoverPlayButton(bool value) =>
+      _set('coverPlayButton', value, notify: true);
+
   // ── Audio focus ──
 
   static Future<bool> getDisableAudioFocus() =>
       _get('disableAudioFocus', false);
   static Future<void> setDisableAudioFocus(bool value) =>
       _set('disableAudioFocus', value);
+
+  // ── Self-signed certificates (global, not per-user) ──
+
+  static Future<bool> getTrustAllCerts() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('trustAllCerts') ?? false;
+  }
+
+  static Future<void> setTrustAllCerts(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('trustAllCerts', value);
+  }
 
   // ── Local server ──
 
@@ -1211,6 +1236,11 @@ class AudioPlayerService extends ChangeNotifier {
 
   bool get hasBook => _currentItemId != null;
   bool get isPlaying => _player?.playing ?? false;
+  bool get isLoadingOrBuffering {
+    final s = _player?.processingState;
+    return s == ProcessingState.loading || s == ProcessingState.buffering;
+  }
+
   bool get isOfflineMode => _isOfflineMode;
   double get volume => _player?.volume ?? 1.0;
   Future<void> setVolume(double v) async => _player?.setVolume(v);
