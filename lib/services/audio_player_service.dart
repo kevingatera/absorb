@@ -496,6 +496,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     ),
   );
   AudioPlayerService? _service; // back-reference for auto-rewind
+  int _cachedForwardSkip = 30;
+  int _cachedBackSkip = 10;
 
   AudioPlayer get player => _player;
 
@@ -510,21 +512,42 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   }
 
   AudioPlayerHandler() {
-    // Manually subscribe instead of .pipe() so we can handle errors.
-    // Without onError, a stream error (e.g. network timeout during streaming)
-    // would break the audio_service notification pipeline and crash the app.
-    _player.playbackEventStream.map(_transformEvent).listen(
-      playbackState.add,
-      onError: (Object e, StackTrace st) {
-        debugPrint('[Player] playbackEvent error (suppressed): $e');
-      },
-    );
+    _subscribePlaybackEvents();
   }
 
-  // OnePlus/Oppo/Realme (ColorOS) rearrange media session buttons.
-  static bool get _isOnePlusFamily {
-    final m = ApiService.deviceManufacturer.toLowerCase();
-    return m == 'oneplus' || m == 'oppo' || m == 'realme';
+  int _resubscribeCount = 0;
+  DateTime _lastResubscribe = DateTime.now();
+
+  void _subscribePlaybackEvents() {
+    _player.playbackEventStream.map(_transformEvent).listen(
+      (state) {
+        playbackState.add(state);
+        _resubscribeCount = 0;
+      },
+      onError: (Object e, StackTrace st) {
+        final now = DateTime.now();
+        if (now.difference(_lastResubscribe).inSeconds > 5) {
+          _resubscribeCount = 0;
+        }
+        _lastResubscribe = now;
+        _resubscribeCount++;
+
+        if (_resubscribeCount <= 3) {
+          debugPrint(
+              '[Player] playbackEvent error ($_resubscribeCount/3) - re-subscribing: $e');
+          refreshPlaybackState();
+          _subscribePlaybackEvents();
+        } else {
+          debugPrint(
+              '[Player] playbackEvent error - too many rapid failures, stopping re-subscribe: $e');
+        }
+      },
+      onDone: () {
+        debugPrint('[Player] playbackEvent stream completed - re-subscribing');
+        refreshPlaybackState();
+        _subscribePlaybackEvents();
+      },
+    );
   }
 
   // Speed presets for Android Auto cycling (matches in-app presets)
@@ -533,70 +556,19 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   PlaybackState _transformEvent(PlaybackEvent event) {
     final playPause = _player.playing ? MediaControl.pause : MediaControl.play;
 
-    // Speed action first — Android Auto places the first custom action
-    // inline on the left of transport controls. Use per-speed drawables
-    // so the icon shows the actual speed value (7-segment style digits).
-    final speed = _player.speed;
-    final speedLabel = '${speed.toStringAsFixed(2)}x';
-    String speedIcon;
-    if ((speed - 0.75).abs() < 0.01) {
-      speedIcon = 'drawable/ic_speed_075';
-    } else if ((speed - 1.0).abs() < 0.01) {
-      speedIcon = 'drawable/ic_speed_100';
-    } else if ((speed - 1.25).abs() < 0.01) {
-      speedIcon = 'drawable/ic_speed_125';
-    } else if ((speed - 1.5).abs() < 0.01) {
-      speedIcon = 'drawable/ic_speed_150';
-    } else if ((speed - 1.75).abs() < 0.01) {
-      speedIcon = 'drawable/ic_speed_175';
-    } else if ((speed - 2.0).abs() < 0.01) {
-      speedIcon = 'drawable/ic_speed_200';
-    } else if ((speed - 2.5).abs() < 0.01) {
-      speedIcon = 'drawable/ic_speed_250';
-    } else {
-      speedIcon = 'drawable/ic_speed_100'; // Safe fallback
-    }
-    final speedAction = MediaControl.custom(
-      androidIcon: speedIcon,
-      label: speedLabel,
-      name: 'cycleSpeed',
+    final rewindControl = MediaControl(
+      androidIcon: 'drawable/ic_skip_back',
+      label: 'Back ${_cachedBackSkip}s',
+      action: MediaAction.rewind,
+    );
+    final fastForwardControl = MediaControl(
+      androidIcon: 'drawable/ic_skip_forward',
+      label: 'Forward ${_cachedForwardSkip}s',
+      action: MediaAction.fastForward,
     );
 
-    // Build the controls list.  On most devices, AA places custom actions
-    // in alternating slots outward from play/pause, giving the visual order
-    // [speed][rw][play][ff] when transport comes first.
-    //
-    // OnePlus/Oppo/Realme (ColorOS) rearrange media buttons:
-    //   API < 33  — notification renders the entire row in reverse, so
-    //               send the mirror image.
-    //   API >= 33 — MediaSession custom-action slot placement differs,
-    //               so send controls in the desired visual order directly.
-    // Desired visual order on OnePlus:  speed | rw | play/pause | ff
-    final List<MediaControl> controls;
-    if (_isOnePlusFamily) {
-      if (ApiService.deviceSdkInt >= 33) {
-        controls = [
-          speedAction,
-          MediaControl.rewind,
-          playPause,
-          MediaControl.fastForward
-        ];
-      } else {
-        controls = [
-          MediaControl.fastForward,
-          playPause,
-          MediaControl.rewind,
-          speedAction
-        ];
-      }
-    } else {
-      controls = [
-        MediaControl.rewind,
-        playPause,
-        MediaControl.fastForward,
-        speedAction
-      ];
-    }
+    final controls = [rewindControl, playPause, fastForwardControl];
+    final compactIndices = const [0, 1, 2];
 
     return PlaybackState(
       controls: controls,
@@ -606,9 +578,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
         MediaAction.seekBackward,
         MediaAction.skipToQueueItem,
       },
-      // Notification compact: indices into nativeActions (custom actions are
-      // separated out on the platform side, so standard controls are always 0-2).
-      androidCompactActionIndices: const [0, 1, 2],
+      androidCompactActionIndices: compactIndices,
       processingState: const {
         ProcessingState.idle: AudioProcessingState.idle,
         ProcessingState.loading: AudioProcessingState.loading,
@@ -617,12 +587,9 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
         ProcessingState.completed: AudioProcessingState.completed,
       }[_player.processingState]!,
       playing: _player.playing,
-      updatePosition: _service != null && _service!.notifChapterMode
-          ? _chapterRelativePosition()
-          : _service?.position ?? _player.position,
+      updatePosition: _speedAdjustedPosition(),
       bufferedPosition: _player.bufferedPosition,
-      // Report actual speed — always
-      speed: _player.speed,
+      speed: 1.0,
       queueIndex: _safeCurrentChapterIndex(),
     );
   }
@@ -648,13 +615,19 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
-  /// Compute chapter-relative position for the notification progress bar.
-  Duration _chapterRelativePosition() {
-    if (_service == null) return _player.position;
-    final absPos = _service!.position;
-    final chStart = Duration(seconds: _service!.currentChapterStart.round());
-    final relative = absPos - chStart;
-    return relative.isNegative ? Duration.zero : relative;
+  Duration _speedAdjustedPosition() {
+    Duration pos;
+    if (_service != null && _service!.notifChapterMode) {
+      final absPos = _service!.position;
+      final chStart = Duration(seconds: _service!.currentChapterStart.round());
+      final relative = absPos - chStart;
+      pos = relative.isNegative ? Duration.zero : relative;
+    } else {
+      pos = _service?.position ?? _player.position;
+    }
+    final speed = _player.speed;
+    if (speed <= 0 || speed == 1.0) return pos;
+    return Duration(milliseconds: (pos.inMilliseconds / speed).round());
   }
 
   @override
@@ -681,11 +654,13 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   Future<void> seek(Duration position) async {
     debugPrint('[Handler] seek(${position.inSeconds}s)');
     if (_service != null) {
-      // In chapter mode, the notification sends chapter-relative position —
-      // convert back to absolute book position.
-      final absPos = _service!.notifChapterMode
-          ? position + Duration(seconds: _service!.currentChapterStart.round())
+      final speed = _player.speed;
+      final realPos = speed > 0 && speed != 1.0
+          ? Duration(milliseconds: (position.inMilliseconds * speed).round())
           : position;
+      final absPos = _service!.notifChapterMode
+          ? realPos + Duration(seconds: _service!.currentChapterStart.round())
+          : realPos;
       await _service!.seekTo(absPos);
     } else {
       await _player.seek(position);
@@ -1170,6 +1145,18 @@ class AudioPlayerService extends ChangeNotifier {
         _handler?.refreshPlaybackState();
       }
     });
+    PlayerSettings.getForwardSkip().then((v) {
+      if (_handler != null && v != _handler!._cachedForwardSkip) {
+        _handler!._cachedForwardSkip = v;
+        _handler!.refreshPlaybackState();
+      }
+    });
+    PlayerSettings.getBackSkip().then((v) {
+      if (_handler != null && v != _handler!._cachedBackSkip) {
+        _handler!._cachedBackSkip = v;
+        _handler!.refreshPlaybackState();
+      }
+    });
   }
 
   /// The last seek target in seconds (absolute book position).
@@ -1372,6 +1359,8 @@ class AudioPlayerService extends ChangeNotifier {
       );
       // Bind service so handler routes play/pause through service (for auto-rewind)
       _handler!.bindService(_instance);
+      _handler!._cachedForwardSkip = fwdSkip;
+      _handler!._cachedBackSkip = backSkip;
       debugPrint('[Player] AudioService initialized');
       // Configure streaming cache if enabled
       final cacheSizeMb = await PlayerSettings.getStreamingCacheSizeMb();
