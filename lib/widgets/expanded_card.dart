@@ -102,6 +102,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
   bool _wasPlaying = false;
   bool _isPopping = false; // Prevent double-pop and setState during exit
   List<String> _buttonOrder = PlayerSettings.defaultButtonOrder;
+  bool _coverPlayButton = false;
   bool _autoRemoveFinished = false;
 
   // Our own route, captured for popUntil when modals are stacked above us
@@ -213,6 +214,10 @@ class _ExpandedCardState extends State<ExpandedCard> {
     PlayerSettings.getCardButtonOrder().then((o) {
       if (mounted && o.join(',') != _buttonOrder.join(','))
         setState(() => _buttonOrder = o);
+    });
+    PlayerSettings.getCoverPlayButton().then((v) {
+      if (mounted && v != _coverPlayButton)
+        setState(() => _coverPlayButton = v);
     });
   }
 
@@ -1058,6 +1063,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                 isStarting: _isStarting,
                                 onStart: _startPlayback,
                                 itemId: _itemId,
+                                showPlayButton: !_coverPlayButton,
                               ),
                               const Spacer(flex: 4),
                               // ── Button grid ──

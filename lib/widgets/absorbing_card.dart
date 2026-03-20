@@ -46,6 +46,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
   String? _blurLoadingUrl;
   int _blurRequestId = 0;
   List<String> _buttonOrder = PlayerSettings.defaultButtonOrder;
+  bool _coverPlayButton = false;
   bool _autoRemoveFinished = false;
 
   @override
@@ -149,6 +150,10 @@ class AbsorbingCardState extends State<AbsorbingCard>
     PlayerSettings.getCardButtonOrder().then((o) {
       if (mounted && o.join(',') != _buttonOrder.join(','))
         setState(() => _buttonOrder = o);
+    });
+    PlayerSettings.getCoverPlayButton().then((v) {
+      if (mounted && v != _coverPlayButton)
+        setState(() => _coverPlayButton = v);
     });
   }
 
@@ -953,6 +958,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
                           isStarting: _isStarting,
                           onStart: _startPlayback,
                           itemId: _itemId,
+                          showPlayButton: !_coverPlayButton,
                         ),
                         const Spacer(flex: 3),
                         // ── Button grid (hugs bottom) ──
