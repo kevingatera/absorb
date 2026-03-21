@@ -10,6 +10,7 @@ import '../services/sleep_timer_service.dart';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../main.dart' show snappyTransitionsNotifier, coverSchemeNotifier;
+import '../l10n/app_localizations.dart';
 import '../services/android_auto_service.dart';
 import '../widgets/expanded_card.dart';
 import 'absorbing_screen.dart';
@@ -17,6 +18,7 @@ import 'home_screen.dart';
 import 'library_screen.dart';
 import 'stats_screen.dart';
 import 'settings_screen.dart';
+import '../widgets/welcome_sheet.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -155,10 +157,20 @@ class _AppShellState extends State<AppShell>
     value: 1.0,
   );
 
+  void _loadStartScreen() {
+    PlayerSettings.getStartScreen().then((idx) {
+      if (mounted && idx != _currentIndex && idx >= 0 && idx <= 4) {
+        setState(() => _currentIndex = idx);
+        _ensurePageBuilt(idx);
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _instance = this;
+    _loadStartScreen();
     _ensurePageBuilt(_currentIndex);
     _playerHadBook = _player.hasBook;
     _wasPlaying = _player.isPlaying;
@@ -172,6 +184,7 @@ class _AppShellState extends State<AppShell>
     // Try immediately; _onLibraryChanged picks it up once data loads.
     _deriveCoverScheme();
     context.read<LibraryProvider>().addListener(_onLibraryChanged);
+    WelcomeSheet.showIfNeeded(context);
   }
 
   @override
@@ -388,7 +401,8 @@ class _AppShellState extends State<AppShell>
           _lastBackPress = now;
           ScaffoldMessenger.of(context).clearSnackBars();
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('Press back again to exit'),
+            content:
+                Text(AppLocalizations.of(context)!.appShellPressBackToExit),
             duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
             shape:
@@ -439,6 +453,7 @@ class _AppShellState extends State<AppShell>
   }
 
   List<NavigationDestination> _buildDestinations(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
     final lib = context.watch<LibraryProvider>();
     final isPodcast = lib.isPodcastLibrary;
 
@@ -447,29 +462,29 @@ class _AppShellState extends State<AppShell>
         icon: Icon(isPodcast ? Icons.explore_outlined : Icons.home_outlined),
         selectedIcon:
             Icon(isPodcast ? Icons.explore_rounded : Icons.home_rounded),
-        label: isPodcast ? 'Discover' : 'Home',
+        label: isPodcast ? 'Discover' : l.appShellHomeTab,
       ),
       NavigationDestination(
         icon: Icon(
             isPodcast ? Icons.podcasts_outlined : Icons.library_books_outlined),
         selectedIcon: Icon(
             isPodcast ? Icons.podcasts_rounded : Icons.library_books_rounded),
-        label: isPodcast ? 'Shows' : 'Library',
+        label: isPodcast ? 'Shows' : l.appShellLibraryTab,
       ),
       NavigationDestination(
         icon: const _AnimatedWaveIcon(size: 24, active: false),
         selectedIcon: const _AnimatedWaveIcon(size: 24, active: true),
-        label: 'Absorbing',
+        label: l.appShellAbsorbingTab,
       ),
-      const NavigationDestination(
-        icon: Icon(Icons.bar_chart_rounded),
-        selectedIcon: Icon(Icons.bar_chart_rounded),
-        label: 'Stats',
+      NavigationDestination(
+        icon: const Icon(Icons.bar_chart_rounded),
+        selectedIcon: const Icon(Icons.bar_chart_rounded),
+        label: l.appShellStatsTab,
       ),
-      const NavigationDestination(
-        icon: Icon(Icons.settings_outlined),
-        selectedIcon: Icon(Icons.settings_rounded),
-        label: 'Settings',
+      NavigationDestination(
+        icon: const Icon(Icons.settings_outlined),
+        selectedIcon: const Icon(Icons.settings_rounded),
+        label: l.appShellSettingsTab,
       ),
     ];
   }
@@ -497,19 +512,29 @@ class _AnimatedWaveIconState extends State<_AnimatedWaveIcon>
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
-    )..repeat();
-    _player.addListener(_rebuild);
+    );
+    _player.addListener(_onPlayerChanged);
+    _syncAnimation();
   }
 
   @override
   void dispose() {
     _ctrl.dispose();
-    _player.removeListener(_rebuild);
+    _player.removeListener(_onPlayerChanged);
     super.dispose();
   }
 
-  void _rebuild() {
+  void _onPlayerChanged() {
+    _syncAnimation();
     if (mounted) setState(() {});
+  }
+
+  void _syncAnimation() {
+    if (_player.isPlaying) {
+      if (!_ctrl.isAnimating) _ctrl.repeat();
+    } else {
+      if (_ctrl.isAnimating) _ctrl.stop();
+    }
   }
 
   @override

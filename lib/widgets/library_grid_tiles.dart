@@ -16,8 +16,10 @@ import 'author_books_sheet.dart';
 // ═══════════════════════════════════════════════════════════════
 class GridBookTile extends StatefulWidget {
   final Map<String, dynamic> item;
+  final double coverAspectRatio;
 
-  const GridBookTile({super.key, required this.item});
+  const GridBookTile(
+      {super.key, required this.item, this.coverAspectRatio = 1.0});
 
   @override
   State<GridBookTile> createState() => _GridBookTileState();
@@ -71,9 +73,9 @@ class _GridBookTileState extends State<GridBookTile> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Cover — 1:1 square
+          // Cover
           AspectRatio(
-            aspectRatio: 1,
+            aspectRatio: widget.coverAspectRatio,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: Stack(
@@ -82,7 +84,8 @@ class _GridBookTileState extends State<GridBookTile> {
                   // Cover image
                   coverUrl != null
                       ? coverUrl.startsWith('/')
-                          ? Image.file(File(coverUrl), fit: BoxFit.cover,
+                          ? Image.file(File(coverUrl),
+                              fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) => _placeholder(cs))
                           : CachedNetworkImage(
                               imageUrl: coverUrl,
@@ -132,13 +135,20 @@ class _GridBookTileState extends State<GridBookTile> {
                           children: [
                             if (isFinished) ...[
                               Icon(Icons.check_circle_rounded,
-                                  size: 10, color: Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400] : Colors.green.shade700),
+                                  size: 10,
+                                  color: Theme.of(context).brightness ==
+                                          Brightness.dark
+                                      ? Colors.greenAccent[400]
+                                      : Colors.green.shade700),
                               const SizedBox(width: 3),
                               Text('Done',
                                   style: TextStyle(
                                       fontSize: 9,
                                       fontWeight: FontWeight.w600,
-                                      color: Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400] : Colors.green.shade700)),
+                                      color: Theme.of(context).brightness ==
+                                              Brightness.dark
+                                          ? Colors.greenAccent[400]
+                                          : Colors.green.shade700)),
                             ],
                             if (isFinished && isDownloaded)
                               const SizedBox(width: 6),
@@ -205,7 +215,9 @@ class _GridBookTileState extends State<GridBookTile> {
 // ═══════════════════════════════════════════════════════════════
 class GridSeriesTile extends StatelessWidget {
   final Map<String, dynamic> item;
-  const GridSeriesTile({super.key, required this.item});
+  final double coverAspectRatio;
+  const GridSeriesTile(
+      {super.key, required this.item, this.coverAspectRatio = 1.0});
 
   @override
   Widget build(BuildContext context) {
@@ -215,7 +227,8 @@ class GridSeriesTile extends StatelessWidget {
     final auth = context.read<AuthProvider>();
 
     final itemId = item['id'] as String? ?? '';
-    final collapsedSeries = item['collapsedSeries'] as Map<String, dynamic>? ?? {};
+    final collapsedSeries =
+        item['collapsedSeries'] as Map<String, dynamic>? ?? {};
     final seriesName = collapsedSeries['name'] as String? ?? 'Unknown Series';
     final seriesId = collapsedSeries['id'] as String? ?? '';
     final numBooks = collapsedSeries['numBooks'] as int? ?? 0;
@@ -241,7 +254,7 @@ class GridSeriesTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AspectRatio(
-            aspectRatio: 1,
+            aspectRatio: coverAspectRatio,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: Stack(
@@ -250,7 +263,8 @@ class GridSeriesTile extends StatelessWidget {
                   // Cover image (first book in series)
                   coverUrl != null
                       ? coverUrl.startsWith('/')
-                          ? Image.file(File(coverUrl), fit: BoxFit.cover,
+                          ? Image.file(File(coverUrl),
+                              fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) => _placeholder(cs))
                           : CachedNetworkImage(
                               imageUrl: coverUrl,
@@ -266,7 +280,8 @@ class GridSeriesTile extends StatelessWidget {
                     top: 6,
                     right: 6,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
                       decoration: BoxDecoration(
                         color: cs.primaryContainer,
                         borderRadius: BorderRadius.circular(10),
@@ -274,11 +289,14 @@ class GridSeriesTile extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.auto_stories_rounded, size: 11, color: cs.onPrimaryContainer),
+                          Icon(Icons.auto_stories_rounded,
+                              size: 11, color: cs.onPrimaryContainer),
                           const SizedBox(width: 3),
                           Text('$numBooks',
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
-                              color: cs.onPrimaryContainer)),
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: cs.onPrimaryContainer)),
                         ],
                       ),
                     ),
@@ -334,7 +352,9 @@ class GridSeriesTile extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════
 class GridSeriesTileDirect extends StatelessWidget {
   final Map<String, dynamic> series;
-  const GridSeriesTileDirect({super.key, required this.series});
+  final double coverAspectRatio;
+  const GridSeriesTileDirect(
+      {super.key, required this.series, this.coverAspectRatio = 1.0});
 
   @override
   Widget build(BuildContext context) {
@@ -379,7 +399,7 @@ class GridSeriesTileDirect extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AspectRatio(
-            aspectRatio: 1,
+            aspectRatio: coverAspectRatio,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: Stack(
@@ -387,7 +407,8 @@ class GridSeriesTileDirect extends StatelessWidget {
                 children: [
                   coverUrl != null
                       ? coverUrl.startsWith('/')
-                          ? Image.file(File(coverUrl), fit: BoxFit.cover,
+                          ? Image.file(File(coverUrl),
+                              fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) => _placeholder(cs))
                           : CachedNetworkImage(
                               imageUrl: coverUrl,
@@ -401,7 +422,8 @@ class GridSeriesTileDirect extends StatelessWidget {
                     top: 6,
                     right: 6,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
                       decoration: BoxDecoration(
                         color: cs.primaryContainer,
                         borderRadius: BorderRadius.circular(10),
@@ -409,11 +431,14 @@ class GridSeriesTileDirect extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.auto_stories_rounded, size: 11, color: cs.onPrimaryContainer),
+                          Icon(Icons.auto_stories_rounded,
+                              size: 11, color: cs.onPrimaryContainer),
                           const SizedBox(width: 3),
                           Text('$numBooks',
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
-                              color: cs.onPrimaryContainer)),
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: cs.onPrimaryContainer)),
                         ],
                       ),
                     ),
@@ -522,7 +547,8 @@ class GridAuthorTile extends StatelessWidget {
                     top: 0,
                     right: 0,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
                       decoration: BoxDecoration(
                         color: cs.primaryContainer,
                         borderRadius: BorderRadius.circular(10),
@@ -530,11 +556,14 @@ class GridAuthorTile extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.auto_stories_rounded, size: 11, color: cs.onPrimaryContainer),
+                          Icon(Icons.auto_stories_rounded,
+                              size: 11, color: cs.onPrimaryContainer),
                           const SizedBox(width: 3),
                           Text('$numBooks',
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
-                              color: cs.onPrimaryContainer)),
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: cs.onPrimaryContainer)),
                         ],
                       ),
                     ),

@@ -46,6 +46,8 @@ class AbsorbingCardState extends State<AbsorbingCard>
   String? _blurLoadingUrl;
   int _blurRequestId = 0;
   List<String> _buttonOrder = PlayerSettings.defaultButtonOrder;
+  String _buttonLayout = PlayerSettings.defaultButtonLayout;
+  bool _rectangleCovers = false;
   bool _coverPlayButton = false;
   bool _autoRemoveFinished = false;
 
@@ -150,6 +152,13 @@ class AbsorbingCardState extends State<AbsorbingCard>
     PlayerSettings.getCardButtonOrder().then((o) {
       if (mounted && o.join(',') != _buttonOrder.join(','))
         setState(() => _buttonOrder = o);
+    });
+    PlayerSettings.getCardButtonLayout().then((l) {
+      if (mounted && l != _buttonLayout) setState(() => _buttonLayout = l);
+    });
+    PlayerSettings.getRectangleCovers().then((v) {
+      if (mounted && v != _rectangleCovers)
+        setState(() => _rectangleCovers = v);
     });
     PlayerSettings.getCoverPlayButton().then((v) {
       if (mounted && v != _coverPlayButton)
@@ -583,11 +592,21 @@ class AbsorbingCardState extends State<AbsorbingCard>
                       listenable: ChromecastService(),
                       builder: (context, _) => LayoutBuilder(
                         builder: (context, constraints) {
-                          final coverWidth = constraints.maxWidth * 0.85;
-                          // Use the smaller of desired width or available height to prevent squishing
-                          final coverSize = coverWidth < constraints.maxHeight
-                              ? coverWidth
-                              : constraints.maxHeight;
+                          final maxW = constraints.maxWidth * 0.96;
+                          final maxH = constraints.maxHeight;
+                          double coverW, coverH;
+                          if (_rectangleCovers) {
+                            coverW = maxW;
+                            coverH = coverW * 1.5;
+                            if (coverH > maxH) {
+                              coverH = maxH;
+                              coverW = coverH / 1.5;
+                            }
+                          } else {
+                            final s = maxW < maxH ? maxW : maxH;
+                            coverW = s;
+                            coverH = s;
+                          }
                           final dlKey = _episodeId != null
                               ? '$_itemId-$_episodeId'
                               : _itemId;
@@ -599,8 +618,8 @@ class AbsorbingCardState extends State<AbsorbingCard>
                           return GestureDetector(
                             onTap: () => _expandCard(context),
                             child: Container(
-                              width: coverSize,
-                              height: coverSize,
+                              width: coverW,
+                              height: coverH,
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(16),
                                 boxShadow: [
@@ -961,26 +980,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
                           showPlayButton: !_coverPlayButton,
                         ),
                         const Spacer(flex: 3),
-                        // ── Button grid (hugs bottom) ──
-                        Row(children: [
-                          Expanded(
-                              child: _buildCardButton(
-                                  _buttonOrder[0], accent, tt)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                              child: _buildCardButton(
-                                  _buttonOrder[1], accent, tt)),
-                        ]),
-                        const SizedBox(height: 8),
-                        Row(children: [
-                          Expanded(
-                              child: _buildCardButton(
-                                  _buttonOrder[2], accent, tt)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                              child: _buildCardButton(
-                                  _buttonOrder[3], accent, tt)),
-                        ]),
+                        ..._buildButtonGrid(accent, tt),
                         const SizedBox(height: 8),
                         // More menu / Cast controls (centered below buttons)
                         Center(
@@ -989,7 +989,9 @@ class AbsorbingCardState extends State<AbsorbingCard>
                             builder: (context, _) {
                               final castActive =
                                   ChromecastService().isCasting &&
-                                      !_buttonOrder.take(4).contains('cast');
+                                      !_buttonOrder
+                                          .take(_visibleButtonCount)
+                                          .contains('cast');
                               return GestureDetector(
                                 behavior: HitTestBehavior.opaque,
                                 onTap: castActive
@@ -1237,8 +1239,52 @@ class AbsorbingCardState extends State<AbsorbingCard>
 
   // ── Dynamic button builders ─────────────────────────────────
 
+  int get _visibleButtonCount =>
+      PlayerSettings.buttonCountForLayout(_buttonLayout);
+
+  List<Widget> _buildButtonGrid(Color accent, TextTheme tt) {
+    final count = _visibleButtonCount;
+    final ids = _buttonOrder.take(count).toList();
+
+    int cols;
+    switch (_buttonLayout) {
+      case 'compact':
+        cols = 3;
+        break;
+      case 'row':
+        cols = 5;
+        break;
+      case 'expanded':
+      case 'full':
+        cols = 3;
+        break;
+      default:
+        cols = 2;
+        break;
+    }
+
+    final compact = cols >= 5;
+    final short = cols >= 3;
+    final rows = <Widget>[];
+    for (int r = 0; r < ids.length; r += cols) {
+      if (r > 0) rows.add(const SizedBox(height: 8));
+      final end = (r + cols).clamp(0, ids.length);
+      final rowIds = ids.sublist(r, end);
+      rows.add(Row(children: [
+        for (int c = 0; c < rowIds.length; c++) ...[
+          if (c > 0) const SizedBox(width: 8),
+          Expanded(
+            child: _buildCardButton(rowIds[c], accent, tt,
+                compact: compact, short: short),
+          ),
+        ],
+      ]));
+    }
+    return rows;
+  }
+
   Widget _buildCardButton(String id, Color accent, TextTheme tt,
-      {bool large = false}) {
+      {bool large = false, bool compact = false, bool short = false}) {
     switch (id) {
       case 'chapters':
         return CardWideButton(
@@ -1247,6 +1293,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
           accent: accent,
           isActive: _isPlaybackActive,
           large: large,
+          compact: compact,
           onTap: () => _showChapters(context, accent, tt),
         );
       case 'speed':
@@ -1256,22 +1303,28 @@ class AbsorbingCardState extends State<AbsorbingCard>
           accent: accent,
           isActive: _isPlaybackActive,
           large: large,
+          compact: compact,
           child: CardSpeedButtonInline(
               player: widget.player,
               accent: accent,
               isActive: _isActive,
               large: large,
+              compact: compact,
               itemId: _itemId),
         );
       case 'sleep':
         return CardWideButton(
           icon: Icons.bedtime_outlined,
-          label: 'Sleep Timer',
+          label: short ? 'Sleep' : 'Sleep Timer',
           accent: accent,
           isActive: _isPlaybackActive,
           large: large,
+          compact: compact,
           child: CardSleepButtonInline(
-              accent: accent, isActive: _isPlaybackActive, large: large),
+              accent: accent,
+              isActive: _isPlaybackActive,
+              large: large,
+              compact: compact),
         );
       case 'bookmarks':
         return CardWideButton(
@@ -1280,12 +1333,15 @@ class AbsorbingCardState extends State<AbsorbingCard>
           accent: accent,
           isActive: _isPlaybackActive,
           large: large,
+          compact: compact,
           child: CardBookmarkButtonInline(
             player: widget.player,
             accent: accent,
             isActive: _isActive,
             itemId: _itemId,
             large: large,
+            compact: compact,
+            short: short,
           ),
         );
       case 'details':
@@ -1293,13 +1349,16 @@ class AbsorbingCardState extends State<AbsorbingCard>
           icon: (_episodeId != null || _isPodcastEpisode)
               ? Icons.podcasts_rounded
               : Icons.info_outline_rounded,
-          label: (_episodeId != null || _isPodcastEpisode)
-              ? 'Episode Details'
-              : 'Book Details',
+          label: short
+              ? 'Details'
+              : ((_episodeId != null || _isPodcastEpisode)
+                  ? 'Episode Details'
+                  : 'Book Details'),
           accent: accent,
           isActive: true,
           alwaysEnabled: true,
           large: large,
+          compact: compact,
           onTap: () {
             if (_episodeId != null || _isPodcastEpisode) {
               final episode = _recentEpisode ??
@@ -1317,11 +1376,12 @@ class AbsorbingCardState extends State<AbsorbingCard>
       case 'equalizer':
         return CardWideButton(
           icon: Icons.equalizer_rounded,
-          label: 'Audio Enhancements',
+          label: compact ? 'EQ' : 'Audio Enhancements',
           accent: accent,
           isActive: true,
           alwaysEnabled: true,
           large: large,
+          compact: compact,
           onTap: () => showEqualizerSheet(context, accent),
         );
       case 'cast':
@@ -1341,11 +1401,14 @@ class AbsorbingCardState extends State<AbsorbingCard>
               icon: cast.isConnected
                   ? Icons.cast_connected_rounded
                   : Icons.cast_rounded,
-              label: castLabel,
+              label: (compact || short)
+                  ? (cast.isConnected ? 'Casting' : 'Cast')
+                  : castLabel,
               accent: accent,
               isActive: true,
               alwaysEnabled: true,
               large: large,
+              compact: compact,
               onTap: () => _handleCastTap(context, accent),
             );
           },
@@ -1357,16 +1420,18 @@ class AbsorbingCardState extends State<AbsorbingCard>
           accent: accent,
           isActive: _isActive,
           large: large,
+          compact: compact,
           onTap: () => _showHistory(context, accent, tt),
         );
       case 'remove':
         return CardWideButton(
           icon: Icons.remove_circle_outline_rounded,
-          label: 'Remove from Absorbing',
+          label: short ? 'Remove' : 'Remove from Absorbing',
           accent: Colors.red.shade300,
           isActive: true,
           alwaysEnabled: true,
           large: large,
+          compact: compact,
           onTap: _removeFromAbsorbing,
         );
       default:

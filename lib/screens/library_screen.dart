@@ -182,6 +182,10 @@ class LibraryScreenState extends State<LibraryScreen>
   bool _authorSortAsc = true;
   final _authorsScrollController = ScrollController();
 
+  // ── Cover aspect ratio ──
+  bool _rectangleCovers = false;
+  double get _coverAspectRatio => _rectangleCovers ? 2 / 3 : 1.0;
+
   /// Called externally (e.g. from AppShell) to focus the search field.
   void requestSearchFocus() {
     _focusNode.requestFocus();
@@ -280,6 +284,9 @@ class LibraryScreenState extends State<LibraryScreen>
     PlayerSettings.getCollapseSeries().then((v) {
       if (mounted) setState(() => _collapseSeries = v);
     });
+    PlayerSettings.getRectangleCovers().then((v) {
+      if (mounted) setState(() => _rectangleCovers = v);
+    });
     _restoreSortFilter().then((_) {
       if (!mounted) return;
       _lastLibraryId = lib.selectedLibraryId;
@@ -362,15 +369,20 @@ class LibraryScreenState extends State<LibraryScreen>
     Future.wait([
       PlayerSettings.getHideEbookOnly(),
       PlayerSettings.getCollapseSeries(),
+      PlayerSettings.getRectangleCovers(),
     ]).then((values) {
       final newHideEbook = values[0];
       final newCollapse = values[1];
+      final newRectangle = values[2];
       if (!mounted) return;
-      if (newHideEbook != _hideEbookOnly || newCollapse != _collapseSeries) {
+      if (newHideEbook != _hideEbookOnly ||
+          newCollapse != _collapseSeries ||
+          newRectangle != _rectangleCovers) {
         _loadGeneration++;
         setState(() {
           _hideEbookOnly = newHideEbook;
           _collapseSeries = newCollapse;
+          _rectangleCovers = newRectangle;
           _items.clear();
           _page = 0;
           _hasMore = true;
@@ -1508,9 +1520,10 @@ class LibraryScreenState extends State<LibraryScreen>
           }
           final item = _items[index];
           if (item.containsKey('collapsedSeries')) {
-            return GridSeriesTile(item: item);
+            return GridSeriesTile(
+                item: item, coverAspectRatio: _coverAspectRatio);
           }
-          return GridBookTile(item: item);
+          return GridBookTile(item: item, coverAspectRatio: _coverAspectRatio);
         },
       ),
     );
@@ -1572,7 +1585,8 @@ class LibraryScreenState extends State<LibraryScreen>
               ),
             );
           }
-          return GridSeriesTileDirect(series: _seriesItems[index]);
+          return GridSeriesTileDirect(
+              series: _seriesItems[index], coverAspectRatio: _coverAspectRatio);
         },
       ),
     );

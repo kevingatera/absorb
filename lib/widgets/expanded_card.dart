@@ -102,6 +102,8 @@ class _ExpandedCardState extends State<ExpandedCard> {
   bool _wasPlaying = false;
   bool _isPopping = false; // Prevent double-pop and setState during exit
   List<String> _buttonOrder = PlayerSettings.defaultButtonOrder;
+  String _buttonLayout = PlayerSettings.defaultButtonLayout;
+  bool _rectangleCovers = false;
   bool _coverPlayButton = false;
   bool _autoRemoveFinished = false;
 
@@ -214,6 +216,13 @@ class _ExpandedCardState extends State<ExpandedCard> {
     PlayerSettings.getCardButtonOrder().then((o) {
       if (mounted && o.join(',') != _buttonOrder.join(','))
         setState(() => _buttonOrder = o);
+    });
+    PlayerSettings.getCardButtonLayout().then((l) {
+      if (mounted && l != _buttonLayout) setState(() => _buttonLayout = l);
+    });
+    PlayerSettings.getRectangleCovers().then((v) {
+      if (mounted && v != _rectangleCovers)
+        setState(() => _rectangleCovers = v);
     });
     PlayerSettings.getCoverPlayButton().then((v) {
       if (mounted && v != _coverPlayButton)
@@ -698,11 +707,21 @@ class _ExpandedCardState extends State<ExpandedCard> {
                             listenable: ChromecastService(),
                             builder: (context, _) => LayoutBuilder(
                               builder: (context, constraints) {
-                                final coverWidth = constraints.maxWidth * 0.90;
-                                final coverSize =
-                                    coverWidth < constraints.maxHeight
-                                        ? coverWidth
-                                        : constraints.maxHeight;
+                                final maxW = constraints.maxWidth * 0.90;
+                                final maxH = constraints.maxHeight;
+                                double coverW, coverH;
+                                if (_rectangleCovers) {
+                                  coverW = maxW;
+                                  coverH = coverW * 1.5;
+                                  if (coverH > maxH) {
+                                    coverH = maxH;
+                                    coverW = coverH / 1.5;
+                                  }
+                                } else {
+                                  final s = maxW < maxH ? maxW : maxH;
+                                  coverW = s;
+                                  coverH = s;
+                                }
                                 final dlKey = _episodeId != null
                                     ? '$_itemId-$_episodeId'
                                     : _itemId;
@@ -712,8 +731,8 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                 final isCastingThis = castService.isCasting &&
                                     castService.castingItemId == _itemId;
                                 return Container(
-                                  width: coverSize,
-                                  height: coverSize,
+                                  width: coverW,
+                                  height: coverH,
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(16),
                                     boxShadow: [
@@ -1066,35 +1085,18 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                 showPlayButton: !_coverPlayButton,
                               ),
                               const Spacer(flex: 4),
-                              // ── Button grid ──
-                              Row(children: [
-                                Expanded(
-                                    child: _buildCardButton(
-                                        _buttonOrder[0], accent, tt)),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                    child: _buildCardButton(
-                                        _buttonOrder[1], accent, tt)),
-                              ]),
-                              const SizedBox(height: 14),
-                              Row(children: [
-                                Expanded(
-                                    child: _buildCardButton(
-                                        _buttonOrder[2], accent, tt)),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                    child: _buildCardButton(
-                                        _buttonOrder[3], accent, tt)),
-                              ]),
+                              ..._buildButtonGrid(accent, tt),
                               const SizedBox(height: 14),
                               // More menu / Cast controls
                               Center(
                                 child: ListenableBuilder(
                                   listenable: ChromecastService(),
                                   builder: (context, _) {
-                                    final castActive = ChromecastService()
-                                            .isCasting &&
-                                        !_buttonOrder.take(4).contains('cast');
+                                    final castActive =
+                                        ChromecastService().isCasting &&
+                                            !_buttonOrder
+                                                .take(_visibleButtonCount)
+                                                .contains('cast');
                                     return GestureDetector(
                                       behavior: HitTestBehavior.opaque,
                                       onTap: castActive
@@ -1372,7 +1374,51 @@ class _ExpandedCardState extends State<ExpandedCard> {
 
   // ── Dynamic button builders ─────────────────────────────────
 
-  Widget _buildCardButton(String id, Color accent, TextTheme tt) {
+  int get _visibleButtonCount =>
+      PlayerSettings.buttonCountForLayout(_buttonLayout);
+
+  List<Widget> _buildButtonGrid(Color accent, TextTheme tt) {
+    final count = _visibleButtonCount;
+    final ids = _buttonOrder.take(count).toList();
+
+    int cols;
+    switch (_buttonLayout) {
+      case 'compact':
+        cols = 3;
+        break;
+      case 'row':
+        cols = 5;
+        break;
+      case 'expanded':
+      case 'full':
+        cols = 3;
+        break;
+      default:
+        cols = 2;
+        break;
+    }
+
+    final compact = cols >= 5;
+    final short = cols >= 3;
+    final rows = <Widget>[];
+    for (int r = 0; r < ids.length; r += cols) {
+      if (r > 0) rows.add(const SizedBox(height: 14));
+      final end = (r + cols).clamp(0, ids.length);
+      final rowIds = ids.sublist(r, end);
+      rows.add(Row(children: [
+        for (int c = 0; c < rowIds.length; c++) ...[
+          if (c > 0) const SizedBox(width: 10),
+          Expanded(
+              child: _buildCardButton(rowIds[c], accent, tt,
+                  compact: compact, short: short)),
+        ],
+      ]));
+    }
+    return rows;
+  }
+
+  Widget _buildCardButton(String id, Color accent, TextTheme tt,
+      {bool compact = false, bool short = false}) {
     const large = true;
     switch (id) {
       case 'chapters':
@@ -1382,6 +1428,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
           accent: accent,
           isActive: _isPlaybackActive,
           large: large,
+          compact: compact,
           onTap: () => _showChapters(context, accent, tt),
         );
       case 'speed':
@@ -1391,22 +1438,28 @@ class _ExpandedCardState extends State<ExpandedCard> {
           accent: accent,
           isActive: _isPlaybackActive,
           large: large,
+          compact: compact,
           child: CardSpeedButtonInline(
               player: widget.player,
               accent: accent,
               isActive: _isActive,
               large: large,
+              compact: compact,
               itemId: _itemId),
         );
       case 'sleep':
         return CardWideButton(
           icon: Icons.bedtime_outlined,
-          label: 'Sleep Timer',
+          label: short ? 'Sleep' : 'Sleep Timer',
           accent: accent,
           isActive: _isPlaybackActive,
           large: large,
+          compact: compact,
           child: CardSleepButtonInline(
-              accent: accent, isActive: _isPlaybackActive, large: large),
+              accent: accent,
+              isActive: _isPlaybackActive,
+              large: large,
+              compact: compact),
         );
       case 'bookmarks':
         return CardWideButton(
@@ -1415,12 +1468,15 @@ class _ExpandedCardState extends State<ExpandedCard> {
           accent: accent,
           isActive: _isPlaybackActive,
           large: large,
+          compact: compact,
           child: CardBookmarkButtonInline(
             player: widget.player,
             accent: accent,
             isActive: _isActive,
             itemId: _itemId,
             large: large,
+            compact: compact,
+            short: short,
           ),
         );
       case 'details':
@@ -1428,13 +1484,16 @@ class _ExpandedCardState extends State<ExpandedCard> {
           icon: (_episodeId != null || _isPodcastEpisode)
               ? Icons.podcasts_rounded
               : Icons.info_outline_rounded,
-          label: (_episodeId != null || _isPodcastEpisode)
-              ? 'Episode Details'
-              : 'Book Details',
+          label: short
+              ? 'Details'
+              : ((_episodeId != null || _isPodcastEpisode)
+                  ? 'Episode Details'
+                  : 'Book Details'),
           accent: accent,
           isActive: true,
           alwaysEnabled: true,
           large: large,
+          compact: compact,
           onTap: () {
             if (_episodeId != null || _isPodcastEpisode) {
               final episode = _recentEpisode ??
@@ -1452,11 +1511,12 @@ class _ExpandedCardState extends State<ExpandedCard> {
       case 'equalizer':
         return CardWideButton(
           icon: Icons.equalizer_rounded,
-          label: 'Audio Enhancements',
+          label: compact ? 'EQ' : 'Audio Enhancements',
           accent: accent,
           isActive: true,
           alwaysEnabled: true,
           large: large,
+          compact: compact,
           onTap: () => showEqualizerSheet(context, accent),
         );
       case 'cast':
@@ -1476,11 +1536,14 @@ class _ExpandedCardState extends State<ExpandedCard> {
               icon: cast.isConnected
                   ? Icons.cast_connected_rounded
                   : Icons.cast_rounded,
-              label: castLabel,
+              label: (compact || short)
+                  ? (cast.isConnected ? 'Casting' : 'Cast')
+                  : castLabel,
               accent: accent,
               isActive: true,
               alwaysEnabled: true,
               large: large,
+              compact: compact,
               onTap: () => _handleCastTap(context, accent),
             );
           },
@@ -1492,16 +1555,18 @@ class _ExpandedCardState extends State<ExpandedCard> {
           accent: accent,
           isActive: _isActive,
           large: large,
+          compact: compact,
           onTap: () => _showHistory(context, accent, tt),
         );
       case 'remove':
         return CardWideButton(
           icon: Icons.remove_circle_outline_rounded,
-          label: 'Remove from Absorbing',
+          label: short ? 'Remove' : 'Remove from Absorbing',
           accent: Colors.red.shade300,
           isActive: true,
           alwaysEnabled: true,
           large: large,
+          compact: compact,
           onTap: () {
             _removeFromAbsorbing();
             _dismissExpanded();
