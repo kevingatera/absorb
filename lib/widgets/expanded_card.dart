@@ -17,6 +17,7 @@ import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
 import 'card_buttons.dart';
 import 'chromecast_button.dart';
+import 'cover_art_viewer.dart';
 import 'sleep_timer_sheet.dart';
 import '../screens/car_mode_screen.dart';
 import 'notes_sheet.dart';
@@ -27,10 +28,14 @@ class ExpandedCardRoute extends PageRoute<void> {
   final Widget child;
   ExpandedCardRoute({required this.child});
 
-  @override Color? get barrierColor => null;
-  @override String? get barrierLabel => null;
-  @override bool get maintainState => true;
-  @override bool get opaque => true;
+  @override
+  Color? get barrierColor => null;
+  @override
+  String? get barrierLabel => null;
+  @override
+  bool get maintainState => true;
+  @override
+  bool get opaque => true;
 
   @override
   Duration get transitionDuration => const Duration(milliseconds: 350);
@@ -38,13 +43,20 @@ class ExpandedCardRoute extends PageRoute<void> {
   Duration get reverseTransitionDuration => const Duration(milliseconds: 300);
 
   @override
-  Widget buildPage(BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation) => child;
+  Widget buildPage(BuildContext context, Animation<double> animation,
+          Animation<double> secondaryAnimation) =>
+      child;
 
   @override
-  Widget buildTransitions(BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
-    final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+  Widget buildTransitions(BuildContext context, Animation<double> animation,
+      Animation<double> secondaryAnimation, Widget child) {
+    final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic);
     return SlideTransition(
-      position: Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero).animate(curved),
+      position: Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero)
+          .animate(curved),
       child: FadeTransition(opacity: curved, child: child),
     );
   }
@@ -100,19 +112,24 @@ class _ExpandedCardState extends State<ExpandedCard> {
   late Map<String, dynamic> _item;
 
   String get _itemId => _item['id'] as String? ?? '';
-  Map<String, dynamic> get _media => _item['media'] as Map<String, dynamic>? ?? {};
-  Map<String, dynamic> get _metadata => _media['metadata'] as Map<String, dynamic>? ?? {};
+  Map<String, dynamic> get _media =>
+      _item['media'] as Map<String, dynamic>? ?? {};
+  Map<String, dynamic> get _metadata =>
+      _media['metadata'] as Map<String, dynamic>? ?? {};
   String get _title => _metadata['title'] as String? ?? 'Unknown';
   String get _author => _metadata['authorName'] as String? ?? '';
   double get _duration => (_media['duration'] as num?)?.toDouble() ?? 0;
   List<dynamic> get _chapters {
-    if (_fetchedChapters != null && _fetchedChapters!.isNotEmpty) return _fetchedChapters!;
+    if (_fetchedChapters != null && _fetchedChapters!.isNotEmpty)
+      return _fetchedChapters!;
     final inline = _media['chapters'] as List<dynamic>? ?? [];
     if (inline.isNotEmpty) return inline;
     // For active podcast episodes, chapters come from the playback session
-    if (_isActive && widget.player.chapters.isNotEmpty) return widget.player.chapters;
+    if (_isActive && widget.player.chapters.isNotEmpty)
+      return widget.player.chapters;
     return [];
   }
+
   bool get _isActive {
     if (widget.player.currentItemId != _itemId) return false;
     if (_episodeId != null && widget.player.currentEpisodeId != null) {
@@ -120,14 +137,18 @@ class _ExpandedCardState extends State<ExpandedCard> {
     }
     return true;
   }
+
   bool get _isCastingThis {
     final cast = ChromecastService();
     return cast.isCasting && cast.castingItemId == _itemId;
   }
-  bool get _isPlaybackActive => _isActive || _isCastingThis;
-  bool get _isPodcastEpisode => _isActive && widget.player.currentEpisodeId != null;
 
-  Map<String, dynamic>? get _recentEpisode => _item['recentEpisode'] as Map<String, dynamic>?;
+  bool get _isPlaybackActive => _isActive || _isCastingThis;
+  bool get _isPodcastEpisode =>
+      _isActive && widget.player.currentEpisodeId != null;
+
+  Map<String, dynamic>? get _recentEpisode =>
+      _item['recentEpisode'] as Map<String, dynamic>?;
   // Episode ID: prefer recentEpisode, fall back to compound absorbing key
   String? get _episodeId {
     final re = _recentEpisode;
@@ -136,6 +157,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
     if (absKey != null && absKey.length > 36) return absKey.substring(37);
     return null;
   }
+
   double get _effectiveDuration {
     if (!_isActive && _recentEpisode != null) {
       final epDur = (_recentEpisode!['duration'] as num?)?.toDouble();
@@ -151,6 +173,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
     final lib = context.read<LibraryProvider>();
     return lib.getCoverUrl(_itemId, width: 800);
   }
+
   bool get _isLocalCover => _coverUrl != null && _coverUrl!.startsWith('/');
 
   @override
@@ -180,19 +203,23 @@ class _ExpandedCardState extends State<ExpandedCard> {
 
   void _reloadButtonOrder() {
     PlayerSettings.getCardButtonOrder().then((o) {
-      if (mounted && o.join(',') != _buttonOrder.join(',')) setState(() => _buttonOrder = o);
+      if (mounted && o.join(',') != _buttonOrder.join(','))
+        setState(() => _buttonOrder = o);
     });
     PlayerSettings.getCardButtonLayout().then((l) {
       if (mounted && l != _buttonLayout) setState(() => _buttonLayout = l);
     });
     PlayerSettings.getRectangleCovers().then((v) {
-      if (mounted && v != _rectangleCovers) setState(() => _rectangleCovers = v);
+      if (mounted && v != _rectangleCovers)
+        setState(() => _rectangleCovers = v);
     });
     PlayerSettings.getCoverPlayButton().then((v) {
-      if (mounted && v != _coverPlayButton) setState(() => _coverPlayButton = v);
+      if (mounted && v != _coverPlayButton)
+        setState(() => _coverPlayButton = v);
     });
     PlayerSettings.getSpeedAdjustedTime().then((v) {
-      if (mounted && v != _speedAdjustedTime) setState(() => _speedAdjustedTime = v);
+      if (mounted && v != _speedAdjustedTime)
+        setState(() => _speedAdjustedTime = v);
     });
   }
 
@@ -227,7 +254,8 @@ class _ExpandedCardState extends State<ExpandedCard> {
     // Detect item change: only react if this card was the active item
     final newItemId = widget.player.currentItemId;
     final newEpisodeId = widget.player.currentEpisodeId;
-    if (newItemId != null && _currentItemId == _itemId &&
+    if (newItemId != null &&
+        _currentItemId == _itemId &&
         (newItemId != _currentItemId || newEpisodeId != _currentEpisodeId)) {
       _handleItemChange(newItemId, newEpisodeId);
     }
@@ -288,7 +316,8 @@ class _ExpandedCardState extends State<ExpandedCard> {
     if (newEpisodeId != null) {
       newItem['recentEpisode'] = {
         'id': newEpisodeId,
-        'title': widget.player.currentEpisodeTitle ?? widget.player.currentTitle,
+        'title':
+            widget.player.currentEpisodeTitle ?? widget.player.currentTitle,
         'duration': widget.player.totalDuration,
       };
     }
@@ -322,7 +351,10 @@ class _ExpandedCardState extends State<ExpandedCard> {
         final chapters = ChromecastService().castingChapters;
         if (chapters.isEmpty) {
           final sec = pos.inSeconds;
-          if (sec != _lastChapterIdx) { _lastChapterIdx = sec; if (mounted) setState(() {}); }
+          if (sec != _lastChapterIdx) {
+            _lastChapterIdx = sec;
+            if (mounted) setState(() {});
+          }
           return;
         }
         int idx = 0;
@@ -330,9 +362,15 @@ class _ExpandedCardState extends State<ExpandedCard> {
           final ch = chapters[i] as Map<String, dynamic>;
           final start = (ch['start'] as num?)?.toDouble() ?? 0;
           final end = (ch['end'] as num?)?.toDouble() ?? 0;
-          if (posS >= start && posS < end) { idx = i; break; }
+          if (posS >= start && posS < end) {
+            idx = i;
+            break;
+          }
         }
-        if (idx != _lastChapterIdx) { _lastChapterIdx = idx; if (mounted) setState(() {}); }
+        if (idx != _lastChapterIdx) {
+          _lastChapterIdx = idx;
+          if (mounted) setState(() {});
+        }
       });
       return;
     }
@@ -340,7 +378,9 @@ class _ExpandedCardState extends State<ExpandedCard> {
     _chapterTrackSub = widget.player.absolutePositionStream.listen((pos) {
       if (!_isActive) return;
       final posS = pos.inMilliseconds / 1000.0;
-      final chapters = widget.player.chapters.isNotEmpty ? widget.player.chapters : _chapters;
+      final chapters = widget.player.chapters.isNotEmpty
+          ? widget.player.chapters
+          : _chapters;
       if (chapters.isEmpty) {
         final sec = pos.inSeconds;
         if (sec != _lastChapterIdx) {
@@ -354,7 +394,10 @@ class _ExpandedCardState extends State<ExpandedCard> {
         final ch = chapters[i] as Map<String, dynamic>;
         final start = (ch['start'] as num?)?.toDouble() ?? 0;
         final end = (ch['end'] as num?)?.toDouble() ?? 0;
-        if (posS >= start && posS < end) { idx = i; break; }
+        if (posS >= start && posS < end) {
+          idx = i;
+          break;
+        }
       }
       if (idx != _lastChapterIdx) {
         _lastChapterIdx = idx;
@@ -397,13 +440,12 @@ class _ExpandedCardState extends State<ExpandedCard> {
     _coverBrightness = brightness;
     ColorScheme.fromImageProvider(provider: provider, brightness: brightness)
         .then((s) {
-          if (mounted) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) setState(() => _coverScheme = s);
-            });
-          }
-        })
-        .catchError((_) {});
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _coverScheme = s);
+        });
+      }
+    }).catchError((_) {});
   }
 
   /// Generate our own blurred cover from the current cover URL.
@@ -438,12 +480,15 @@ class _ExpandedCardState extends State<ExpandedCard> {
       final targetHeight = (targetWidth * aspect).round();
 
       final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, targetWidth.toDouble(), targetHeight.toDouble()));
+      final canvas = Canvas(recorder,
+          Rect.fromLTWH(0, 0, targetWidth.toDouble(), targetHeight.toDouble()));
       final paint = Paint()
-        ..imageFilter = ui.ImageFilter.blur(sigmaX: 30, sigmaY: 30, tileMode: TileMode.decal);
+        ..imageFilter = ui.ImageFilter.blur(
+            sigmaX: 30, sigmaY: 30, tileMode: TileMode.decal);
       canvas.drawImageRect(
         srcImage,
-        Rect.fromLTWH(0, 0, srcImage.width.toDouble(), srcImage.height.toDouble()),
+        Rect.fromLTWH(
+            0, 0, srcImage.width.toDouble(), srcImage.height.toDouble()),
         Rect.fromLTWH(0, 0, targetWidth.toDouble(), targetHeight.toDouble()),
         paint,
       );
@@ -478,15 +523,21 @@ class _ExpandedCardState extends State<ExpandedCard> {
             : lib.getProgress(_itemId));
     final bool isFinished;
     if (_episodeId != null) {
-      isFinished = lib.getEpisodeProgressData(_itemId, _episodeId!)?['isFinished'] == true;
+      isFinished =
+          lib.getEpisodeProgressData(_itemId, _episodeId!)?['isFinished'] ==
+              true;
     } else if (_isPodcastEpisode) {
-      isFinished = lib.getEpisodeProgressData(_itemId, widget.player.currentEpisodeId!)?['isFinished'] == true;
+      isFinished = lib.getEpisodeProgressData(
+              _itemId, widget.player.currentEpisodeId!)?['isFinished'] ==
+          true;
     } else {
       isFinished = lib.getProgressData(_itemId)?['isFinished'] == true;
     }
     final chapterIdx = _currentChapterIndex();
     final cast = ChromecastService();
-    final totalChapters = _isCastingThis ? cast.castingChapters.length : (_isActive ? widget.player.chapters.length : _chapters.length);
+    final totalChapters = _isCastingThis
+        ? cast.castingChapters.length
+        : (_isActive ? widget.player.chapters.length : _chapters.length);
     final double bookProgress;
     if (_isCastingThis && cast.castingDuration > 0) {
       final castPos = cast.castPosition.inMilliseconds / 1000.0;
@@ -496,7 +547,8 @@ class _ExpandedCardState extends State<ExpandedCard> {
       if (playerPos < 1.0 && progress > 0.01) {
         bookProgress = progress;
       } else {
-        bookProgress = (playerPos / widget.player.totalDuration).clamp(0.0, 1.0);
+        bookProgress =
+            (playerPos / widget.player.totalDuration).clamp(0.0, 1.0);
       }
     } else {
       bookProgress = progress;
@@ -508,302 +560,529 @@ class _ExpandedCardState extends State<ExpandedCard> {
         if (vy > 300) _dismissExpanded(); // swipe down to collapse
       },
       child: Scaffold(
-      backgroundColor: cs.surface,
-      body: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Layer 1: Blurred cover background
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 600),
-                  child: _buildBackground(isDark, mediaHeaders),
-                ),
-                // Layer 2: Scrim
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: isDark
-                          ? [
-                              Colors.black.withValues(alpha: 0.3),
-                              Colors.black.withValues(alpha: 0.6),
-                              Colors.black.withValues(alpha: 0.85),
-                            ]
-                          : [
-                              Colors.white.withValues(alpha: 0.4),
-                              Colors.white.withValues(alpha: 0.7),
-                              Colors.white.withValues(alpha: 0.9),
-                            ],
-                      ),
-                    ),
+        backgroundColor: cs.surface,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Layer 1: Blurred cover background
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 600),
+              child: _buildBackground(isDark, mediaHeaders),
+            ),
+            // Layer 2: Scrim
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: isDark
+                        ? [
+                            Colors.black.withValues(alpha: 0.3),
+                            Colors.black.withValues(alpha: 0.6),
+                            Colors.black.withValues(alpha: 0.85),
+                          ]
+                        : [
+                            Colors.white.withValues(alpha: 0.4),
+                            Colors.white.withValues(alpha: 0.7),
+                            Colors.white.withValues(alpha: 0.9),
+                          ],
                   ),
                 ),
-                // Layer 3: Content
-                SafeArea(
-                  child: LayoutBuilder(
-                    builder: (context, outerConstraints) {
-                    final compact = outerConstraints.maxHeight < 600;
-                    return Column(
-                    children: [
-                      // ── Stats row ──
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(24, compact ? 4 : 12, 24, 0),
-                        child: Center(
-                          child: Text('${(bookProgress * 100).clamp(0, 100).toStringAsFixed(1)}%',
+              ),
+            ),
+            // Layer 3: Content
+            SafeArea(
+              child: LayoutBuilder(builder: (context, outerConstraints) {
+                final compact = outerConstraints.maxHeight < 600;
+                return Column(
+                  children: [
+                    // ── Stats row ──
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(24, compact ? 4 : 12, 24, 0),
+                      child: Center(
+                        child: Text(
+                            '${(bookProgress * 100).clamp(0, 100).toStringAsFixed(1)}%',
                             style: tt.labelSmall?.copyWith(
-                              color: isDark ? Colors.white.withValues(alpha: 0.55) : Colors.black.withValues(alpha: 0.45),
-                              fontWeight: FontWeight.w500, fontSize: compact ? 10 : 11,
-                              fontFeatures: const [ui.FontFeature.tabularFigures()],
-                              shadows: [Shadow(color: isDark ? Colors.black.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.6), blurRadius: 4)],
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.55)
+                                  : Colors.black.withValues(alpha: 0.45),
+                              fontWeight: FontWeight.w500,
+                              fontSize: compact ? 10 : 11,
+                              fontFeatures: const [
+                                ui.FontFeature.tabularFigures()
+                              ],
+                              shadows: [
+                                Shadow(
+                                    color: isDark
+                                        ? Colors.black.withValues(alpha: 0.6)
+                                        : Colors.white.withValues(alpha: 0.6),
+                                    blurRadius: 4)
+                              ],
                             )),
-                        ),
                       ),
-                      // ── Book progress bar ──
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: progress, staticDuration: _effectiveDuration, chapters: _chapters, showBookBar: (!_isPodcastEpisode || _chapters.isNotEmpty) && (!lib.isPodcastLibrary || _chapters.isNotEmpty), showChapterBar: false, itemId: _itemId),
-                      ),
-                      SizedBox(height: compact ? 4 : 16),
-                      // ── Cover art (larger — 90% width) ──
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: ListenableBuilder(
-                            listenable: ChromecastService(),
-                            builder: (context, _) => LayoutBuilder(
-                              builder: (context, constraints) {
-                                final maxW = constraints.maxWidth * 0.90;
-                                final maxH = constraints.maxHeight;
-                                double coverW, coverH;
-                                if (_rectangleCovers) {
-                                  coverW = maxW;
-                                  coverH = coverW * 1.5;
-                                  if (coverH > maxH) { coverH = maxH; coverW = coverH / 1.5; }
-                                } else {
-                                  final s = maxW < maxH ? maxW : maxH;
-                                  coverW = s;
-                                  coverH = s;
+                    ),
+                    // ── Book progress bar ──
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: CardDualProgressBar(
+                          player: widget.player,
+                          accent: accent,
+                          isActive: _isActive,
+                          staticProgress: progress,
+                          staticDuration: _effectiveDuration,
+                          chapters: _chapters,
+                          showBookBar: (!_isPodcastEpisode ||
+                                  _chapters.isNotEmpty) &&
+                              (!lib.isPodcastLibrary || _chapters.isNotEmpty),
+                          showChapterBar: false,
+                          itemId: _itemId),
+                    ),
+                    SizedBox(height: compact ? 4 : 16),
+                    // ── Cover art (larger — 90% width) ──
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: ListenableBuilder(
+                          listenable: ChromecastService(),
+                          builder: (context, _) => LayoutBuilder(
+                            builder: (context, constraints) {
+                              final maxW = constraints.maxWidth * 0.90;
+                              final maxH = constraints.maxHeight;
+                              double coverW, coverH;
+                              if (_rectangleCovers) {
+                                coverW = maxW;
+                                coverH = coverW * 1.5;
+                                if (coverH > maxH) {
+                                  coverH = maxH;
+                                  coverW = coverH / 1.5;
                                 }
-                                final dlKey = _episodeId != null ? '$_itemId-$_episodeId' : _itemId;
-                                final isDownloaded = DownloadService().isDownloaded(dlKey);
-                                final castService = ChromecastService();
-                                final isCastingThis = castService.isCasting && castService.castingItemId == _itemId;
-                                final coverPlaying = isCastingThis ? castService.isPlaying : (_isActive && widget.player.isPlaying);
-                                final coverLoading = _isStarting || (_isActive && widget.player.isLoadingOrBuffering);
-                                return Center(child: GestureDetector(
-                                  onTap: _coverPlayButton ? () {
-                                    if (isCastingThis) {
-                                      castService.togglePlayPause();
-                                    } else if (_isActive) {
-                                      widget.player.togglePlayPause();
-                                    } else {
-                                      _startPlayback();
-                                    }
-                                  } : null,
-                                  child: Container(
-                                  width: coverW,
-                                  height: coverH,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(16),
-                                    boxShadow: [
-                                      BoxShadow(color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.15), blurRadius: 20, spreadRadius: -2, offset: const Offset(0, 6)),
-                                      BoxShadow(color: accent.withValues(alpha: 0.15), blurRadius: 30, spreadRadius: -5),
-                                    ],
-                                  ),
-                                  child: RepaintBoundary(
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(16),
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          // Cover image
-                                          _coverUrl != null
-                                              ? _isLocalCover
-                                                  ? Image.file(File(_coverUrl!), fit: BoxFit.cover,
-                                                      errorBuilder: (_, __, ___) => _coverPlaceholder())
-                                                  : CachedNetworkImage(imageUrl: _coverUrl!, fit: BoxFit.cover,
-                                                        httpHeaders: mediaHeaders,
-                                                        placeholder: (_, __) => _coverPlaceholder(),
-                                                        errorWidget: (_, __, ___) => _coverPlaceholder())
-                                              : _coverPlaceholder(),
-                                          // Downloaded badge
-                                          if (isDownloaded)
-                                            Positioned(
-                                              top: 8, right: 8,
-                                              child: Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.black.withValues(alpha: 0.6),
-                                                  borderRadius: BorderRadius.circular(10),
-                                                ),
-                                                child: Row(
-                                                  mainAxisSize: MainAxisSize.min,
-                                                  children: [
-                                                    Icon(Icons.download_done_rounded, size: 13, color: accent.withValues(alpha: 0.9)),
-                                                    const SizedBox(width: 4),
-                                                    Text('Downloaded', style: TextStyle(color: accent.withValues(alpha: 0.9), fontSize: 10, fontWeight: FontWeight.w600)),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          // Play/pause overlay
-                                          if (_coverPlayButton && !isCastingThis && !isFinished)
-                                            Positioned.fill(
-                                              child: AnimatedContainer(
-                                                duration: const Duration(milliseconds: 200),
-                                                decoration: BoxDecoration(
-                                                  color: coverPlaying ? Colors.transparent : Colors.black.withValues(alpha: 0.25),
-                                                ),
-                                                child: Center(
-                                                  child: coverLoading
-                                                      ? Container(
-                                                          width: 56, height: 56,
-                                                          decoration: BoxDecoration(
-                                                            shape: BoxShape.circle,
-                                                            color: Colors.black.withValues(alpha: 0.5),
-                                                          ),
-                                                          child: Padding(
-                                                            padding: const EdgeInsets.all(12),
-                                                            child: CircularProgressIndicator(strokeWidth: 3, color: accent),
-                                                          ),
-                                                        )
-                                                      : AnimatedOpacity(
-                                                          opacity: coverPlaying ? 0.2 : 0.9,
-                                                          duration: const Duration(milliseconds: 200),
-                                                          child: Container(
-                                                            width: 64, height: 64,
-                                                            decoration: BoxDecoration(
-                                                              shape: BoxShape.circle,
-                                                              color: Colors.black.withValues(alpha: 0.45),
-                                                            ),
-                                                            child: Icon(
-                                                              coverPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                                              size: 38, color: accent,
-                                                            ),
+                              } else {
+                                final s = maxW < maxH ? maxW : maxH;
+                                coverW = s;
+                                coverH = s;
+                              }
+                              final dlKey = _episodeId != null
+                                  ? '$_itemId-$_episodeId'
+                                  : _itemId;
+                              final isDownloaded =
+                                  DownloadService().isDownloaded(dlKey);
+                              final castService = ChromecastService();
+                              final isCastingThis = castService.isCasting &&
+                                  castService.castingItemId == _itemId;
+                              final coverPlaying = isCastingThis
+                                  ? castService.isPlaying
+                                  : (_isActive && widget.player.isPlaying);
+                              final coverLoading = _isStarting ||
+                                  (_isActive &&
+                                      widget.player.isLoadingOrBuffering);
+                              return Center(
+                                  child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: _coverPlayButton
+                                          ? () {
+                                              if (isCastingThis) {
+                                                castService.togglePlayPause();
+                                              } else if (_isActive) {
+                                                widget.player.togglePlayPause();
+                                              } else {
+                                                _startPlayback();
+                                              }
+                                            }
+                                          : null,
+                                      onLongPress: () => showCoverArtViewer(
+                                            context,
+                                            title: _title,
+                                            coverUrl: _coverUrl,
+                                            httpHeaders: mediaHeaders,
+                                          ),
+                                      child: Container(
+                                        width: coverW,
+                                        height: coverH,
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(16),
+                                          boxShadow: [
+                                            BoxShadow(
+                                                color: Colors.black.withValues(
+                                                    alpha: isDark ? 0.5 : 0.15),
+                                                blurRadius: 20,
+                                                spreadRadius: -2,
+                                                offset: const Offset(0, 6)),
+                                            BoxShadow(
+                                                color: accent.withValues(
+                                                    alpha: 0.15),
+                                                blurRadius: 30,
+                                                spreadRadius: -5),
+                                          ],
+                                        ),
+                                        child: RepaintBoundary(
+                                          child: ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(16),
+                                            child: Stack(
+                                              fit: StackFit.expand,
+                                              children: [
+                                                // Cover image
+                                                _coverUrl != null
+                                                    ? _isLocalCover
+                                                        ? Image.file(
+                                                            File(_coverUrl!),
+                                                            fit: BoxFit.cover,
+                                                            errorBuilder: (_,
+                                                                    __, ___) =>
+                                                                _coverPlaceholder())
+                                                        : CachedNetworkImage(
+                                                            imageUrl:
+                                                                _coverUrl!,
+                                                            fit: BoxFit.cover,
+                                                            httpHeaders:
+                                                                mediaHeaders,
+                                                            placeholder: (_,
+                                                                    __) =>
+                                                                _coverPlaceholder(),
+                                                            errorWidget: (_, __,
+                                                                    ___) =>
+                                                                _coverPlaceholder())
+                                                    : _coverPlaceholder(),
+                                                // Downloaded badge
+                                                if (isDownloaded)
+                                                  Positioned(
+                                                    top: 8,
+                                                    right: 8,
+                                                    child: Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 8,
+                                                          vertical: 4),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.black
+                                                            .withValues(
+                                                                alpha: 0.6),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(10),
+                                                      ),
+                                                      child: Row(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          Icon(
+                                                              Icons
+                                                                  .download_done_rounded,
+                                                              size: 13,
+                                                              color: accent
+                                                                  .withValues(
+                                                                      alpha:
+                                                                          0.9)),
+                                                          const SizedBox(
+                                                              width: 4),
+                                                          Text('Downloaded',
+                                                              style: TextStyle(
+                                                                  color: accent
+                                                                      .withValues(
+                                                                          alpha:
+                                                                              0.9),
+                                                                  fontSize: 10,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w600)),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ),
+                                                // Play/pause overlay
+                                                if (_coverPlayButton &&
+                                                    !isCastingThis &&
+                                                    !isFinished)
+                                                  Positioned.fill(
+                                                    child: AnimatedContainer(
+                                                      duration: const Duration(
+                                                          milliseconds: 200),
+                                                      decoration: BoxDecoration(
+                                                        color: coverPlaying
+                                                            ? Colors.transparent
+                                                            : Colors.black
+                                                                .withValues(
+                                                                    alpha:
+                                                                        0.25),
+                                                      ),
+                                                      child: Center(
+                                                        child: coverLoading
+                                                            ? Container(
+                                                                width: 56,
+                                                                height: 56,
+                                                                decoration:
+                                                                    BoxDecoration(
+                                                                  shape: BoxShape
+                                                                      .circle,
+                                                                  color: Colors
+                                                                      .black
+                                                                      .withValues(
+                                                                          alpha:
+                                                                              0.5),
+                                                                ),
+                                                                child: Padding(
+                                                                  padding:
+                                                                      const EdgeInsets
+                                                                          .all(
+                                                                          12),
+                                                                  child: CircularProgressIndicator(
+                                                                      strokeWidth:
+                                                                          3,
+                                                                      color:
+                                                                          accent),
+                                                                ),
+                                                              )
+                                                            : AnimatedOpacity(
+                                                                opacity:
+                                                                    coverPlaying
+                                                                        ? 0.2
+                                                                        : 0.9,
+                                                                duration:
+                                                                    const Duration(
+                                                                        milliseconds:
+                                                                            200),
+                                                                child:
+                                                                    Container(
+                                                                  width: 64,
+                                                                  height: 64,
+                                                                  decoration:
+                                                                      BoxDecoration(
+                                                                    shape: BoxShape
+                                                                        .circle,
+                                                                    color: Colors
+                                                                        .black
+                                                                        .withValues(
+                                                                            alpha:
+                                                                                0.45),
+                                                                  ),
+                                                                  child: Icon(
+                                                                    coverPlaying
+                                                                        ? Icons
+                                                                            .pause_rounded
+                                                                        : Icons
+                                                                            .play_arrow_rounded,
+                                                                    size: 38,
+                                                                    color:
+                                                                        accent,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                // Casting overlay
+                                                if (isCastingThis) ...[
+                                                  Positioned.fill(
+                                                    child: Container(
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.black
+                                                            .withValues(
+                                                                alpha: 0.45),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(16),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  Positioned.fill(
+                                                    child: Column(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment
+                                                              .center,
+                                                      children: [
+                                                        Icon(
+                                                            Icons
+                                                                .cast_connected_rounded,
+                                                            size: 36,
+                                                            color: accent
+                                                                .withValues(
+                                                                    alpha:
+                                                                        0.9)),
+                                                        const SizedBox(
+                                                            height: 8),
+                                                        Text('Casting to',
+                                                            style: TextStyle(
+                                                                color: Colors
+                                                                    .white
+                                                                    .withValues(
+                                                                        alpha:
+                                                                            0.6),
+                                                                fontSize: 11,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500)),
+                                                        const SizedBox(
+                                                            height: 2),
+                                                        Padding(
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                                  horizontal:
+                                                                      16),
+                                                          child: Text(
+                                                            castService
+                                                                    .connectedDeviceName ??
+                                                                'Device',
+                                                            style: TextStyle(
+                                                                color: accent,
+                                                                fontSize: 14,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w700),
+                                                            textAlign: TextAlign
+                                                                .center,
+                                                            maxLines: 2,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
                                                           ),
                                                         ),
-                                                ),
-                                              ),
-                                            ),
-                                          // Casting overlay
-                                          if (isCastingThis) ...[
-                                            Positioned.fill(
-                                              child: Container(
-                                                decoration: BoxDecoration(
-                                                  color: Colors.black.withValues(alpha: 0.45),
-                                                  borderRadius: BorderRadius.circular(16),
-                                                ),
-                                              ),
-                                            ),
-                                            Positioned.fill(
-                                              child: Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Icon(Icons.cast_connected_rounded, size: 36, color: accent.withValues(alpha: 0.9)),
-                                                  const SizedBox(height: 8),
-                                                  Text('Casting to', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.w500)),
-                                                  const SizedBox(height: 2),
-                                                  Padding(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                                                    child: Text(
-                                                      castService.connectedDeviceName ?? 'Device',
-                                                      style: TextStyle(color: accent, fontSize: 14, fontWeight: FontWeight.w700),
-                                                      textAlign: TextAlign.center,
-                                                      maxLines: 2,
-                                                      overflow: TextOverflow.ellipsis,
+                                                      ],
                                                     ),
                                                   ),
                                                 ],
-                                              ),
+                                              ],
                                             ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                )));
-                              },
-                            ),
+                                          ),
+                                        ),
+                                      )));
+                            },
                           ),
                         ),
                       ),
-                      SizedBox(height: compact ? 6 : 24),
-                      // ── Chapter scrubber ──
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: (_isPodcastEpisode && _chapters.isEmpty) ? 0.0 : progress, staticDuration: (_isPodcastEpisode && _chapters.isEmpty) ? widget.player.totalDuration : _effectiveDuration, chapters: _chapters, showBookBar: false, showChapterBar: true, chapterName: (_isPodcastEpisode && _chapters.isEmpty) ? (widget.player.currentEpisodeTitle ?? widget.player.currentTitle ?? _title) : (_episodeId != null && !_isActive ? (_recentEpisode?['title'] as String? ?? _title) : _chapterName(chapterIdx)), chapterIndex: chapterIdx, totalChapters: totalChapters, itemId: _itemId),
+                    ),
+                    SizedBox(height: compact ? 6 : 24),
+                    // ── Chapter scrubber ──
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: CardDualProgressBar(
+                          player: widget.player,
+                          accent: accent,
+                          isActive: _isActive,
+                          staticProgress:
+                              (_isPodcastEpisode && _chapters.isEmpty)
+                                  ? 0.0
+                                  : progress,
+                          staticDuration:
+                              (_isPodcastEpisode && _chapters.isEmpty)
+                                  ? widget.player.totalDuration
+                                  : _effectiveDuration,
+                          chapters: _chapters,
+                          showBookBar: false,
+                          showChapterBar: true,
+                          chapterName: (_isPodcastEpisode && _chapters.isEmpty)
+                              ? (widget.player.currentEpisodeTitle ??
+                                  widget.player.currentTitle ??
+                                  _title)
+                              : (_episodeId != null && !_isActive
+                                  ? (_recentEpisode?['title'] as String? ??
+                                      _title)
+                                  : _chapterName(chapterIdx)),
+                          chapterIndex: chapterIdx,
+                          totalChapters: totalChapters,
+                          itemId: _itemId),
+                    ),
+                    // ── Controls + buttons ──
+                    MediaQuery(
+                      data: MediaQuery.of(context).copyWith(
+                        textScaler: TextScaler.noScaling,
                       ),
-                      // ── Controls + buttons ──
-                      MediaQuery(
-                        data: MediaQuery.of(context).copyWith(
-                          textScaler: TextScaler.noScaling,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 28),
-                          child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    SizedBox(height: compact ? 4 : 18),
-                                    CardPlaybackControls(
-                                      player: widget.player,
-                                      accent: accent,
-                                      isActive: _isActive,
-                                      isStarting: _isStarting,
-                                      onStart: _startPlayback,
-                                      itemId: _itemId,
-                                      showPlayButton: !_coverPlayButton,
-                                    ),
-                                    SizedBox(height: compact ? 8 : 24),
-                                    // ── Button grid ──
-                                    ..._buildButtonGrid(accent, tt),
-                                    SizedBox(height: compact ? 4 : 14),
-                                    // More menu / Cast controls
-                                    Center(
-                                      child: ListenableBuilder(
-                                        listenable: ChromecastService(),
-                                        builder: (context, _) {
-                                          final castActive = ChromecastService().isCasting && !_buttonOrder.take(_visibleButtonCount).contains('cast');
-                                          return GestureDetector(
-                                            behavior: HitTestBehavior.opaque,
-                                            onTap: () => _showMoreMenu(context, accent, tt),
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-                                              decoration: BoxDecoration(
-                                                color: castActive ? accent.withValues(alpha: 0.15) : cs.onSurface.withValues(alpha: 0.08),
-                                                borderRadius: BorderRadius.circular(22),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: castActive
-                                                    ? [
-                                                        Icon(Icons.cast_connected_rounded, size: 20, color: accent),
-                                                        const SizedBox(width: 6),
-                                                        Text('Casting', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: accent)),
-                                                      ]
-                                                    : [
-                                                        Icon(Icons.more_horiz_rounded, size: 20, color: cs.onSurface.withValues(alpha: 0.54)),
-                                                        const SizedBox(width: 6),
-                                                        Text('More', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: cs.onSurface.withValues(alpha: 0.54))),
-                                                      ],
-                                              ),
-                                            ),
-                                          );
-                                        },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 28),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(height: compact ? 4 : 18),
+                            CardPlaybackControls(
+                              player: widget.player,
+                              accent: accent,
+                              isActive: _isActive,
+                              isStarting: _isStarting,
+                              onStart: _startPlayback,
+                              itemId: _itemId,
+                              showPlayButton: !_coverPlayButton,
+                            ),
+                            SizedBox(height: compact ? 8 : 24),
+                            // ── Button grid ──
+                            ..._buildButtonGrid(accent, tt),
+                            SizedBox(height: compact ? 4 : 14),
+                            // More menu / Cast controls
+                            Center(
+                              child: ListenableBuilder(
+                                listenable: ChromecastService(),
+                                builder: (context, _) {
+                                  final castActive =
+                                      ChromecastService().isCasting &&
+                                          !_buttonOrder
+                                              .take(_visibleButtonCount)
+                                              .contains('cast');
+                                  return GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () =>
+                                        _showMoreMenu(context, accent, tt),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 24, vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: castActive
+                                            ? accent.withValues(alpha: 0.15)
+                                            : cs.onSurface
+                                                .withValues(alpha: 0.08),
+                                        borderRadius: BorderRadius.circular(22),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: castActive
+                                            ? [
+                                                Icon(
+                                                    Icons
+                                                        .cast_connected_rounded,
+                                                    size: 20,
+                                                    color: accent),
+                                                const SizedBox(width: 6),
+                                                Text('Casting',
+                                                    style: TextStyle(
+                                                        fontSize: 13,
+                                                        fontWeight:
+                                                            FontWeight.w500,
+                                                        color: accent)),
+                                              ]
+                                            : [
+                                                Icon(Icons.more_horiz_rounded,
+                                                    size: 20,
+                                                    color: cs.onSurface
+                                                        .withValues(
+                                                            alpha: 0.54)),
+                                                const SizedBox(width: 6),
+                                                Text('More',
+                                                    style: TextStyle(
+                                                        fontSize: 13,
+                                                        fontWeight:
+                                                            FontWeight.w500,
+                                                        color: cs.onSurface
+                                                            .withValues(
+                                                                alpha: 0.54))),
+                                              ],
                                       ),
                                     ),
-                                    SizedBox(height: compact ? 4 : 12),
-                                  ],
-                                ),
+                                  );
+                                },
+                              ),
+                            ),
+                            SizedBox(height: compact ? 4 : 12),
+                          ],
                         ),
                       ),
-                    ],
-                  );
-                  }),
-                ),
-              ],
+                    ),
+                  ],
+                );
+              }),
             ),
-    ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -830,8 +1109,10 @@ class _ExpandedCardState extends State<ExpandedCard> {
                 _onCoverLoaded(provider);
                 return Opacity(
                   opacity: 0.3,
-                  child: Image.file(File(_coverUrl!), fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(color: isDark ? Colors.black : Colors.white)),
+                  child: Image.file(File(_coverUrl!),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                          color: isDark ? Colors.black : Colors.white)),
                 );
               })
             : CachedNetworkImage(
@@ -845,19 +1126,25 @@ class _ExpandedCardState extends State<ExpandedCard> {
                     child: Image(image: provider, fit: BoxFit.cover),
                   );
                 },
-                placeholder: (_, __) => Container(color: isDark ? Colors.black : Colors.white),
-                errorWidget: (_, __, ___) => Container(color: isDark ? Colors.black : Colors.white),
+                placeholder: (_, __) =>
+                    Container(color: isDark ? Colors.black : Colors.white),
+                errorWidget: (_, __, ___) =>
+                    Container(color: isDark ? Colors.black : Colors.white),
               ),
       );
     }
-    return Container(key: const ValueKey('empty'), color: isDark ? Colors.black : Colors.white);
+    return Container(
+        key: const ValueKey('empty'),
+        color: isDark ? Colors.black : Colors.white);
   }
 
   // ── Helpers (mirrored from AbsorbingCard) ──
 
   int _currentChapterIndex() {
     final cast = ChromecastService();
-    final chapters = _isCastingThis ? cast.castingChapters : (_isActive ? widget.player.chapters : _chapters);
+    final chapters = _isCastingThis
+        ? cast.castingChapters
+        : (_isActive ? widget.player.chapters : _chapters);
     if (chapters.isEmpty) return -1;
     double pos;
     if (_isCastingThis) {
@@ -900,19 +1187,26 @@ class _ExpandedCardState extends State<ExpandedCard> {
     final cs2 = Theme.of(context).colorScheme;
     return Container(
       color: cs2.onSurface.withValues(alpha: 0.05),
-      child: Center(child: Icon(Icons.headphones_rounded, size: 48, color: cs2.onSurface.withValues(alpha: 0.15))),
+      child: Center(
+          child: Icon(Icons.headphones_rounded,
+              size: 48, color: cs2.onSurface.withValues(alpha: 0.15))),
     );
   }
 
   String _fmtTime(double s) {
     if (s < 0) s = 0;
-    final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor(); final sec = (s % 60).floor();
-    if (h > 0) return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
+    final h = (s / 3600).floor();
+    final m = ((s % 3600) / 60).floor();
+    final sec = (s % 60).floor();
+    if (h > 0)
+      return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
     return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
   }
 
   String _fmtDur(double s) {
-    final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor(); final sec = (s % 60).floor();
+    final h = (s / 3600).floor();
+    final m = ((s % 3600) / 60).floor();
+    final sec = (s % 60).floor();
     if (h > 0) return '${h}h ${m}m';
     return '${m}m ${sec}s';
   }
@@ -926,10 +1220,18 @@ class _ExpandedCardState extends State<ExpandedCard> {
     setState(() => _isStarting = true);
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
-    if (api == null) { setState(() => _isStarting = false); return; }
+    if (api == null) {
+      setState(() => _isStarting = false);
+      return;
+    }
     final error = await widget.player.playItem(
-      api: api, itemId: _itemId, title: _title, author: _author,
-      coverUrl: _coverUrl, totalDuration: _effectiveDuration, chapters: _chapters,
+      api: api,
+      itemId: _itemId,
+      title: _title,
+      author: _author,
+      coverUrl: _coverUrl,
+      totalDuration: _effectiveDuration,
+      chapters: _chapters,
       episodeId: _episodeId,
       episodeTitle: _recentEpisode?['title'] as String?,
     );
@@ -953,7 +1255,8 @@ class _ExpandedCardState extends State<ExpandedCard> {
 
   // ── Dynamic button builders ─────────────────────────────────
 
-  int get _visibleButtonCount => PlayerSettings.buttonCountForLayout(_buttonLayout);
+  int get _visibleButtonCount =>
+      PlayerSettings.buttonCountForLayout(_buttonLayout);
 
   List<Widget> _buildButtonGrid(Color accent, TextTheme tt) {
     final count = _visibleButtonCount;
@@ -961,11 +1264,21 @@ class _ExpandedCardState extends State<ExpandedCard> {
 
     int cols;
     switch (_buttonLayout) {
-      case 'compact': cols = 3; break;
-      case 'row': cols = 5; break;
-      case 'expanded': cols = 3; break;
-      case 'full': cols = 3; break;
-      default: cols = 2; break;
+      case 'compact':
+        cols = 3;
+        break;
+      case 'row':
+        cols = 5;
+        break;
+      case 'expanded':
+        cols = 3;
+        break;
+      case 'full':
+        cols = 3;
+        break;
+      default:
+        cols = 2;
+        break;
     }
 
     final compact = cols >= 5;
@@ -980,7 +1293,9 @@ class _ExpandedCardState extends State<ExpandedCard> {
       rows.add(Row(children: [
         for (int c = 0; c < rowIds.length; c++) ...[
           if (c > 0) const SizedBox(width: 10),
-          Expanded(child: _buildCardButton(rowIds[c], accent, tt, compact: compact, short: short)),
+          Expanded(
+              child: _buildCardButton(rowIds[c], accent, tt,
+                  compact: compact, short: short)),
         ],
       ]));
     }
@@ -988,48 +1303,91 @@ class _ExpandedCardState extends State<ExpandedCard> {
     return rows;
   }
 
-  Widget _buildCardButton(String id, Color accent, TextTheme tt, {bool compact = false, bool short = false}) {
+  Widget _buildCardButton(String id, Color accent, TextTheme tt,
+      {bool compact = false, bool short = false}) {
     final large = MediaQuery.sizeOf(context).height > 700;
     switch (id) {
       case 'chapters':
         return CardWideButton(
-          icon: Icons.list_rounded, label: 'Chapters',
-          accent: accent, isActive: _isPlaybackActive, large: large, compact: compact,
+          icon: Icons.list_rounded,
+          label: 'Chapters',
+          accent: accent,
+          isActive: _isPlaybackActive,
+          large: large,
+          compact: compact,
           onTap: () => _showChapters(context, accent, tt),
         );
       case 'speed':
         return CardWideButton(
-          icon: Icons.speed_rounded, label: 'Speed',
-          accent: accent, isActive: _isPlaybackActive, large: large, compact: compact,
-          child: CardSpeedButtonInline(player: widget.player, accent: accent, isActive: _isActive, large: large, compact: compact, itemId: _itemId),
+          icon: Icons.speed_rounded,
+          label: 'Speed',
+          accent: accent,
+          isActive: _isPlaybackActive,
+          large: large,
+          compact: compact,
+          child: CardSpeedButtonInline(
+              player: widget.player,
+              accent: accent,
+              isActive: _isActive,
+              large: large,
+              compact: compact,
+              itemId: _itemId),
         );
       case 'sleep':
         return CardWideButton(
-          icon: Icons.bedtime_outlined, label: short ? 'Sleep' : 'Sleep Timer',
-          accent: accent, isActive: _isPlaybackActive, large: large, compact: compact,
-          child: CardSleepButtonInline(accent: accent, isActive: _isPlaybackActive, large: large, compact: compact),
+          icon: Icons.bedtime_outlined,
+          label: short ? 'Sleep' : 'Sleep Timer',
+          accent: accent,
+          isActive: _isPlaybackActive,
+          large: large,
+          compact: compact,
+          child: CardSleepButtonInline(
+              accent: accent,
+              isActive: _isPlaybackActive,
+              large: large,
+              compact: compact),
         );
       case 'bookmarks':
         return CardWideButton(
-          icon: Icons.bookmark_outline_rounded, label: 'Bookmarks',
-          accent: accent, isActive: _isPlaybackActive, large: large, compact: compact,
+          icon: Icons.bookmark_outline_rounded,
+          label: 'Bookmarks',
+          accent: accent,
+          isActive: _isPlaybackActive,
+          large: large,
+          compact: compact,
           child: CardBookmarkButtonInline(
-            player: widget.player, accent: accent,
-            isActive: _isActive, itemId: _itemId, large: large, compact: compact, short: short,
+            player: widget.player,
+            accent: accent,
+            isActive: _isActive,
+            itemId: _itemId,
+            large: large,
+            compact: compact,
+            short: short,
           ),
         );
       case 'details':
         return CardWideButton(
-          icon: (_episodeId != null || _isPodcastEpisode) ? Icons.podcasts_rounded : Icons.info_outline_rounded,
-          label: short ? 'Details' : ((_episodeId != null || _isPodcastEpisode) ? 'Episode Details' : 'Book Details'),
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
+          icon: (_episodeId != null || _isPodcastEpisode)
+              ? Icons.podcasts_rounded
+              : Icons.info_outline_rounded,
+          label: short
+              ? 'Details'
+              : ((_episodeId != null || _isPodcastEpisode)
+                  ? 'Episode Details'
+                  : 'Book Details'),
+          accent: accent,
+          isActive: true,
+          alwaysEnabled: true,
+          large: large,
+          compact: compact,
           onTap: () {
             if (_episodeId != null || _isPodcastEpisode) {
-              final episode = _recentEpisode ?? {
-                'id': widget.player.currentEpisodeId,
-                'title': widget.player.currentEpisodeTitle,
-                'duration': widget.player.totalDuration,
-              };
+              final episode = _recentEpisode ??
+                  {
+                    'id': widget.player.currentEpisodeId,
+                    'title': widget.player.currentEpisodeTitle,
+                    'duration': widget.player.totalDuration,
+                  };
               EpisodeDetailSheet.show(context, _item, episode);
             } else {
               showBookDetailSheet(context, _itemId);
@@ -1038,8 +1396,13 @@ class _ExpandedCardState extends State<ExpandedCard> {
         );
       case 'equalizer':
         return CardWideButton(
-          icon: Icons.equalizer_rounded, label: compact ? 'EQ' : 'Equalizer',
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
+          icon: Icons.equalizer_rounded,
+          label: compact ? 'EQ' : 'Equalizer',
+          accent: accent,
+          isActive: true,
+          alwaysEnabled: true,
+          large: large,
+          compact: compact,
           onTap: () => showEqualizerSheet(context, accent),
         );
       case 'cast':
@@ -1058,34 +1421,63 @@ class _ExpandedCardState extends State<ExpandedCard> {
               castLabel = 'Cast to Device';
             }
             return CardWideButton(
-              icon: cast.isConnected ? Icons.cast_connected_rounded : Icons.cast_rounded,
-              label: castLabel, accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
+              icon: cast.isConnected
+                  ? Icons.cast_connected_rounded
+                  : Icons.cast_rounded,
+              label: castLabel,
+              accent: accent,
+              isActive: true,
+              alwaysEnabled: true,
+              large: large,
+              compact: compact,
               onTap: () => _handleCastTap(context, accent),
             );
           },
         );
       case 'history':
         return CardWideButton(
-          icon: Icons.history_rounded, label: (compact || short) ? 'History' : 'Playback History',
-          accent: accent, isActive: _isActive, large: large, compact: compact,
+          icon: Icons.history_rounded,
+          label: (compact || short) ? 'History' : 'Playback History',
+          accent: accent,
+          isActive: _isActive,
+          large: large,
+          compact: compact,
           onTap: () => _showHistory(context, accent, tt),
         );
       case 'remove':
         return CardWideButton(
-          icon: Icons.remove_circle_outline_rounded, label: (compact || short) ? 'Remove' : 'Remove from Absorbing',
-          accent: Colors.red.shade300, isActive: true, alwaysEnabled: true, large: large, compact: compact,
-          onTap: () { _removeFromAbsorbing(); _dismissExpanded(); },
+          icon: Icons.remove_circle_outline_rounded,
+          label: (compact || short) ? 'Remove' : 'Remove from Absorbing',
+          accent: Colors.red.shade300,
+          isActive: true,
+          alwaysEnabled: true,
+          large: large,
+          compact: compact,
+          onTap: () {
+            _removeFromAbsorbing();
+            _dismissExpanded();
+          },
         );
       case 'car':
         return CardWideButton(
-          icon: Icons.directions_car_rounded, label: 'Car Mode',
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
+          icon: Icons.directions_car_rounded,
+          label: 'Car Mode',
+          accent: accent,
+          isActive: true,
+          alwaysEnabled: true,
+          large: large,
+          compact: compact,
           onTap: () => _openCarMode(context),
         );
       case 'notes':
         return CardWideButton(
-          icon: Icons.note_rounded, label: 'Notes',
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
+          icon: Icons.note_rounded,
+          label: 'Notes',
+          accent: accent,
+          isActive: true,
+          alwaysEnabled: true,
+          large: large,
+          compact: compact,
           onTap: () => _showNotes(context, accent),
         );
       default:
@@ -1093,27 +1485,41 @@ class _ExpandedCardState extends State<ExpandedCard> {
     }
   }
 
-  Widget _buildMoreMenuItem(String id, Color accent, TextTheme tt, BuildContext ctx) {
+  Widget _buildMoreMenuItem(
+      String id, Color accent, TextTheme tt, BuildContext ctx) {
     switch (id) {
       case 'chapters':
         return MoreMenuItem(
-          icon: Icons.list_rounded, label: 'Chapters', accent: accent,
-          enabled: _isPlaybackActive,
-          onTap: () { Navigator.pop(ctx); _showChapters(context, accent, tt); },
-        );
-      case 'speed':
-        return MoreMenuItem(
-          icon: Icons.speed_rounded, label: 'Speed', accent: accent,
+          icon: Icons.list_rounded,
+          label: 'Chapters',
+          accent: accent,
           enabled: _isPlaybackActive,
           onTap: () {
             Navigator.pop(ctx);
-            showModalBottomSheet(context: context, backgroundColor: Colors.transparent, useSafeArea: true,
-              builder: (_) => CardSpeedSheet(player: widget.player, accent: accent, itemId: _itemId));
+            _showChapters(context, accent, tt);
+          },
+        );
+      case 'speed':
+        return MoreMenuItem(
+          icon: Icons.speed_rounded,
+          label: 'Speed',
+          accent: accent,
+          enabled: _isPlaybackActive,
+          onTap: () {
+            Navigator.pop(ctx);
+            showModalBottomSheet(
+                context: context,
+                backgroundColor: Colors.transparent,
+                useSafeArea: true,
+                builder: (_) => CardSpeedSheet(
+                    player: widget.player, accent: accent, itemId: _itemId));
           },
         );
       case 'sleep':
         return MoreMenuItem(
-          icon: Icons.bedtime_outlined, label: 'Sleep Timer', accent: accent,
+          icon: Icons.bedtime_outlined,
+          label: 'Sleep Timer',
+          accent: accent,
           enabled: _isPlaybackActive,
           onTap: () {
             Navigator.pop(ctx);
@@ -1122,31 +1528,51 @@ class _ExpandedCardState extends State<ExpandedCard> {
         );
       case 'bookmarks':
         return MoreMenuItem(
-          icon: Icons.bookmark_outline_rounded, label: 'Bookmarks', accent: accent,
+          icon: Icons.bookmark_outline_rounded,
+          label: 'Bookmarks',
+          accent: accent,
           enabled: _isPlaybackActive,
           onTap: () {
             Navigator.pop(ctx);
-            showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, useSafeArea: true,
+            showModalBottomSheet(
+              context: context,
+              backgroundColor: Colors.transparent,
+              isScrollControlled: true,
+              useSafeArea: true,
               builder: (_) => DraggableScrollableSheet(
-                initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.9, expand: false,
-                builder: (_, sc) => SimpleBookmarkSheet(itemId: _itemId, player: widget.player, accent: accent, scrollController: sc, onChanged: () {}),
+                initialChildSize: 0.6,
+                minChildSize: 0.05,
+                snap: true,
+                maxChildSize: 0.9,
+                expand: false,
+                builder: (_, sc) => SimpleBookmarkSheet(
+                    itemId: _itemId,
+                    player: widget.player,
+                    accent: accent,
+                    scrollController: sc,
+                    onChanged: () {}),
               ),
             );
           },
         );
       case 'details':
         return MoreMenuItem(
-          icon: (_episodeId != null || _isPodcastEpisode) ? Icons.podcasts_rounded : Icons.info_outline_rounded,
-          label: (_episodeId != null || _isPodcastEpisode) ? 'Episode Details' : 'Book Details',
+          icon: (_episodeId != null || _isPodcastEpisode)
+              ? Icons.podcasts_rounded
+              : Icons.info_outline_rounded,
+          label: (_episodeId != null || _isPodcastEpisode)
+              ? 'Episode Details'
+              : 'Book Details',
           accent: accent,
           onTap: () {
             Navigator.pop(ctx);
             if (_episodeId != null || _isPodcastEpisode) {
-              final episode = _recentEpisode ?? {
-                'id': widget.player.currentEpisodeId,
-                'title': widget.player.currentEpisodeTitle,
-                'duration': widget.player.totalDuration,
-              };
+              final episode = _recentEpisode ??
+                  {
+                    'id': widget.player.currentEpisodeId,
+                    'title': widget.player.currentEpisodeTitle,
+                    'duration': widget.player.totalDuration,
+                  };
               EpisodeDetailSheet.show(context, _item, episode);
             } else {
               showBookDetailSheet(context, _itemId);
@@ -1155,8 +1581,13 @@ class _ExpandedCardState extends State<ExpandedCard> {
         );
       case 'equalizer':
         return MoreMenuItem(
-          icon: Icons.equalizer_rounded, label: 'Equalizer', accent: accent,
-          onTap: () { Navigator.pop(ctx); showEqualizerSheet(context, accent); },
+          icon: Icons.equalizer_rounded,
+          label: 'Equalizer',
+          accent: accent,
+          onTap: () {
+            Navigator.pop(ctx);
+            showEqualizerSheet(context, accent);
+          },
         );
       case 'cast':
         return ListenableBuilder(
@@ -1172,33 +1603,59 @@ class _ExpandedCardState extends State<ExpandedCard> {
               castLabel = 'Cast to Device';
             }
             return MoreMenuItem(
-              icon: cast.isConnected ? Icons.cast_connected_rounded : Icons.cast_rounded,
-              label: castLabel, accent: accent,
-              onTap: () { Navigator.pop(ctx); _handleCastTap(context, accent); },
+              icon: cast.isConnected
+                  ? Icons.cast_connected_rounded
+                  : Icons.cast_rounded,
+              label: castLabel,
+              accent: accent,
+              onTap: () {
+                Navigator.pop(ctx);
+                _handleCastTap(context, accent);
+              },
             );
           },
         );
       case 'history':
         return MoreMenuItem(
-          icon: Icons.history_rounded, label: 'Playback History', accent: accent,
+          icon: Icons.history_rounded,
+          label: 'Playback History',
+          accent: accent,
           enabled: _isActive,
-          onTap: () { Navigator.pop(ctx); _showHistory(context, accent, tt); },
+          onTap: () {
+            Navigator.pop(ctx);
+            _showHistory(context, accent, tt);
+          },
         );
       case 'remove':
         return MoreMenuItem(
-          icon: Icons.remove_circle_outline_rounded, label: 'Remove from Absorbing',
+          icon: Icons.remove_circle_outline_rounded,
+          label: 'Remove from Absorbing',
           accent: Colors.red.shade300,
-          onTap: () { Navigator.pop(ctx); _removeFromAbsorbing(); _dismissExpanded(); },
+          onTap: () {
+            Navigator.pop(ctx);
+            _removeFromAbsorbing();
+            _dismissExpanded();
+          },
         );
       case 'car':
         return MoreMenuItem(
-          icon: Icons.directions_car_rounded, label: 'Car Mode', accent: accent,
-          onTap: () { Navigator.pop(ctx); _openCarMode(context); },
+          icon: Icons.directions_car_rounded,
+          label: 'Car Mode',
+          accent: accent,
+          onTap: () {
+            Navigator.pop(ctx);
+            _openCarMode(context);
+          },
         );
       case 'notes':
         return MoreMenuItem(
-          icon: Icons.note_rounded, label: 'Notes', accent: accent,
-          onTap: () { Navigator.pop(ctx); _showNotes(context, accent); },
+          icon: Icons.note_rounded,
+          label: 'Notes',
+          accent: accent,
+          onTap: () {
+            Navigator.pop(ctx);
+            _showNotes(context, accent);
+          },
         );
       default:
         return const SizedBox.shrink();
@@ -1206,7 +1663,8 @@ class _ExpandedCardState extends State<ExpandedCard> {
   }
 
   void _showNotes(BuildContext context, Color accent) {
-    NotesSheet.show(context,
+    NotesSheet.show(
+      context,
       itemId: _itemId,
       itemTitle: _title,
       accent: accent,
@@ -1245,16 +1703,26 @@ class _ExpandedCardState extends State<ExpandedCard> {
     } else if (cast.isConnected) {
       if (api != null) {
         cast.castItem(
-          api: api, itemId: _itemId, title: _title, author: _author,
-          coverUrl: _coverUrl, totalDuration: _duration, chapters: _chapters,
+          api: api,
+          itemId: _itemId,
+          title: _title,
+          author: _author,
+          coverUrl: _coverUrl,
+          totalDuration: _duration,
+          chapters: _chapters,
           episodeId: _episodeId ?? widget.player.currentEpisodeId,
         );
       }
     } else {
       showCastDevicePicker(context,
-        api: api, itemId: _itemId, title: _title, author: _author,
-        coverUrl: _coverUrl, totalDuration: _duration, chapters: _chapters,
-        episodeId: _episodeId ?? widget.player.currentEpisodeId);
+          api: api,
+          itemId: _itemId,
+          title: _title,
+          author: _author,
+          coverUrl: _coverUrl,
+          totalDuration: _duration,
+          chapters: _chapters,
+          episodeId: _episodeId ?? widget.player.currentEpisodeId);
     }
   }
 
@@ -1262,9 +1730,13 @@ class _ExpandedCardState extends State<ExpandedCard> {
 
   void _showChapters(BuildContext context, Color accent, TextTheme tt) {
     final cast = ChromecastService();
-    final chapters = _isCastingThis ? cast.castingChapters : (_isActive ? widget.player.chapters : _chapters);
+    final chapters = _isCastingThis
+        ? cast.castingChapters
+        : (_isActive ? widget.player.chapters : _chapters);
     if (chapters.isEmpty) return;
-    final totalDur = _isCastingThis ? cast.castingDuration : (_isActive ? widget.player.totalDuration : _duration);
+    final totalDur = _isCastingThis
+        ? cast.castingDuration
+        : (_isActive ? widget.player.totalDuration : _duration);
 
     // Find current chapter index for auto-scroll
     int currentIdx = -1;
@@ -1276,77 +1748,139 @@ class _ExpandedCardState extends State<ExpandedCard> {
         final ch = chapters[i] as Map<String, dynamic>;
         final start = (ch['start'] as num?)?.toDouble() ?? 0;
         final end = (ch['end'] as num?)?.toDouble() ?? 0;
-        if (pos >= start && pos < end) { currentIdx = i; break; }
+        if (pos >= start && pos < end) {
+          currentIdx = i;
+          break;
+        }
       }
     }
 
     showModalBottomSheet(
-      context: context, isScrollControlled: true, useSafeArea: true,
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => DraggableScrollableSheet(
-        expand: false, initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.9,
+        expand: false,
+        initialChildSize: 0.6,
+        minChildSize: 0.05,
+        snap: true,
+        maxChildSize: 0.9,
         builder: (_, sc) {
           if (currentIdx > 0) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               final target = currentIdx * 48.0 - 48; // one row above current
-              if (sc.hasClients) sc.jumpTo(target.clamp(0, sc.position.maxScrollExtent));
+              if (sc.hasClients)
+                sc.jumpTo(target.clamp(0, sc.position.maxScrollExtent));
             });
           }
           return Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).bottomSheetTheme.backgroundColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border(top: BorderSide(color: accent.withValues(alpha: 0.2), width: 1)),
-          ),
-          child: Column(children: [
-            Padding(padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
-            Text('Chapters (${chapters.length})', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Expanded(child: ListView.builder(
-              controller: sc, itemCount: chapters.length,
-              itemBuilder: (_, i) {
-                final ch = chapters[i] as Map<String, dynamic>;
-                final chTitle = ch['title'] as String? ?? 'Chapter ${i + 1}';
-                final start = (ch['start'] as num?)?.toDouble() ?? 0;
-                final end = (ch['end'] as num?)?.toDouble() ?? 0;
-                final pos = _isCastingThis
-                    ? cast.castPosition.inMilliseconds / 1000.0
-                    : (_isActive ? widget.player.position.inMilliseconds / 1000.0 : 0.0);
-                final isCurrent = _isPlaybackActive && pos >= start && pos < end;
-                final isFinished = _isPlaybackActive && pos >= end;
-                final pct = totalDur > 0 ? (end / totalDur * 100).round() : 0;
-                final cs = Theme.of(context).colorScheme;
-                return ListTile(
-                  dense: true, selected: isCurrent,
-                  selectedTileColor: accent.withValues(alpha: 0.1),
-                  leading: SizedBox(width: 28, child: isFinished
-                    ? Icon(Icons.check_rounded, size: 16, color: cs.onSurfaceVariant.withValues(alpha: 0.4))
-                    : Text('${i + 1}', textAlign: TextAlign.center,
-                        style: tt.labelMedium?.copyWith(fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w400, color: isCurrent ? accent : cs.onSurfaceVariant))),
-                  title: Text(chTitle,
-                    style: tt.bodyMedium?.copyWith(fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
-                      color: isCurrent ? cs.onSurface : isFinished ? cs.onSurface.withValues(alpha: 0.4) : cs.onSurface.withValues(alpha: 0.7))),
-                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text('$pct%', style: tt.labelSmall?.copyWith(
-                      color: isCurrent ? accent.withValues(alpha: 0.7) : cs.onSurface.withValues(alpha: 0.24), fontSize: 10, fontWeight: FontWeight.w600)),
-                    const SizedBox(width: 8),
-                    Text(_fmtDur((end - start) / (_speedAdjustedTime && _isActive ? widget.player.speed : 1.0)), style: tt.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                  ]),
-                  onTap: _isPlaybackActive ? () {
-                    final seekDur = Duration(seconds: start.round());
-                    if (_isCastingThis) {
-                      cast.seekTo(seekDur);
-                    } else {
-                      widget.player.seekTo(seekDur);
-                    }
-                    Navigator.pop(ctx);
-                  } : null,
-                );
-              },
-            )),
-          ]),
-        );
+            decoration: BoxDecoration(
+              color: Theme.of(context).bottomSheetTheme.backgroundColor,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border(
+                  top: BorderSide(
+                      color: accent.withValues(alpha: 0.2), width: 1)),
+            ),
+            child: Column(children: [
+              Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.24),
+                          borderRadius: BorderRadius.circular(2)))),
+              Text('Chapters (${chapters.length})',
+                  style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Expanded(
+                  child: ListView.builder(
+                controller: sc,
+                itemCount: chapters.length,
+                itemBuilder: (_, i) {
+                  final ch = chapters[i] as Map<String, dynamic>;
+                  final chTitle = ch['title'] as String? ?? 'Chapter ${i + 1}';
+                  final start = (ch['start'] as num?)?.toDouble() ?? 0;
+                  final end = (ch['end'] as num?)?.toDouble() ?? 0;
+                  final pos = _isCastingThis
+                      ? cast.castPosition.inMilliseconds / 1000.0
+                      : (_isActive
+                          ? widget.player.position.inMilliseconds / 1000.0
+                          : 0.0);
+                  final isCurrent =
+                      _isPlaybackActive && pos >= start && pos < end;
+                  final isFinished = _isPlaybackActive && pos >= end;
+                  final pct = totalDur > 0 ? (end / totalDur * 100).round() : 0;
+                  final cs = Theme.of(context).colorScheme;
+                  return ListTile(
+                    dense: true,
+                    selected: isCurrent,
+                    selectedTileColor: accent.withValues(alpha: 0.1),
+                    leading: SizedBox(
+                        width: 28,
+                        child: isFinished
+                            ? Icon(Icons.check_rounded,
+                                size: 16,
+                                color:
+                                    cs.onSurfaceVariant.withValues(alpha: 0.4))
+                            : Text('${i + 1}',
+                                textAlign: TextAlign.center,
+                                style: tt.labelMedium?.copyWith(
+                                    fontWeight: isCurrent
+                                        ? FontWeight.w700
+                                        : FontWeight.w400,
+                                    color: isCurrent
+                                        ? accent
+                                        : cs.onSurfaceVariant))),
+                    title: Text(chTitle,
+                        style: tt.bodyMedium?.copyWith(
+                            fontWeight:
+                                isCurrent ? FontWeight.w600 : FontWeight.w400,
+                            color: isCurrent
+                                ? cs.onSurface
+                                : isFinished
+                                    ? cs.onSurface.withValues(alpha: 0.4)
+                                    : cs.onSurface.withValues(alpha: 0.7))),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text('$pct%',
+                          style: tt.labelSmall?.copyWith(
+                              color: isCurrent
+                                  ? accent.withValues(alpha: 0.7)
+                                  : cs.onSurface.withValues(alpha: 0.24),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600)),
+                      const SizedBox(width: 8),
+                      Text(
+                          _fmtDur((end - start) /
+                              (_speedAdjustedTime && _isActive
+                                  ? widget.player.speed
+                                  : 1.0)),
+                          style: tt.labelSmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant)),
+                    ]),
+                    onTap: _isPlaybackActive
+                        ? () {
+                            final seekDur = Duration(seconds: start.round());
+                            if (_isCastingThis) {
+                              cast.seekTo(seekDur);
+                            } else {
+                              widget.player.seekTo(seekDur);
+                            }
+                            Navigator.pop(ctx);
+                          }
+                        : null,
+                  );
+                },
+              )),
+            ]),
+          );
         },
       ),
     );
@@ -1354,27 +1888,48 @@ class _ExpandedCardState extends State<ExpandedCard> {
 
   void _showHistory(BuildContext context, Color accent, TextTheme tt) {
     showModalBottomSheet(
-      context: context, isScrollControlled: true, useSafeArea: true,
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => DraggableScrollableSheet(
-        expand: false, initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.9,
+        expand: false,
+        initialChildSize: 0.6,
+        minChildSize: 0.05,
+        snap: true,
+        maxChildSize: 0.9,
         builder: (_, sc) => Container(
           decoration: BoxDecoration(
             color: Theme.of(context).bottomSheetTheme.backgroundColor,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border(top: BorderSide(color: accent.withValues(alpha: 0.2), width: 1)),
+            border: Border(
+                top:
+                    BorderSide(color: accent.withValues(alpha: 0.2), width: 1)),
           ),
           child: Column(children: [
-            Padding(padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+            Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.24),
+                        borderRadius: BorderRadius.circular(2)))),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(children: [
                 const Spacer(),
-                Text('Playback History', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                Text('Playback History',
+                    style:
+                        tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                 const Spacer(),
                 IconButton(
-                  icon: Icon(Icons.delete_outline_rounded, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  icon: Icon(Icons.delete_outline_rounded,
+                      size: 20,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
                   onPressed: () async {
                     await PlaybackHistoryService().clearHistory(_itemId);
                     if (ctx.mounted) Navigator.pop(ctx);
@@ -1387,33 +1942,69 @@ class _ExpandedCardState extends State<ExpandedCard> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                 child: Text('Tap an event to jump to that position',
-                  style: tt.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.6), fontStyle: FontStyle.italic)),
+                    style: tt.bodySmall?.copyWith(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant
+                            .withValues(alpha: 0.6),
+                        fontStyle: FontStyle.italic)),
               )
             else
               const SizedBox(height: 8),
-            Expanded(child: FutureBuilder<List<PlaybackEvent>>(
+            Expanded(
+                child: FutureBuilder<List<PlaybackEvent>>(
               future: PlaybackHistoryService().getHistory(_itemId),
               builder: (ctx, snap) {
-                if (!snap.hasData) return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                if (!snap.hasData)
+                  return const Center(
+                      child: CircularProgressIndicator(strokeWidth: 2));
                 final events = snap.data!;
-                if (events.isEmpty) return Center(child: Text('No history yet', style: tt.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)));
+                if (events.isEmpty)
+                  return Center(
+                      child: Text('No history yet',
+                          style: tt.bodyMedium?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant)));
                 return ListView.builder(
-                  controller: sc, itemCount: events.length,
+                  controller: sc,
+                  itemCount: events.length,
                   itemBuilder: (_, i) {
                     final e = events[i];
                     final posLabel = _fmtTime(e.positionSeconds);
                     final timeAgo = _timeAgo(e.timestamp);
                     return ListTile(
                       dense: true,
-                      leading: Icon(_historyIcon(e.type), size: 18, color: accent.withValues(alpha: 0.7)),
-                      title: Text(e.label, style: tt.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7))),
-                      subtitle: Text('at $posLabel', style: tt.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                      trailing: Text(timeAgo, style: tt.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3))),
-                      onTap: _isActive ? () {
-                        widget.player.seekTo(Duration(seconds: e.positionSeconds.round()));
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(duration: const Duration(seconds: 3), content: Text('Jumped to $posLabel')));
-                      } : null,
+                      leading: Icon(_historyIcon(e.type),
+                          size: 18, color: accent.withValues(alpha: 0.7)),
+                      title: Text(e.label,
+                          style: tt.bodySmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.7))),
+                      subtitle: Text('at $posLabel',
+                          style: tt.labelSmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant)),
+                      trailing: Text(timeAgo,
+                          style: tt.labelSmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.3))),
+                      onTap: _isActive
+                          ? () {
+                              widget.player.seekTo(
+                                  Duration(seconds: e.positionSeconds.round()));
+                              Navigator.pop(ctx);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      duration: const Duration(seconds: 3),
+                                      content: Text('Jumped to $posLabel')));
+                            }
+                          : null,
                     );
                   },
                 );
@@ -1448,15 +2039,24 @@ class _ExpandedCardState extends State<ExpandedCard> {
 
   IconData _historyIcon(PlaybackEventType type) {
     switch (type) {
-      case PlaybackEventType.play: return Icons.play_arrow_rounded;
-      case PlaybackEventType.pause: return Icons.pause_rounded;
-      case PlaybackEventType.seek: return Icons.swap_horiz_rounded;
-      case PlaybackEventType.syncLocal: return Icons.save_rounded;
-      case PlaybackEventType.syncServer: return Icons.cloud_done_rounded;
-      case PlaybackEventType.autoRewind: return Icons.replay_rounded;
-      case PlaybackEventType.skipForward: return Icons.forward_30_rounded;
-      case PlaybackEventType.skipBackward: return Icons.replay_10_rounded;
-      case PlaybackEventType.speedChange: return Icons.speed_rounded;
+      case PlaybackEventType.play:
+        return Icons.play_arrow_rounded;
+      case PlaybackEventType.pause:
+        return Icons.pause_rounded;
+      case PlaybackEventType.seek:
+        return Icons.swap_horiz_rounded;
+      case PlaybackEventType.syncLocal:
+        return Icons.save_rounded;
+      case PlaybackEventType.syncServer:
+        return Icons.cloud_done_rounded;
+      case PlaybackEventType.autoRewind:
+        return Icons.replay_rounded;
+      case PlaybackEventType.skipForward:
+        return Icons.forward_30_rounded;
+      case PlaybackEventType.skipBackward:
+        return Icons.replay_10_rounded;
+      case PlaybackEventType.speedChange:
+        return Icons.speed_rounded;
     }
   }
 
