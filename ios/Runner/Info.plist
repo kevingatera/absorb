@@ -89,5 +89,9 @@
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSMicrophoneUsageDescription</key>
+		<string>Absorb may use the microphone for audio features.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Absorb needs access to your photo library to save or select images.</string>
 	</dict>
 </plist>

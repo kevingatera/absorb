@@ -536,16 +536,23 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
           debugPrint(
               '[Player] playbackEvent error ($_resubscribeCount/3) - re-subscribing: $e');
           refreshPlaybackState();
-          _subscribePlaybackEvents();
+          Future.delayed(const Duration(seconds: 1), _subscribePlaybackEvents);
         } else {
           debugPrint(
               '[Player] playbackEvent error - too many rapid failures, stopping re-subscribe: $e');
         }
       },
       onDone: () {
-        debugPrint('[Player] playbackEvent stream completed - re-subscribing');
-        refreshPlaybackState();
-        _subscribePlaybackEvents();
+        _resubscribeCount++;
+        if (_resubscribeCount <= 3) {
+          debugPrint(
+              '[Player] playbackEvent stream completed ($_resubscribeCount/3) - re-subscribing');
+          refreshPlaybackState();
+          Future.delayed(const Duration(seconds: 1), _subscribePlaybackEvents);
+        } else {
+          debugPrint(
+              '[Player] playbackEvent stream completed - too many rapid re-subscribes, stopping');
+        }
       },
     );
   }
@@ -632,17 +639,19 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> play() async {
-    debugPrint('[Handler] play() called — routing to service');
+    debugPrint(
+        '[Handler] play() called - routing to service (state=${_player.processingState.name})');
     if (_service != null) {
       await _service!.play();
     } else {
+      debugPrint('[Handler] play() - no service ref, using player directly');
       await _player.play();
     }
   }
 
   @override
   Future<void> pause() async {
-    debugPrint('[Handler] pause() called — routing to service');
+    debugPrint('[Handler] pause() called - routing to service');
     if (_service != null) {
       await _service!.pause();
     } else {
@@ -677,8 +686,9 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   /// Called when the user swipes the app away from recents.
   @override
   Future<void> onTaskRemoved() async {
-    debugPrint('[Handler] onTaskRemoved — app swiped away');
-    // Stop playback and sync via the service if available
+    debugPrint('[Handler] onTaskRemoved - app swiped away');
+    // Don't stop cast playback when app is swiped away
+    if (ChromecastService().isCasting) return;
     if (_service != null) {
       await _service!.pause();
       await _service!.stop();
@@ -690,7 +700,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> fastForward() async {
-    debugPrint('[Handler] fastForward() — seeking forward');
+    debugPrint('[Handler] fastForward() - seeking forward');
     if (_service != null) {
       final skipAmount = await PlayerSettings.getForwardSkip();
       await _service!.skipForward(skipAmount);
@@ -702,7 +712,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> rewind() async {
-    debugPrint('[Handler] rewind() — seeking back');
+    debugPrint('[Handler] rewind() - seeking back');
     if (_service != null) {
       final skipAmount = await PlayerSettings.getBackSkip();
       await _service!.skipBackward(skipAmount);
@@ -1091,6 +1101,7 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   static AudioPlayerHandler? _handler;
+  static AudioPlayerHandler? get handler => _handler;
   static Completer<void> _initCompleter = Completer<void>();
   AudioPlayer? get _player => _handler?.player;
 
@@ -1454,7 +1465,23 @@ class AudioPlayerService extends ChangeNotifier {
       return;
     }
 
-    await session.configure(const AudioSessionConfiguration.speech());
+    await session.configure(AudioSessionConfiguration(
+      // iOS: playback category — no duckOthers so iOS properly recognises this
+      // app as the Now Playing app and shows lock screen / Control Center controls.
+      avAudioSessionCategory: AVAudioSessionCategory.playback,
+      avAudioSessionMode: AVAudioSessionMode.spokenAudio,
+      avAudioSessionCategoryOptions: Platform.isIOS
+          ? AVAudioSessionCategoryOptions.none
+          : AVAudioSessionCategoryOptions.duckOthers,
+      // Android: use music content type to avoid speech-specific volume normalization
+      // that makes audiobooks quieter than music apps on Pixel and other devices
+      androidAudioAttributes: AndroidAudioAttributes(
+        contentType: AndroidAudioContentType.music,
+        usage: AndroidAudioUsage.media,
+      ),
+      androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+      androidWillPauseWhenDucked: true,
+    ));
     await session.setActive(true);
 
     _interruptSub?.cancel();
@@ -1553,11 +1580,11 @@ class AudioPlayerService extends ChangeNotifier {
       return 'Player failed to initialize';
     }
 
-    // Stop Chromecast if currently casting
+    // Don't start local playback while casting
     final cast = ChromecastService();
     if (cast.isCasting) {
-      debugPrint('[Player] Stopping Chromecast before local playback');
-      await cast.stopCasting();
+      debugPrint('[Player] Cast active - skipping local playback');
+      return null;
     }
 
     _api = api;
@@ -1849,9 +1876,25 @@ class AudioPlayerService extends ChangeNotifier {
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
       await _player!.setSpeed(speed);
       debugPrint('[Player] Starting local playback at ${speed}x');
+      // Re-activate audio session before play so the first playback event
+      // reaches the audio_service iOS plugin with an active session.
+      // Without this, iOS ignores the MPNowPlayingInfoCenter update and
+      // lock screen / Control Center / AirPod controls never appear.
+      if (!_audioFocusDisabled) {
+        try {
+          (await AudioSession.instance).setActive(true);
+        } catch (_) {}
+      }
       _player!.play();
       notifyListeners();
       _setupSync();
+      // Ensure iOS lock screen / Control Center controls appear by pushing
+      // a fresh playback state after a short delay. The initial event from
+      // playbackEventStream can arrive before AVPlayer is fully "playing",
+      // causing the audio_service iOS plugin to skip command center activation.
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _handler?.refreshPlaybackState();
+      });
       // Fresh session — reset auto sleep dismiss and check
       final sleepTimer = SleepTimerService();
       sleepTimer.resetDismiss();
@@ -1889,6 +1932,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     _playbackSessionId = sessionData['id'] as String?;
+    _lastServerSync = DateTime.now();
     var audioTracks = sessionData['audioTracks'] as List<dynamic>?;
     if (audioTracks == null || audioTracks.isEmpty) {
       _clearState();
@@ -1974,9 +2018,19 @@ class AudioPlayerService extends ChangeNotifier {
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
       await _player!.setSpeed(speed);
       debugPrint('[Player] Starting stream playback at ${speed}x');
+      // Re-activate audio session before play (see local playback comment above)
+      if (!_audioFocusDisabled) {
+        try {
+          (await AudioSession.instance).setActive(true);
+        } catch (_) {}
+      }
       _player!.play();
       notifyListeners();
       _setupSync();
+      // Ensure iOS lock screen / Control Center controls appear (see local playback comment)
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _handler?.refreshPlaybackState();
+      });
       // Fresh session — reset auto sleep dismiss and check
       final sleepTimer = SleepTimerService();
       sleepTimer.resetDismiss();
@@ -2346,6 +2400,31 @@ class AudioPlayerService extends ChangeNotifier {
     if (_isCompletingBook) return; // prevent re-entry
     _isCompletingBook = true;
 
+    // Sanity check: if we're not near the end of the book, this is a spurious
+    // completion signal (iOS AVPlayer can fire completed on audio interruptions,
+    // buffer errors, etc.). Save current position and stop - don't mark finished
+    // or advance the queue.
+    if (_totalDuration > 0 &&
+        _lastKnownPositionSec > 0 &&
+        _lastKnownPositionSec < _totalDuration * 0.9 &&
+        _lastKnownPositionSec < _totalDuration - 30) {
+      debugPrint(
+          '[Player] Spurious completion at ${_lastKnownPositionSec.toStringAsFixed(1)}s / ${_totalDuration.toStringAsFixed(1)}s — saving position instead of marking finished');
+      _logEvent(PlaybackEventType.pause, detail: 'Spurious completion blocked');
+      _syncSub?.cancel();
+      _syncSub = null;
+      _completionSub?.cancel();
+      _completionSub = null;
+      _bgSaveTimer?.cancel();
+      _bgSaveTimer = null;
+      await _player?.stop();
+      await _saveProgressLocal(
+          Duration(milliseconds: (_lastKnownPositionSec * 1000).round()));
+      _isCompletingBook = false;
+      notifyListeners();
+      return;
+    }
+
     debugPrint('[Player] Book complete: $_currentTitle');
     _logEvent(PlaybackEventType.pause, detail: 'Book finished');
 
@@ -2430,16 +2509,21 @@ class AudioPlayerService extends ChangeNotifier {
     // _logEvent(PlaybackEventType.syncLocal); // too noisy for history
   }
 
+  DateTime _lastServerSync = DateTime.now();
+
   Future<void> _syncToServer(Duration pos) async {
     if (_api == null || _playbackSessionId == null) return;
     final ct = pos.inMilliseconds / 1000.0;
+    final now = DateTime.now();
+    final elapsed = now.difference(_lastServerSync).inSeconds.clamp(0, 120);
+    _lastServerSync = now;
     try {
       await _api!.syncPlaybackSession(
         _playbackSessionId!,
         currentTime: ct,
         duration: _totalDuration,
+        timeListened: elapsed,
       );
-      // _logEvent(PlaybackEventType.syncServer); // too noisy for history
     } catch (_) {}
   }
 
@@ -2666,8 +2750,9 @@ class AudioPlayerService extends ChangeNotifier {
     if (SleepTimerService().isActive) {
       SleepTimerService().cancel();
     }
-    // Release audio focus so other apps can use it
-    if (!_audioFocusDisabled) {
+    // Release audio focus so other apps can use it - but not during casting,
+    // because deactivating the session can interfere with cast playback.
+    if (!_audioFocusDisabled && !ChromecastService().isCasting) {
       try {
         (await AudioSession.instance).setActive(false);
       } catch (_) {}

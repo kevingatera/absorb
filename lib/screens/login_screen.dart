@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
@@ -245,6 +246,7 @@ class _LoginScreenState extends State<LoginScreen>
           _loginError = auth.errorMessage ?? 'Login failed';
         });
       } else {
+        TextInput.finishAutofillContext();
         FocusManager.instance.primaryFocus?.unfocus();
         if (Navigator.of(context).canPop()) {
           // If pushed as a route (e.g. Add Account), pop back
@@ -890,6 +892,7 @@ class _LoginScreenState extends State<LoginScreen>
     bool obscureText = false,
     void Function(String)? onFieldSubmitted,
     String? Function(String?)? validator,
+    Iterable<String>? autofillHints,
   }) {
     final isUrl = keyboardType == TextInputType.url;
     return TextFormField(
@@ -900,6 +903,7 @@ class _LoginScreenState extends State<LoginScreen>
       obscureText: obscureText,
       autocorrect: !isUrl,
       enableSuggestions: !isUrl,
+      autofillHints: autofillHints,
       onFieldSubmitted: onFieldSubmitted,
       validator: validator,
       style: TextStyle(color: cs.onSurface),
@@ -987,7 +991,8 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Widget _buildCredentialFields(ColorScheme cs, TextTheme tt) {
-    return Column(
+    return AutofillGroup(
+      child: Column(
       children: [
         const SizedBox(height: 16),
 
@@ -1025,6 +1030,7 @@ class _LoginScreenState extends State<LoginScreen>
           label: 'Username',
           cs: cs,
           textInputAction: TextInputAction.next,
+          autofillHints: const [AutofillHints.username],
           prefixIcon: Icon(Icons.person_outline_rounded, size: 20,
             color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
           validator: (v) {
@@ -1043,6 +1049,7 @@ class _LoginScreenState extends State<LoginScreen>
           cs: cs,
           obscureText: _obscurePassword,
           textInputAction: TextInputAction.done,
+          autofillHints: const [AutofillHints.password],
           onFieldSubmitted: (_) => _handleLogin(),
           prefixIcon: Icon(Icons.lock_outline_rounded, size: 20,
             color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
@@ -1102,6 +1109,7 @@ class _LoginScreenState extends State<LoginScreen>
 
 
       ],
+      ),
     );
   }
 }

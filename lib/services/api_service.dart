@@ -590,6 +590,7 @@ class ApiService {
     String sessionId, {
     required double currentTime,
     required double duration,
+    int timeListened = 60,
   }) async {
     try {
       await http
@@ -598,7 +599,7 @@ class ApiService {
             headers: _headers,
             body: jsonEncode({
               'currentTime': currentTime,
-              'timeListened': 15,
+              'timeListened': timeListened,
               'duration': duration,
             }),
           )
@@ -1370,30 +1371,40 @@ class ApiService {
 
   /// Update a library item's media metadata (admin/root only).
   /// Uses POST /api/items/:id/match which requires update permission.
-  Future<bool> updateItemMedia(String itemId, Map<String, dynamic> media) async {
+  Future<bool> updateItemMedia(
+      String itemId, Map<String, dynamic> media) async {
     try {
-      final r = await http.patch(
-        Uri.parse('$_cleanBaseUrl/api/items/$itemId/media'),
-        headers: _headers,
-        body: jsonEncode({'metadata': media}),
-      ).timeout(const Duration(seconds: 15));
+      final r = await http
+          .patch(
+            Uri.parse('$_cleanBaseUrl/api/items/$itemId/media'),
+            headers: _headers,
+            body: jsonEncode({'metadata': media}),
+          )
+          .timeout(const Duration(seconds: 15));
       debugPrint('[API] updateItemMedia $itemId -> ${r.statusCode}: ${r.body}');
       return r.statusCode == 200;
-    } catch (e) { debugPrint('updateItemMedia error: $e'); }
+    } catch (e) {
+      debugPrint('updateItemMedia error: $e');
+    }
     return false;
   }
 
   /// Upload a cover image URL for a library item (admin only)
   Future<bool> updateItemCoverUrl(String itemId, String url) async {
     try {
-      final r = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/items/$itemId/cover'),
-        headers: _headers,
-        body: jsonEncode({'url': url}),
-      ).timeout(const Duration(seconds: 30));
-      debugPrint('[API] updateItemCoverUrl $itemId -> ${r.statusCode}: ${r.body}');
+      final r = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/items/$itemId/cover'),
+            headers: _headers,
+            body: jsonEncode({'url': url}),
+          )
+          .timeout(const Duration(seconds: 30));
+      debugPrint(
+          '[API] updateItemCoverUrl $itemId -> ${r.statusCode}: ${r.body}');
       return r.statusCode == 200;
-    } catch (e) { debugPrint('updateItemCoverUrl error: $e'); }
+    } catch (e) {
+      debugPrint('updateItemCoverUrl error: $e');
+    }
     return false;
   }
 
@@ -1408,7 +1419,9 @@ class ApiService {
       req.files.add(await http.MultipartFile.fromPath('cover', filePath));
       final res = await req.send().timeout(const Duration(seconds: 60));
       return res.statusCode == 200;
-    } catch (e) { debugPrint('uploadItemCover error: $e'); }
+    } catch (e) {
+      debugPrint('uploadItemCover error: $e');
+    }
     return false;
   }
 
@@ -1609,26 +1622,35 @@ class ApiService {
   /// GET /api/podcasts/:id/checknew
   Future<bool> checkNewPodcastEpisodes(String podcastId) async {
     try {
-      final r = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/podcasts/$podcastId/checknew'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final r = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/podcasts/$podcastId/checknew'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
       return r.statusCode == 200;
-    } catch (e) { debugPrint('checkNewPodcastEpisodes error: $e'); }
+    } catch (e) {
+      debugPrint('checkNewPodcastEpisodes error: $e');
+    }
     return false;
   }
 
   /// Update podcast media settings (auto-download, etc.)
   /// PATCH /api/items/:id/media  body: mediaUpdates at the media level
-  Future<bool> updatePodcastMedia(String itemId, Map<String, dynamic> mediaUpdates) async {
+  Future<bool> updatePodcastMedia(
+      String itemId, Map<String, dynamic> mediaUpdates) async {
     try {
-      final r = await http.patch(
-        Uri.parse('$_cleanBaseUrl/api/items/$itemId/media'),
-        headers: _headers,
-        body: jsonEncode(mediaUpdates),
-      ).timeout(const Duration(seconds: 15));
+      final r = await http
+          .patch(
+            Uri.parse('$_cleanBaseUrl/api/items/$itemId/media'),
+            headers: _headers,
+            body: jsonEncode(mediaUpdates),
+          )
+          .timeout(const Duration(seconds: 15));
       return r.statusCode == 200;
-    } catch (e) { debugPrint('updatePodcastMedia error: $e'); }
+    } catch (e) {
+      debugPrint('updatePodcastMedia error: $e');
+    }
     return false;
   }
 
@@ -1652,12 +1674,16 @@ class ApiService {
   /// Delete a library item (e.g. remove a podcast show)
   Future<bool> deleteLibraryItem(String itemId) async {
     try {
-      final r = await http.delete(
-        Uri.parse('$_cleanBaseUrl/api/items/$itemId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final r = await http
+          .delete(
+            Uri.parse('$_cleanBaseUrl/api/items/$itemId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
       return r.statusCode == 200;
-    } catch (e) { debugPrint('deleteLibraryItem error: $e'); }
+    } catch (e) {
+      debugPrint('deleteLibraryItem error: $e');
+    }
     return false;
   }
 
@@ -1666,10 +1692,12 @@ class ApiService {
   /// GET /api/libraries/:libraryId/playlists
   Future<List<dynamic>> getLibraryPlaylists(String libraryId) async {
     try {
-      final resp = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/playlists'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final resp = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/playlists'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
         return (data['results'] as List<dynamic>?) ?? [];
@@ -1681,10 +1709,12 @@ class ApiService {
   /// GET /api/playlists/:id
   Future<Map<String, dynamic>?> getPlaylist(String playlistId) async {
     try {
-      final resp = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1699,15 +1729,17 @@ class ApiService {
     List<Map<String, dynamic>> items = const [],
   }) async {
     try {
-      final resp = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/playlists'),
-        headers: _headers,
-        body: jsonEncode({
-          'libraryId': libraryId,
-          'name': name,
-          'items': items,
-        }),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/playlists'),
+            headers: _headers,
+            body: jsonEncode({
+              'libraryId': libraryId,
+              'name': name,
+              'items': items,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1725,11 +1757,13 @@ class ApiService {
       final body = <String, dynamic>{};
       if (name != null) body['name'] = name;
       if (items != null) body['items'] = items;
-      final resp = await http.patch(
-        Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId'),
-        headers: _headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .patch(
+            Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId'),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1740,10 +1774,12 @@ class ApiService {
   /// DELETE /api/playlists/:id
   Future<bool> deletePlaylist(String playlistId) async {
     try {
-      final resp = await http.delete(
-        Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .delete(
+            Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       return resp.statusCode == 200;
     } catch (_) {}
     return false;
@@ -1758,11 +1794,13 @@ class ApiService {
     try {
       final body = <String, dynamic>{'libraryItemId': libraryItemId};
       if (episodeId != null) body['episodeId'] = episodeId;
-      final resp = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId/item'),
-        headers: _headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/playlists/$playlistId/item'),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1779,10 +1817,12 @@ class ApiService {
     try {
       var path = '$_cleanBaseUrl/api/playlists/$playlistId/item/$libraryItemId';
       if (episodeId != null) path += '/$episodeId';
-      final resp = await http.delete(
-        Uri.parse(path),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .delete(
+            Uri.parse(path),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1795,10 +1835,12 @@ class ApiService {
   /// GET /api/libraries/:libraryId/collections
   Future<List<dynamic>> getLibraryCollections(String libraryId) async {
     try {
-      final resp = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/collections'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 15));
+      final resp = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/collections'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
         return (data['results'] as List<dynamic>?) ?? [];
@@ -1810,10 +1852,12 @@ class ApiService {
   /// GET /api/collections/:id
   Future<Map<String, dynamic>?> getCollection(String collectionId) async {
     try {
-      final resp = await http.get(
-        Uri.parse('$_cleanBaseUrl/api/collections/$collectionId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .get(
+            Uri.parse('$_cleanBaseUrl/api/collections/$collectionId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1835,11 +1879,13 @@ class ApiService {
         'books': books,
       };
       if (description != null) body['description'] = description;
-      final resp = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/collections'),
-        headers: _headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/collections'),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1859,11 +1905,13 @@ class ApiService {
       if (name != null) body['name'] = name;
       if (description != null) body['description'] = description;
       if (books != null) body['books'] = books;
-      final resp = await http.patch(
-        Uri.parse('$_cleanBaseUrl/api/collections/$collectionId'),
-        headers: _headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .patch(
+            Uri.parse('$_cleanBaseUrl/api/collections/$collectionId'),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1874,10 +1922,12 @@ class ApiService {
   /// DELETE /api/collections/:id
   Future<bool> deleteCollection(String collectionId) async {
     try {
-      final resp = await http.delete(
-        Uri.parse('$_cleanBaseUrl/api/collections/$collectionId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .delete(
+            Uri.parse('$_cleanBaseUrl/api/collections/$collectionId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       return resp.statusCode == 200;
     } catch (_) {}
     return false;
@@ -1889,11 +1939,13 @@ class ApiService {
     String libraryItemId,
   ) async {
     try {
-      final resp = await http.post(
-        Uri.parse('$_cleanBaseUrl/api/collections/$collectionId/book'),
-        headers: _headers,
-        body: jsonEncode({'id': libraryItemId}),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .post(
+            Uri.parse('$_cleanBaseUrl/api/collections/$collectionId/book'),
+            headers: _headers,
+            body: jsonEncode({'id': libraryItemId}),
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -1907,10 +1959,13 @@ class ApiService {
     String libraryItemId,
   ) async {
     try {
-      final resp = await http.delete(
-        Uri.parse('$_cleanBaseUrl/api/collections/$collectionId/book/$libraryItemId'),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .delete(
+            Uri.parse(
+                '$_cleanBaseUrl/api/collections/$collectionId/book/$libraryItemId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
