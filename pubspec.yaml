@@ -26,6 +26,9 @@ dependencies:
   # Image caching
   cached_network_image: ^3.3.0
 
+  # Zoomable full-screen cover art viewer (pinch/pan/double-tap)
+  photo_view: ^0.15.0
+
   # Audio playback
   just_audio:
     path: packages/just_audio
