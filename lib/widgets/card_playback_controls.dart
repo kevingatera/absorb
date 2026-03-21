@@ -56,7 +56,7 @@ class _CardPlaybackControlsState extends State<CardPlaybackControls> {
     final cast = ChromecastService();
 
     return ListenableBuilder(
-      listenable: cast,
+      listenable: Listenable.merge([cast, widget.player]),
       builder: (context, _) {
         // Check if we're casting this specific book
         final castItemId = widget.itemId ?? widget.player.currentItemId;
@@ -95,28 +95,28 @@ class _CardPlaybackControlsState extends State<CardPlaybackControls> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        GestureDetector(
+        Flexible(child: GestureDetector(
           onTap: cast.skipToPreviousChapter,
           child: SizedBox(width: 52, height: 52, child: Center(
             child: Icon(Icons.skip_previous_rounded, size: 34, color: cs.onSurfaceVariant),
           )),
-        ),
-        GestureDetector(
+        )),
+        Flexible(child: GestureDetector(
           onTap: () => cast.skipBackward(_backSkip),
           child: SizedBox(width: 60, height: 60, child: Center(child: _skipIcon(_backSkip, false))),
-        ),
+        )),
         if (widget.showPlayButton)
-          _playPauseButton(cs, playing: cast.isPlaying, loading: false, onTap: cast.togglePlayPause),
-        GestureDetector(
+          Flexible(child: _playPauseButton(cs, playing: cast.isPlaying, loading: false, onTap: cast.togglePlayPause)),
+        Flexible(child: GestureDetector(
           onTap: () => cast.skipForward(_forwardSkip),
           child: SizedBox(width: 60, height: 60, child: Center(child: _skipIcon(_forwardSkip, true))),
-        ),
-        GestureDetector(
+        )),
+        Flexible(child: GestureDetector(
           onTap: cast.skipToNextChapter,
           child: SizedBox(width: 52, height: 52, child: Center(
             child: Icon(Icons.skip_next_rounded, size: 34, color: cs.onSurfaceVariant),
           )),
-        ),
+        )),
       ],
     );
   }
@@ -124,33 +124,33 @@ class _CardPlaybackControlsState extends State<CardPlaybackControls> {
   /// Original local player controls
   Widget _buildLocalControls() {
     final cs = Theme.of(context).colorScheme;
-    final loading = widget.isStarting || (widget.isActive && widget.player.isLoadingOrBuffering);
+    final loading = widget.isStarting || (widget.isActive && widget.player.isLoadingOrBuffering && !widget.player.isPlaying);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        GestureDetector(
+        Flexible(child: GestureDetector(
           onTap: widget.isActive ? widget.player.skipToPreviousChapter : null,
           child: SizedBox(width: 52, height: 52, child: Center(
             child: Icon(Icons.skip_previous_rounded, size: 34, color: widget.isActive ? cs.onSurfaceVariant : cs.onSurface.withValues(alpha: 0.12)),
           )),
-        ),
-        GestureDetector(
+        )),
+        Flexible(child: GestureDetector(
           onTap: widget.isActive ? () => widget.player.skipBackward(_backSkip) : null,
           child: SizedBox(width: 60, height: 60, child: Center(child: _skipIcon(_backSkip, false, active: widget.isActive))),
-        ),
+        )),
         if (widget.showPlayButton)
-          _playPauseButton(cs, playing: widget.isActive && widget.player.isPlaying, loading: loading,
-            onTap: widget.isActive ? widget.player.togglePlayPause : widget.onStart),
-        GestureDetector(
+          Flexible(child: _playPauseButton(cs, playing: widget.isActive && widget.player.isPlaying, loading: loading,
+            onTap: widget.isActive ? widget.player.togglePlayPause : widget.onStart)),
+        Flexible(child: GestureDetector(
           onTap: widget.isActive ? () => widget.player.skipForward(_forwardSkip) : null,
           child: SizedBox(width: 60, height: 60, child: Center(child: _skipIcon(_forwardSkip, true, active: widget.isActive))),
-        ),
-        GestureDetector(
+        )),
+        Flexible(child: GestureDetector(
           onTap: widget.isActive ? widget.player.skipToNextChapter : null,
           child: SizedBox(width: 52, height: 52, child: Center(
             child: Icon(Icons.skip_next_rounded, size: 34, color: widget.isActive ? cs.onSurfaceVariant : cs.onSurface.withValues(alpha: 0.12)),
           )),
-        ),
+        )),
       ],
     );
   }

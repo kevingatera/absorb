@@ -428,30 +428,30 @@ class _CarModeScreenState extends State<CarModeScreen>
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    GestureDetector(
+                    Flexible(child: GestureDetector(
                       onTap: player.hasBook ? player.skipToPreviousChapter : null,
                       child: SizedBox(width: skipSize, height: skipSize,
                         child: Center(child: Icon(Icons.skip_previous_rounded,
                           size: skipIconSize * 0.85,
                           color: player.hasBook ? Colors.white70 : Colors.white24))),
-                    ),
-                    GestureDetector(
+                    )),
+                    Flexible(child: GestureDetector(
                       onTap: player.hasBook ? () => player.skipBackward(_backSkip) : null,
                       child: SizedBox(width: skipSize, height: skipSize,
                         child: Center(child: _buildSkipIcon(_backSkip, false, player.hasBook, skipIconSize))),
-                    ),
-                    GestureDetector(
+                    )),
+                    Flexible(child: GestureDetector(
                       onTap: player.hasBook ? () => player.skipForward(_forwardSkip) : null,
                       child: SizedBox(width: skipSize, height: skipSize,
                         child: Center(child: _buildSkipIcon(_forwardSkip, true, player.hasBook, skipIconSize))),
-                    ),
-                    GestureDetector(
+                    )),
+                    Flexible(child: GestureDetector(
                       onTap: player.hasBook ? player.skipToNextChapter : null,
                       child: SizedBox(width: skipSize, height: skipSize,
                         child: Center(child: Icon(Icons.skip_next_rounded,
                           size: skipIconSize * 0.85,
                           color: player.hasBook ? Colors.white70 : Colors.white24))),
-                    ),
+                    )),
                   ],
                 ),
               ),
