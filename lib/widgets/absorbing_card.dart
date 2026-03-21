@@ -17,6 +17,7 @@ import 'card_edge_progress_bar.dart';
 import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
 import 'card_buttons.dart';
+import 'cover_art_viewer.dart';
 import 'sleep_timer_sheet.dart';
 import 'chromecast_button.dart';
 import '../services/chromecast_service.dart';
@@ -526,6 +527,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                       final coverPlaying = isCastingThis ? castService.isPlaying : (_isActive && widget.player.isPlaying);
                       final coverLoading = _isStarting || (_isActive && widget.player.isLoadingOrBuffering && !widget.player.isPlaying);
                       return Center(child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
                         onTap: _coverPlayButton ? () {
                           if (isCastingThis) {
                             castService.togglePlayPause();
@@ -535,6 +537,12 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                             _startPlayback();
                           }
                         } : null,
+                        onLongPress: () => showCoverArtViewer(
+                          context,
+                          title: _title,
+                          coverUrl: _coverUrl,
+                          httpHeaders: mediaHeaders,
+                        ),
                         child: Container(
                           width: coverW,
                           height: coverH,
