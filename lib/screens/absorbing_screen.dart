@@ -471,7 +471,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             // ── Header ──
             AbsorbPageHeader(
               title: 'Absorbing',
-              padding: const EdgeInsets.fromLTRB(20, 4, 12, 0),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
               trailing: GestureDetector(
                 onTap: () {
                   final newVal = !lib.isManualOffline;

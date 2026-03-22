@@ -992,6 +992,28 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
           children: [
             AbsorbPageHeader(
               title: 'Library',
+              trailing: GestureDetector(
+                onTap: () {
+                  final newVal = !lib.isManualOffline;
+                  lib.setManualOffline(newVal);
+                  if (newVal) {
+                    final dl = DownloadService();
+                    final player = AudioPlayerService();
+                    final itemId = player.currentItemId;
+                    final epId = player.currentEpisodeId;
+                    final dlKey = epId != null && itemId != null
+                        ? '$itemId-$epId'
+                        : itemId;
+                    if (dlKey == null || !dl.isDownloaded(dlKey)) {
+                      player.stop();
+                    }
+                  }
+                },
+                child: Icon(
+                  lib.isOffline ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
+                  size: 16, color: lib.isOffline ? Colors.orange : Colors.green,
+                ),
+              ),
               actions: hasMultipleLibraries ? [
                 GestureDetector(
                   onTap: () => _showLibraryPicker(context, cs, tt, allLibraries, lib),
