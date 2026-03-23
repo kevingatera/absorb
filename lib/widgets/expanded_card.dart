@@ -545,16 +545,14 @@ class _ExpandedCardState extends State<ExpandedCard> {
                       // ── Stats row ──
                       Padding(
                         padding: EdgeInsets.fromLTRB(24, compact ? 4 : 12, 24, 0),
-                        child: Row(
-                          children: [
-                            Text('${(bookProgress * 100).clamp(0, 100).toStringAsFixed(1)}%',
-                              style: tt.labelMedium?.copyWith(
-                                color: isDark ? Colors.white.withValues(alpha: 0.95) : Colors.black.withValues(alpha: 0.85),
-                                fontWeight: FontWeight.w800, fontSize: 16,
-                                shadows: [Shadow(color: isDark ? Colors.black.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.6), blurRadius: 4)],
-                              )),
-                            const Spacer(),
-                          ],
+                        child: Center(
+                          child: Text('${(bookProgress * 100).clamp(0, 100).toStringAsFixed(1)}%',
+                            style: tt.labelSmall?.copyWith(
+                              color: isDark ? Colors.white.withValues(alpha: 0.55) : Colors.black.withValues(alpha: 0.45),
+                              fontWeight: FontWeight.w500, fontSize: compact ? 10 : 11,
+                              fontFeatures: const [ui.FontFeature.tabularFigures()],
+                              shadows: [Shadow(color: isDark ? Colors.black.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.6), blurRadius: 4)],
+                            )),
                         ),
                       ),
                       // ── Book progress bar ──

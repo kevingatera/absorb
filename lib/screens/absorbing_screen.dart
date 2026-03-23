@@ -490,7 +490,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                 },
                 child: Icon(
                   effectiveOffline ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
-                  size: 16, color: effectiveOffline ? Colors.orange : Colors.green,
+                  size: 20, color: effectiveOffline ? Colors.orange : Colors.green,
                 ),
               ),
               actions: [
@@ -508,9 +508,9 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.stop_rounded, size: 14, color: muted),
+                          Icon(Icons.stop_rounded, size: 18, color: muted),
                           const SizedBox(width: 4),
-                          Text('Stop', style: TextStyle(color: muted, fontSize: 11, fontWeight: FontWeight.w500)),
+                          Text('Stop', style: TextStyle(color: muted, fontSize: 13, fontWeight: FontWeight.w500)),
                         ],
                       ),
                     ),
@@ -531,8 +531,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                         border: Border.all(color: subtleBorder),
                       ),
                       child: _isSyncing
-                          ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.5, color: muted))
-                          : Icon(Icons.refresh_rounded, size: 14, color: muted),
+                          ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 1.5, color: muted))
+                          : Icon(Icons.refresh_rounded, size: 18, color: muted),
                     ),
                   ),
               if (books.length > 1) ...[
@@ -546,7 +546,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                       shape: BoxShape.circle,
                       border: Border.all(color: subtleBorder),
                     ),
-                    child: Icon(Icons.reorder_rounded, size: 14, color: muted),
+                    child: Icon(Icons.reorder_rounded, size: 18, color: muted),
                   ),
                 ),
               ],

@@ -489,16 +489,20 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                         fontFeatures: const [FontFeature.tabularFigures()],
                         shadows: [Shadow(color: isDark ? Colors.black.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.6), blurRadius: 4)],
                       );
-                      return Row(
+                      return Stack(
+                        alignment: Alignment.center,
                         children: [
-                          if (_effectiveDuration > 0)
-                            Text(_fmtTime(elapsed), style: timeStyle),
-                          const Spacer(),
+                          Row(
+                            children: [
+                              if (_effectiveDuration > 0)
+                                Text(_fmtTime(elapsed), style: timeStyle),
+                              const Spacer(),
+                              if (_effectiveDuration > 0)
+                                Text('-${_fmtTime(remaining)}', style: timeStyle),
+                            ],
+                          ),
                           Text('${(bookProgress * 100).clamp(0, 100).toStringAsFixed(1)}%',
                             style: timeStyle),
-                          const Spacer(),
-                          if (_effectiveDuration > 0)
-                            Text('-${_fmtTime(remaining)}', style: timeStyle),
                         ],
                       );
                     },

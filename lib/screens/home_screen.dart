@@ -333,7 +333,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       },
                       child: Icon(
                         lib.isOffline ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
-                        size: 16, color: lib.isOffline ? Colors.orange : Colors.green,
+                        size: 20, color: lib.isOffline ? Colors.orange : Colors.green,
                       ),
                     ),
                     actions: [
@@ -362,7 +362,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       lib.isPodcastLibrary
                                           ? Icons.podcasts_rounded
                                           : Icons.auto_stories_rounded,
-                                      size: 14,
+                                      size: 18,
                                       color: cs.onSurfaceVariant),
                                   const SizedBox(width: 6),
                                   ConstrainedBox(
@@ -370,7 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         const BoxConstraints(maxWidth: 140),
                                     child: Text(libraryName,
                                         style: TextStyle(
-                                            fontSize: 12,
+                                            fontSize: 13,
                                             fontWeight: FontWeight.w600,
                                             color: cs.onSurfaceVariant),
                                         overflow: TextOverflow.ellipsis,
@@ -378,7 +378,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   const SizedBox(width: 4),
                                   Icon(Icons.unfold_more_rounded,
-                                      size: 14, color: cs.onSurfaceVariant),
+                                      size: 18, color: cs.onSurfaceVariant),
                                 ],
                               ),
                             ),
