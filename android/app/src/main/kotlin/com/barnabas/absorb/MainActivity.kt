@@ -1,8 +1,10 @@
 package com.barnabas.absorb
 
 import android.content.Context
+import android.content.Intent
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.provider.MediaStore
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
@@ -352,6 +354,19 @@ class MainActivity : AudioServiceActivity() {
         }
         @Suppress("DEPRECATION")
         return am.isBluetoothA2dpOn || am.isBluetoothScoOn
+    }
+
+    // Discard media search intents from Google Assistant / Android Auto so the
+    // voice query text doesn't leak into the app's search field.
+    override fun onNewIntent(intent: Intent) {
+        val action = intent.action
+        if (action == MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH ||
+            action == Intent.ACTION_SEARCH ||
+            action == "android.media.action.MEDIA_PLAY_FROM_SEARCH") {
+            Log.d(TAG, "Discarding search intent: $action")
+            return
+        }
+        super.onNewIntent(intent)
     }
 
     override fun onDestroy() {
