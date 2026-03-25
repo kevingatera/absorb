@@ -8,6 +8,7 @@ import '../services/download_service.dart';
 import 'book_detail_sheet.dart';
 import 'library_grid_tiles.dart';
 import 'episode_list_sheet.dart';
+import 'stackable_sheet.dart';
 
 /// Show a bottom sheet with all books in a series, sorted by sequence.
 /// Can be called from any screen.
@@ -19,25 +20,17 @@ void showSeriesBooksSheet(BuildContext context, {
   String? token,
   String? libraryId,
 }) {
-  FocusManager.instance.primaryFocus?.unfocus();
-  showModalBottomSheet(
+  showStackableSheet(
     context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    builder: (_) => DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      minChildSize: 0.05, snap: true,
-      maxChildSize: 0.9,
-      expand: false,
-      builder: (ctx, scrollController) => SeriesBooksSheet(
-        seriesName: seriesName,
-        seriesId: seriesId,
-        books: books,
-        serverUrl: serverUrl,
-        token: token,
-        libraryId: libraryId,
-        scrollController: scrollController,
-      ),
+    showHandle: true,
+    builder: (ctx, scrollController) => SeriesBooksSheet(
+      seriesName: seriesName,
+      seriesId: seriesId,
+      books: books,
+      serverUrl: serverUrl,
+      token: token,
+      libraryId: libraryId,
+      scrollController: scrollController,
     ),
   );
 }
@@ -720,13 +713,10 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                     child: InkWell(
                       onTap: () {
                         if (bookId.isNotEmpty) {
-                          // Close series sheet before opening book to prevent infinite stacking
-                          final nav = Navigator.of(context);
-                          nav.pop();
                           if (lib.isPodcastLibrary) {
-                            EpisodeListSheet.show(nav.context, book);
+                            EpisodeListSheet.show(context, book);
                           } else {
-                            showBookDetailSheet(nav.context, bookId);
+                            showBookDetailSheet(context, bookId);
                           }
                         }
                       },

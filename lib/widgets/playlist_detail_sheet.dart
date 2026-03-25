@@ -8,6 +8,7 @@ import '../providers/library_provider.dart';
 import '../services/download_service.dart';
 import 'book_detail_sheet.dart';
 import 'episode_list_sheet.dart';
+import 'stackable_sheet.dart';
 
 class PlaylistDetailSheet extends StatefulWidget {
   final String playlistId;
@@ -20,38 +21,15 @@ class PlaylistDetailSheet extends StatefulWidget {
   });
 
   static void show(BuildContext context, String playlistId) {
-    showModalBottomSheet(
+    showStackableSheet(
       context: context,
-      isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return GestureDetector(
-          onTap: () => Navigator.pop(context),
-          behavior: HitTestBehavior.opaque,
-          child: DraggableScrollableSheet(
-            initialChildSize: 0.7,
-            minChildSize: 0.4,
-            maxChildSize: 0.95,
-            builder: (context, scrollController) {
-              return GestureDetector(
-                onTap: () {},
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).bottomSheetTheme.backgroundColor ??
-                        Theme.of(context).colorScheme.surface,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                  ),
-                  child: PlaylistDetailSheet(
-                    playlistId: playlistId,
-                    scrollController: scrollController,
-                  ),
-                ),
-              );
-            },
-          ),
-        );
-      },
+      showHandle: true,
+      maxChildSize: 0.95,
+      builder: (context, scrollController) => PlaylistDetailSheet(
+        playlistId: playlistId,
+        scrollController: scrollController,
+      ),
     );
   }
 
@@ -246,16 +224,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
     final items = (playlist['items'] as List<dynamic>?) ?? [];
 
     return Column(children: [
-      // Grab handle + header
-      const SizedBox(height: 8),
-      Center(child: Container(
-        width: 40, height: 4,
-        decoration: BoxDecoration(
-          color: cs.onSurface.withValues(alpha: 0.24),
-          borderRadius: BorderRadius.circular(2),
-        ),
-      )),
-      const SizedBox(height: 16),
+      const SizedBox(height: 4),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Row(children: [

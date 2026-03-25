@@ -7,6 +7,7 @@ import '../services/audio_player_service.dart';
 import 'library_grid_tiles.dart';
 import 'library_search_results.dart';
 import 'series_books_sheet.dart';
+import 'stackable_sheet.dart';
 
 enum _AuthorLayout { list, grid }
 
@@ -15,26 +16,18 @@ void showAuthorDetailSheet(BuildContext context, {
   required String authorId,
   required String authorName,
 }) {
-  FocusManager.instance.primaryFocus?.unfocus();
   final auth = context.read<AuthProvider>();
   final lib = context.read<LibraryProvider>();
-  showModalBottomSheet(
+  showStackableSheet(
     context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    builder: (_) => DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      minChildSize: 0.05, snap: true,
-      maxChildSize: 0.9,
-      expand: false,
-      builder: (ctx, scrollController) => AuthorBooksSheet(
-        libraryId: lib.selectedLibraryId ?? '',
-        authorId: authorId,
-        authorName: authorName,
-        serverUrl: auth.serverUrl,
-        token: auth.token,
-        scrollController: scrollController,
-      ),
+    showHandle: true,
+    builder: (ctx, scrollController) => AuthorBooksSheet(
+      libraryId: lib.selectedLibraryId ?? '',
+      authorId: authorId,
+      authorName: authorName,
+      serverUrl: auth.serverUrl,
+      token: auth.token,
+      scrollController: scrollController,
     ),
   );
 }
@@ -525,7 +518,6 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
           item: book,
           serverUrl: widget.serverUrl,
           token: widget.token,
-          popOnTap: true,
           subtitle: _sequenceFor(book, sectionLabel),
           sequenceBadge: _sequenceFor(book, sectionLabel)?.replaceFirst('#', ''),
         ),

@@ -12,6 +12,7 @@ import '../providers/auth_provider.dart';
 import 'card_buttons.dart';
 import 'html_description.dart';
 import 'playlist_picker_sheet.dart';
+import 'stackable_sheet.dart';
 
 /// Bottom sheet that shows a podcast's episode list.
 /// Mirrors the UX of [BookDetailSheet] but adapted for podcast shows.
@@ -29,20 +30,14 @@ class EpisodeListSheet extends StatefulWidget {
 
   /// Show the episode list as a modal bottom sheet.
   static void show(BuildContext context, Map<String, dynamic> podcastItem) {
-    showModalBottomSheet(
+    showStackableSheet(
       context: context,
-      isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.85,
-        minChildSize: 0.05, snap: true,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (_, scrollController) => EpisodeListSheet._(
-          podcastItem: podcastItem,
-          scrollController: scrollController,
-        ),
+      initialChildSize: 0.85,
+      maxChildSize: 0.95,
+      builder: (_, scrollController) => EpisodeListSheet._(
+        podcastItem: podcastItem,
+        scrollController: scrollController,
       ),
     );
   }
@@ -860,21 +855,15 @@ class EpisodeDetailSheet extends StatefulWidget {
   }) : super(key: null);
 
   static void show(BuildContext context, Map<String, dynamic> podcastItem, Map<String, dynamic> episode) {
-    showModalBottomSheet(
+    showStackableSheet(
       context: context,
-      isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.75,
-        minChildSize: 0.05, snap: true,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (_, scrollController) => EpisodeDetailSheet._(
-          podcastItem: podcastItem,
-          episode: episode,
-          scrollController: scrollController,
-        ),
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      builder: (_, scrollController) => EpisodeDetailSheet._(
+        podcastItem: podcastItem,
+        episode: episode,
+        scrollController: scrollController,
       ),
     );
   }

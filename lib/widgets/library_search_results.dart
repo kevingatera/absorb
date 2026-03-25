@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
-import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/download_service.dart';
 import 'author_books_sheet.dart';
@@ -498,30 +497,6 @@ class AuthorResultTile extends StatelessWidget {
 
   void _showAuthorBooks(
       BuildContext context, String authorId, String authorName) {
-    FocusManager.instance.primaryFocus?.unfocus();
-    final auth = context.read<AuthProvider>();
-    final lib = context.read<LibraryProvider>();
-    final api = auth.apiService;
-    if (api == null || lib.selectedLibraryId == null) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.05, snap: true,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (ctx, scrollController) => AuthorBooksSheet(
-          libraryId: lib.selectedLibraryId!,
-          authorId: authorId,
-          authorName: authorName,
-          serverUrl: auth.serverUrl,
-          token: auth.token,
-          scrollController: scrollController,
-        ),
-      ),
-    );
+    showAuthorDetailSheet(context, authorId: authorId, authorName: authorName);
   }
 }

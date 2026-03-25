@@ -31,17 +31,17 @@ import 'playlist_picker_sheet.dart';
 import 'collection_picker_sheet.dart';
 import 'absorb_wave_icon.dart';
 import 'edit_metadata_sheet.dart';
+import 'stackable_sheet.dart';
 
 // ─── BOOK DETAIL BOTTOM SHEET ───────────────────────────────
 
 void showBookDetailSheet(BuildContext context, String itemId) {
-  showModalBottomSheet(
-    context: context, isScrollControlled: true, useSafeArea: true,
-    backgroundColor: Colors.transparent,
-    builder: (ctx) => DraggableScrollableSheet(
-      expand: false, initialChildSize: 0.85, minChildSize: 0.05, snap: true, maxChildSize: 0.95,
-      builder: (ctx, sc) => _BookDetailSheetContent(itemId: itemId, scrollController: sc),
-    ),
+  showStackableSheet(
+    context: context,
+    useSafeArea: true,
+    initialChildSize: 0.85,
+    maxChildSize: 0.95,
+    builder: (ctx, sc) => _BookDetailSheetContent(itemId: itemId, scrollController: sc),
   );
 }
 
@@ -815,9 +815,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
               final id = a['id'] as String? ?? '';
               final name = a['name'] as String? ?? '';
               if (id.isEmpty || name.isEmpty) return;
-              final nav = Navigator.of(context);
-              nav.pop();
-              showAuthorDetailSheet(nav.context, authorId: id, authorName: name);
+              showAuthorDetailSheet(context, authorId: id, authorName: name);
             },
             child: Text(
               (visible[i] as Map<String, dynamic>?)?['name'] as String? ?? '',
@@ -842,11 +840,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     if (seriesId == null) return;
     final auth = context.read<AuthProvider>();
     final itemLibraryId = _item?['libraryId'] as String?;
-    // Close current sheet before opening series to prevent infinite stacking
-    final nav = Navigator.of(context);
-    nav.pop();
     showSeriesBooksSheet(
-      nav.context,
+      context,
       seriesName: seriesName,
       seriesId: seriesId,
       serverUrl: auth.serverUrl,

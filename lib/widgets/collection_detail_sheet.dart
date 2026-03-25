@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/download_service.dart';
 import 'book_detail_sheet.dart';
+import 'stackable_sheet.dart';
 
 class CollectionDetailSheet extends StatefulWidget {
   final String collectionId;
@@ -19,38 +20,15 @@ class CollectionDetailSheet extends StatefulWidget {
   });
 
   static void show(BuildContext context, String collectionId) {
-    showModalBottomSheet(
+    showStackableSheet(
       context: context,
-      isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return GestureDetector(
-          onTap: () => Navigator.pop(context),
-          behavior: HitTestBehavior.opaque,
-          child: DraggableScrollableSheet(
-            initialChildSize: 0.7,
-            minChildSize: 0.4,
-            maxChildSize: 0.95,
-            builder: (context, scrollController) {
-              return GestureDetector(
-                onTap: () {},
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).bottomSheetTheme.backgroundColor ??
-                        Theme.of(context).colorScheme.surface,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                  ),
-                  child: CollectionDetailSheet(
-                    collectionId: collectionId,
-                    scrollController: scrollController,
-                  ),
-                ),
-              );
-            },
-          ),
-        );
-      },
+      showHandle: true,
+      maxChildSize: 0.95,
+      builder: (context, scrollController) => CollectionDetailSheet(
+        collectionId: collectionId,
+        scrollController: scrollController,
+      ),
     );
   }
 
@@ -137,16 +115,7 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
     final books = (collection['books'] as List<dynamic>?) ?? [];
 
     return Column(children: [
-      // Grab handle + header
-      const SizedBox(height: 8),
-      Center(child: Container(
-        width: 40, height: 4,
-        decoration: BoxDecoration(
-          color: cs.onSurface.withValues(alpha: 0.24),
-          borderRadius: BorderRadius.circular(2),
-        ),
-      )),
-      const SizedBox(height: 16),
+      const SizedBox(height: 4),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Row(children: [
