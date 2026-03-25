@@ -137,12 +137,16 @@ class LogService {
   /// type label (e.g. [local-ip], [tailscale], [reverse-proxy]) while keeping
   /// API paths intact for debugging.
   static String _sanitizeUrls(String content) {
+    // Collect unique hostnames found in URLs so we can scrub bare references too
+    final foundHosts = <String>{};
+
     final urlPattern = RegExp(r'https?://[^\s\]"]+');
-    return content.replaceAllMapped(urlPattern, (match) {
+    var result = content.replaceAllMapped(urlPattern, (match) {
       final url = match.group(0)!;
       try {
         final uri = Uri.parse(url);
         final host = uri.host.toLowerCase();
+        foundHosts.add(host);
         String label;
         if (host == 'localhost' || host == '127.0.0.1') {
           label = '[localhost]';
@@ -161,6 +165,14 @@ class LogService {
         return '[url-redacted]';
       }
     });
+
+    // Scrub bare hostnames that leak in error messages (e.g. SocketException
+    // includes "address = hostname.com, port = 1234")
+    for (final host in foundHosts) {
+      if (host == 'localhost' || host == '127.0.0.1') continue;
+      result = result.replaceAll(host, '[host-redacted]');
+    }
+    return result;
   }
 
   static bool _isPrivateIp(String host) {
