@@ -1501,7 +1501,7 @@ abstract class AppLocalizations {
   /// No description provided for @whenAbsorbedInfoContent.
   ///
   /// In en, this message translates to:
-  /// **'Controls what happens to an absorbing card when you finish a book or episode.\n\nShow Overlay: A completion overlay appears on the card, letting you choose what to do next.\n\nAuto-release: The finished card is automatically removed from your Absorbing screen.'**
+  /// **'Controls what happens to an absorbing card when you finish a book or episode.\n\nFinished cards are automatically removed from your Absorbing screen.'**
   String get whenAbsorbedInfoContent;
 
   /// No description provided for @whenAbsorbedSubtitle.
