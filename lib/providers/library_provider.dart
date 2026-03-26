@@ -2022,10 +2022,6 @@ class LibraryProvider extends ChangeNotifier {
             } else {
               // Book — use plain itemId
               allowedKeys.add(itemId);
-              // Continue-series items ALWAYS override manual removes. If the
-              // server says "this is the next book" then stop fighting it
-              // and just add the damn thing.
-              if (isContinueSeries) _manualAbsorbRemoves.remove(itemId);
               if (!_manualAbsorbRemoves.contains(itemId)) {
                 _absorbingIdsAdd(itemId, atFront: false);
                 _absorbingItemCache[itemId] = e;
@@ -2049,7 +2045,6 @@ class LibraryProvider extends ChangeNotifier {
           // Protect from pruning on future refreshes (the server may not
           // include it in continue-series again until the user starts it).
           _manualAbsorbAdds.add(key);
-          _manualAbsorbRemoves.remove(key);
           newContinueSeriesKey ??= key; // first new item is the next in series
         }
       }
@@ -2349,6 +2344,13 @@ class LibraryProvider extends ChangeNotifier {
     if (changed) _saveManualAbsorbing();
   }
 
+  /// Clear the absorbing blocklist entry for [key] without adding it back
+  /// to the absorbing list. Used for bulk "mark all not finished" where we
+  /// want to allow the book to reappear naturally, not force it onto the list.
+  void clearAbsorbingBlock(String key) {
+    if (_manualAbsorbRemoves.remove(key)) _saveManualAbsorbing();
+  }
+
   /// Remove a book/episode from the absorbing list manually.
   /// [key] can be a plain itemId (books) or compound "itemId-episodeId" (podcasts).
   Future<void> removeFromAbsorbing(String key) async {
@@ -2388,6 +2390,13 @@ class LibraryProvider extends ChangeNotifier {
       }
     }
     notifyListeners();
+
+    // Auto-add the next book in the series to absorbing (if any).
+    // Uses local cache/downloads to find the next unfinished book by sequence.
+    // Only adds once — if the user removes it, it stays removed.
+    if (itemId.length <= 36) {
+      _addNextSeriesBookToAbsorbing(itemId);
+    }
 
     // Instant local auto-advance — uses cached metadata + download info,
     // no server call needed. Fires first so playback starts immediately,
@@ -2717,6 +2726,117 @@ class LibraryProvider extends ChangeNotifier {
       }
     } catch (_) {}
     return cached;
+  }
+
+  /// Find the next unfinished book in the same series as [finishedBookId]
+  /// and add it to the absorbing list. Checks local cache and downloads first,
+  /// then falls back to a server fetch. Respects manual removes.
+  Future<void> _addNextSeriesBookToAbsorbing(String finishedBookId) async {
+    // Get series info for the finished book — try cache, downloads, then server
+    var finished = _itemDataWithSeries(finishedBookId);
+    var (seriesId, currentSeq) =
+        finished != null ? _extractSeries(finished) : (null, null);
+    if (seriesId == null || currentSeq == null) {
+      if (_api == null) {
+        debugPrint('[Absorbing] No series info and no API for $finishedBookId');
+        return;
+      }
+      final fullItem = await _api!.getLibraryItem(finishedBookId);
+      if (fullItem == null) {
+        debugPrint('[Absorbing] Could not fetch item $finishedBookId from server');
+        return;
+      }
+      finished = fullItem;
+      (seriesId, currentSeq) = _extractSeries(fullItem);
+    }
+    if (seriesId == null || currentSeq == null) {
+      debugPrint('[Absorbing] $finishedBookId is not in a series');
+      return;
+    }
+    debugPrint('[Absorbing] Looking for next book after seq $currentSeq in series $seriesId');
+
+    // Scan local cache and downloads first
+    final candidates = <double, MapEntry<String, Map<String, dynamic>>>{};
+
+    for (final entry in _absorbingItemCache.entries) {
+      final key = entry.key;
+      if (key == finishedBookId || key.length > 36) continue;
+      if (isItemFinishedByKey(key)) continue;
+      final (sid, seq) = _extractSeries(entry.value);
+      if (sid != seriesId || seq == null || seq <= currentSeq) continue;
+      candidates[seq] = MapEntry(key, entry.value);
+    }
+
+    for (final dlInfo in DownloadService().downloadedItems) {
+      final id = dlInfo.itemId;
+      if (id == finishedBookId || id.length > 36) continue;
+      if (candidates.values.any((e) => e.key == id)) continue;
+      if (_progressMap[id]?['isFinished'] == true) continue;
+      final data = _itemDataWithSeries(id);
+      if (data == null) continue;
+      final (sid, seq) = _extractSeries(data);
+      if (sid != seriesId || seq == null || seq <= currentSeq) continue;
+      candidates[seq] = MapEntry(id, data);
+    }
+
+    // If nothing found locally, fetch series books from server
+    if (candidates.isEmpty && _api != null && _selectedLibraryId != null) {
+      final books = await _api!.getBooksBySeries(
+        _selectedLibraryId!,
+        seriesId,
+        limit: 100,
+      );
+      for (final book in books) {
+        if (book is! Map<String, dynamic>) continue;
+        final id = book['id'] as String?;
+        if (id == null || id == finishedBookId) continue;
+        if (_progressMap[id]?['isFinished'] == true) continue;
+        final (sid, seq) = _extractSeries(book);
+        if (sid != seriesId || seq == null || seq <= currentSeq) continue;
+        candidates[seq] = MapEntry(id, book);
+      }
+    }
+
+    if (candidates.isEmpty) {
+      debugPrint('[Absorbing] No next book found in series $seriesId after seq $currentSeq');
+      return;
+    }
+
+    final nextSeq = candidates.keys.toList()..sort();
+    final next = candidates[nextSeq.first]!;
+    final nextKey = next.key;
+
+    if (_manualAbsorbRemoves.contains(nextKey)) {
+      debugPrint('[Absorbing] Next book $nextKey was manually removed, skipping');
+      return;
+    }
+
+    _absorbingIdsAdd(nextKey, afterKey: finishedBookId);
+    _absorbingItemCache[nextKey] = next.value;
+    _manualAbsorbAdds.add(nextKey);
+    _saveManualAbsorbing();
+    notifyListeners();
+    debugPrint('[Absorbing] Auto-added next series book: $nextKey (seq ${nextSeq.first})');
+
+    // Auto-play if auto_next mode is enabled and nothing else started playing
+    final mode = await PlayerSettings.getBookQueueMode();
+    if (mode != 'auto_next') return;
+    if (AudioPlayerService.wasNoisyPause) return;
+    if (AudioPlayerService().isPlaying) return;
+    if (_api == null) return;
+
+    final nextData = next.value;
+    final media = nextData['media'] as Map<String, dynamic>? ?? {};
+    final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+    AudioPlayerService().playItem(
+      api: _api!,
+      itemId: nextKey,
+      title: metadata['title'] as String? ?? '',
+      author: metadata['authorName'] as String? ?? '',
+      coverUrl: getCoverUrl(nextKey),
+      totalDuration: (media['duration'] as num?)?.toDouble() ?? 0,
+      chapters: media['chapters'] as List<dynamic>? ?? [],
+    );
   }
 
   void _autoAdvanceOfflineBook(String finishedBookId) {

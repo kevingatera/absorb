@@ -580,7 +580,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                           : Icon(Icons.refresh_rounded, size: 18, color: muted),
                     ),
                   ),
-              if (books.length > 1) ...[
+              if (books.isNotEmpty) ...[
                 const SizedBox(width: 8),
                 GestureDetector(
                   onTap: () => _showReorderSheet(context, lib, books),

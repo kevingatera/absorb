@@ -301,6 +301,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
           : 0.0;
       await api.markFinished(bookId, duration);
       lib.markFinishedLocally(bookId, skipRefresh: true, skipAutoAdvance: true);
+      lib.removeFromAbsorbing(bookId);
     }
 
     if (mounted) {
@@ -327,6 +328,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
           : 0.0;
       await api.markNotFinished(bookId, currentTime: 0, duration: duration);
       lib.resetProgressFor(bookId);
+      lib.clearAbsorbingBlock(bookId);
     }
 
     if (mounted) {
