@@ -492,6 +492,8 @@ class _AuthGateState extends State<AuthGate> {
       if (Platform.isAndroid) {
         // Pre-populate Android Auto browse tree in background.
         Future.microtask(() => AndroidAutoService().refresh());
+      }
+      if (Platform.isAndroid || Platform.isIOS) {
         // Initialize homescreen widget
         await HomeWidgetService().init();
       }

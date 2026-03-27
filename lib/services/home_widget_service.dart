@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -14,6 +15,8 @@ import 'download_service.dart';
 
 const String _androidWidgetName = 'NowPlayingWidget';
 const String _androidWidgetCompactName = 'NowPlayingWidgetCompact';
+const String _iOSWidgetName = 'NowPlayingWidget';
+const String _appGroupId = 'group.com.barnabas.absorb';
 
 class HomeWidgetService {
   static final HomeWidgetService _instance = HomeWidgetService._();
@@ -27,11 +30,25 @@ class HomeWidgetService {
   bool _initialized = false;
   bool _updating = false;
   StreamSubscription? _clickSub;
+  String? _groupContainerPath;
+
+  static const _widgetChannel = MethodChannel('com.absorb.widget');
 
   /// Call after AudioPlayerService is initialized to start pushing state.
   Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
+
+    // Set up App Group for iOS widget data sharing.
+    if (Platform.isIOS) {
+      await HomeWidget.setAppGroupId(_appGroupId);
+      try {
+        _groupContainerPath =
+            await _widgetChannel.invokeMethod<String>('getGroupContainerPath');
+      } catch (e) {
+        debugPrint('[HomeWidget] Failed to get group container path: $e');
+      }
+    }
 
     final player = AudioPlayerService();
     player.addListener(_onPlayerChanged);
@@ -59,8 +76,18 @@ class HomeWidgetService {
   void _onWidgetClicked(Uri? uri) {
     debugPrint('[HomeWidget] widgetClicked: $uri');
     if (uri == null) return;
-    if (uri.host == 'widget' && uri.path == '/play_pause') {
-      _handlePlayPause();
+    if (uri.host == 'widget') {
+      switch (uri.path) {
+        case '/play_pause':
+          _handlePlayPause();
+          break;
+        case '/skip_back':
+          _handleSkipBack();
+          break;
+        case '/skip_forward':
+          _handleSkipForward();
+          break;
+      }
     }
   }
 
@@ -72,12 +99,34 @@ class HomeWidgetService {
   /// the current item).
   Future<void> resumeLastPlayedIfAvailable() => _handlePlayPause();
 
+  void _handleSkipBack() {
+    final player = AudioPlayerService();
+    if (!player.hasBook) return;
+    player.skipBackward();
+  }
+
+  void _handleSkipForward() {
+    final player = AudioPlayerService();
+    if (!player.hasBook) return;
+    player.skipForward();
+  }
+
   Future<void> _handlePlayPause() async {
     final player = AudioPlayerService();
 
     // When there's an active session the widget uses a MediaSession media button
     // instead of launching the app, so this path is only hit for cold resume.
-    if (player.hasBook) return;
+    if (player.hasBook) {
+      // On iOS, widget links always come through here (no MediaSession shortcut).
+      if (Platform.isIOS) {
+        if (player.isPlaying) {
+          player.pause();
+        } else {
+          player.play();
+        }
+      }
+      return;
+    }
 
     // No active session — cold resume (app stays open for initial setup)
     final prefs = await SharedPreferences.getInstance();
@@ -250,8 +299,16 @@ class HomeWidgetService {
       _stopProgressTimer();
     }
 
-    await HomeWidget.updateWidget(name: _androidWidgetName);
-    await HomeWidget.updateWidget(name: _androidWidgetCompactName);
+    await _updateAllWidgets();
+  }
+
+  Future<void> _updateAllWidgets() async {
+    if (Platform.isAndroid) {
+      await HomeWidget.updateWidget(name: _androidWidgetName);
+      await HomeWidget.updateWidget(name: _androidWidgetCompactName);
+    } else if (Platform.isIOS) {
+      await HomeWidget.updateWidget(iOSName: _iOSWidgetName);
+    }
   }
 
   Future<void> _updateCoverArt(String itemId) async {
@@ -270,15 +327,11 @@ class HomeWidgetService {
         coverPath = await downloadService.getLocalCoverPath(itemId);
       }
 
-      // If no local cover, download from server to a temp file.
+      // If no local cover, download from server to a temp/shared file.
       if (coverPath == null) {
         if (coverUrl != null && coverUrl.isNotEmpty) {
-          final cacheDir = await getTemporaryDirectory();
-          final widgetCoverDir = Directory('${cacheDir.path}/widget_covers');
-          if (!widgetCoverDir.existsSync()) {
-            widgetCoverDir.createSync(recursive: true);
-          }
-          final coverFile = File('${widgetCoverDir.path}/$itemId.jpg');
+          final coverDir = await _getCoverDirectory();
+          final coverFile = File('${coverDir.path}/$itemId.jpg');
 
           final response = await http
               .get(Uri.parse(coverUrl))
@@ -288,6 +341,14 @@ class HomeWidgetService {
             coverPath = coverFile.path;
           }
         }
+      } else if (Platform.isIOS && _groupContainerPath != null) {
+        // On iOS, local cover is in the app sandbox - copy to shared container.
+        final sharedDir = await _getCoverDirectory();
+        final sharedFile = File('${sharedDir.path}/$itemId.jpg');
+        if (!sharedFile.existsSync()) {
+          await File(coverPath).copy(sharedFile.path);
+        }
+        coverPath = sharedFile.path;
       }
     } catch (e) {
       debugPrint('[HomeWidget] Cover update failed: $e');
@@ -295,11 +356,25 @@ class HomeWidgetService {
 
     try {
       await HomeWidget.saveWidgetData<String?>('widget_cover_path', coverPath);
-      await HomeWidget.updateWidget(name: _androidWidgetName);
-      await HomeWidget.updateWidget(name: _androidWidgetCompactName);
+      await _updateAllWidgets();
     } catch (e) {
       debugPrint('[HomeWidget] Cover save failed: $e');
     }
+  }
+
+  /// Returns the directory for widget cover art.
+  /// On iOS, uses the App Group shared container so the widget extension can
+  /// read the files. On Android, uses the app's temp directory.
+  Future<Directory> _getCoverDirectory() async {
+    if (Platform.isIOS && _groupContainerPath != null) {
+      final dir = Directory('$_groupContainerPath/widget_covers');
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      return dir;
+    }
+    final cacheDir = await getTemporaryDirectory();
+    final dir = Directory('${cacheDir.path}/widget_covers');
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    return dir;
   }
 
   void _startProgressTimer() {

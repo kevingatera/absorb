@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import AVFoundation
+import MediaPlayer
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -24,7 +25,46 @@ import AVFoundation
       print("[AppDelegate] Audio session setup failed: \(error)")
     }
 
+    // Listen for Darwin notifications from the widget extension so controls
+    // work without opening the app.
+    registerWidgetNotifications()
+
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  private func registerWidgetNotifications() {
+    let center = CFNotificationCenterGetDarwinNotifyCenter()
+    let observer = Unmanaged.passUnretained(self).toOpaque()
+
+    let names = [
+      "com.barnabas.absorb.widget.playPause",
+      "com.barnabas.absorb.widget.skipBack",
+      "com.barnabas.absorb.widget.skipForward",
+    ]
+    for name in names {
+      CFNotificationCenterAddObserver(
+        center, observer,
+        { (_, observer, name, _, _) in
+          guard let name = name?.rawValue as String? else { return }
+          DispatchQueue.main.async {
+            let cmd = MPRemoteCommandCenter.shared()
+            switch name {
+            case "com.barnabas.absorb.widget.playPause":
+              cmd.togglePlayPauseCommand.send()
+            case "com.barnabas.absorb.widget.skipBack":
+              cmd.skipBackwardCommand.send()
+            case "com.barnabas.absorb.widget.skipForward":
+              cmd.skipForwardCommand.send()
+            default:
+              break
+            }
+          }
+        },
+        CFNotificationName(name as CFString),
+        nil,
+        .deliverImmediately
+      )
+    }
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
@@ -41,6 +81,21 @@ import AVFoundation
            let total = (attrs[.systemSize] as? NSNumber)?.int64Value,
            let free = (attrs[.systemFreeSize] as? NSNumber)?.int64Value {
           result(["totalBytes": total, "availableBytes": free])
+        } else {
+          result(nil)
+        }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    let widgetChannel = FlutterMethodChannel(name: "com.absorb.widget",
+                                               binaryMessenger: controller.binaryMessenger)
+    widgetChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "getGroupContainerPath":
+        if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.barnabas.absorb") {
+          result(url.path)
         } else {
           result(nil)
         }
