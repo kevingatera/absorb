@@ -34,6 +34,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   static const _isPlayStoreBuild = bool.fromEnvironment('PLAYSTORE_BUILD');
+  static const _isGithubBuild = bool.fromEnvironment('GITHUB_BUILD');
   AutoRewindSettings _rewindSettings = const AutoRewindSettings();
   double _defaultSpeed = 1.0;
   bool _wifiOnlyDownloads = false;
@@ -2012,12 +2013,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      Text(
-                        auth.serverVersion != null
-                            ? 'Absorb v$_appVersion  ·  Server ${auth.serverVersion}'
-                            : 'Absorb v$_appVersion',
-                        style: tt.bodySmall?.copyWith(
-                            color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            auth.serverVersion != null
+                                ? 'Absorb v$_appVersion  ·  Server ${auth.serverVersion}'
+                                : 'Absorb v$_appVersion',
+                            style: tt.bodySmall?.copyWith(
+                                color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            _isGithubBuild ? Icons.code_rounded : Icons.store_rounded,
+                            size: 14,
+                            color: cs.onSurfaceVariant.withValues(alpha: 0.3),
+                          ),
+                        ],
                       ),
                     ],
                   ),
