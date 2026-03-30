@@ -288,6 +288,18 @@ class LibraryProvider extends ChangeNotifier
       );
       if (result != null) {
         _series = (result['results'] as List<dynamic>?) ?? [];
+        // Register updatedAt for books in series for cover cache busting
+        for (final s in _series) {
+          if (s is! Map<String, dynamic>) continue;
+          final books = s['books'] as List<dynamic>? ?? [];
+          for (final b in books) {
+            if (b is Map<String, dynamic>) {
+              final id = b['id'] as String?;
+              final ts = b['updatedAt'] as num?;
+              if (id != null && ts != null) _itemUpdatedAt[id] = ts.toInt();
+            }
+          }
+        }
       }
     } catch (e) {
       // ignore

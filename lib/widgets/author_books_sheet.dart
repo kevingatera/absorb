@@ -102,6 +102,13 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
           // libraryItems from the author endpoint include full metadata with series info
           final rawItems = authorData['libraryItems'] as List<dynamic>? ?? [];
           _books = rawItems.whereType<Map<String, dynamic>>().toList();
+          // Register updatedAt for cover cache busting
+          final lib = context.read<LibraryProvider>();
+          for (final book in _books) {
+            final id = book['id'] as String?;
+            final bts = book['updatedAt'] as num?;
+            if (id != null && bts != null) lib.registerUpdatedAt(id, bts.toInt());
+          }
         }
         _isLoading = false;
       });

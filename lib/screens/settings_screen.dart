@@ -381,37 +381,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 // ── User Profile ──
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: GestureDetector(
                     onTap: () => _showAccountSheet(context),
-                    child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(child: Text(auth.username ?? 'User', style: tt.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700))),
-                          if (auth.isAdmin)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: auth.isRoot ? Colors.amber.withValues(alpha: 0.12) : cs.primary.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(auth.isRoot ? 'Root Admin' : 'Admin', style: tt.labelSmall?.copyWith(
-                                color: auth.isRoot ? Colors.amber : cs.primary, fontWeight: FontWeight.w600, fontSize: 10)),
-                            ),
-                          const SizedBox(width: 4),
-                          Icon(Icons.unfold_more_rounded, size: 20, color: cs.onSurface.withValues(alpha: 0.3)),
-                        ],
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(18),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            cs.primary.withValues(alpha: 0.12),
+                            cs.primary.withValues(alpha: 0.04),
+                          ],
+                        ),
+                        border: Border.all(color: cs.primary.withValues(alpha: 0.15)),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        auth.serverUrl?.replaceAll(RegExp(r'^https?://'), '').replaceAll(RegExp(r'/+$'), '') ?? '',
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                    ],
-                  ),
+                      child: Row(children: [
+                        Container(
+                          width: 40, height: 40,
+                          decoration: BoxDecoration(
+                            color: cs.primary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(Icons.person_rounded, size: 22, color: cs.primary),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Row(children: [
+                            Flexible(child: Text(auth.username ?? 'User', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                              overflow: TextOverflow.ellipsis)),
+                            if (auth.isAdmin) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: auth.isRoot ? Colors.amber.withValues(alpha: 0.12) : cs.primary.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(auth.isRoot ? 'Root' : 'Admin', style: tt.labelSmall?.copyWith(
+                                  color: auth.isRoot ? Colors.amber : cs.primary, fontWeight: FontWeight.w600, fontSize: 9)),
+                              ),
+                            ],
+                          ]),
+                          const SizedBox(height: 2),
+                          Text(
+                            auth.serverUrl?.replaceAll(RegExp(r'^https?://'), '').replaceAll(RegExp(r'/+$'), '') ?? '',
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
+                        ])),
+                        Icon(Icons.chevron_right_rounded, size: 20, color: cs.primary.withValues(alpha: 0.5)),
+                      ]),
+                    ),
                   ),
                 ),
 
@@ -2463,10 +2485,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final auth = context.read<AuthProvider>();
+    final lib = context.read<LibraryProvider>();
     final accounts = UserAccountService().accounts;
     final otherAccounts = accounts.where((a) =>
       !(a.serverUrl == auth.serverUrl && a.username == auth.username)
     ).toList();
+
+    final shortServer = auth.serverUrl?.replaceAll(RegExp(r'^https?://'), '').replaceAll(RegExp(r'/+$'), '') ?? '';
+    final userType = auth.isRoot ? 'Root Admin' : auth.isAdmin ? 'Admin' : 'User';
+    final libraryCount = lib.libraries.length;
 
     showModalBottomSheet(
       context: context,
@@ -2480,33 +2507,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Center(child: Container(margin: const EdgeInsets.only(top: 12), width: 36, height: 4,
             decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 16),
-          // Current user
+          // Current user info
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: cs.primary.withValues(alpha: 0.15),
-                child: Text(
-                  (auth.username ?? 'U')[0].toUpperCase(),
-                  style: TextStyle(color: cs.primary, fontWeight: FontWeight.w700, fontSize: 16),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(auth.username ?? 'User', style: tt.bodyLarge?.copyWith(fontWeight: FontWeight.w700)),
-                Text(
-                  auth.serverUrl?.replaceAll(RegExp(r'^https?://'), '').replaceAll(RegExp(r'/+$'), '') ?? '',
-                  style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-              ])),
-              Icon(Icons.check_circle_rounded, size: 20, color: cs.primary),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(auth.username ?? 'User', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Row(children: [
+                Icon(Icons.dns_rounded, size: 13, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+                const SizedBox(width: 6),
+                Expanded(child: Text(shortServer, style: tt.labelSmall?.copyWith(
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.5)), maxLines: 1, overflow: TextOverflow.ellipsis)),
+              ]),
+              const SizedBox(height: 3),
+              Row(children: [
+                Icon(Icons.shield_rounded, size: 13, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+                const SizedBox(width: 6),
+                Text(userType, style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.5))),
+                const SizedBox(width: 12),
+                Icon(Icons.library_books_rounded, size: 13, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+                const SizedBox(width: 6),
+                Text('$libraryCount ${libraryCount == 1 ? 'library' : 'libraries'}',
+                  style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.5))),
+              ]),
+              if (auth.serverVersion != null) ...[
+                const SizedBox(height: 3),
+                Row(children: [
+                  Icon(Icons.info_outline_rounded, size: 13, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+                  const SizedBox(width: 6),
+                  Text('Server ${auth.serverVersion}', style: tt.labelSmall?.copyWith(
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.5))),
+                ]),
+              ],
             ]),
           ),
+          const SizedBox(height: 12),
+          Divider(height: 1, indent: 20, endIndent: 20, color: cs.onSurface.withValues(alpha: 0.06)),
+          // Other accounts
           if (otherAccounts.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Divider(height: 1, indent: 20, endIndent: 20, color: cs.onSurface.withValues(alpha: 0.06)),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+              child: Align(alignment: Alignment.centerLeft,
+                child: Text('Switch Account', style: tt.labelSmall?.copyWith(
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.4), fontWeight: FontWeight.w600, letterSpacing: 0.5))),
+            ),
             ...otherAccounts.map((account) {
               final shortUrl = account.serverUrl
                   .replaceAll(RegExp(r'^https?://'), '')
@@ -2515,30 +2560,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: () { Navigator.pop(ctx); _switchAccount(context, account); },
                 onLongPress: () { Navigator.pop(ctx); _removeAccount(context, account); },
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                   child: Row(children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: cs.onSurface.withValues(alpha: 0.06),
-                      child: Text(
-                        account.username.isNotEmpty ? account.username[0].toUpperCase() : '?',
-                        style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600, fontSize: 16),
-                      ),
-                    ),
+                    Icon(Icons.person_rounded, size: 20, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
                     const SizedBox(width: 12),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(account.username, style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-                      Text(shortUrl, style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+                      Text(shortUrl, style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
                         maxLines: 1, overflow: TextOverflow.ellipsis),
                     ])),
-                    Icon(Icons.swap_horiz_rounded, size: 18, color: cs.onSurface.withValues(alpha: 0.2)),
+                    Icon(Icons.swap_horiz_rounded, size: 18, color: cs.onSurface.withValues(alpha: 0.15)),
                   ]),
                 ),
               );
             }),
+            const SizedBox(height: 4),
+            Divider(height: 1, indent: 20, endIndent: 20, color: cs.onSurface.withValues(alpha: 0.06)),
           ],
-          const SizedBox(height: 8),
-          Divider(height: 1, indent: 20, endIndent: 20, color: cs.onSurface.withValues(alpha: 0.06)),
           // Add account
           InkWell(
             onTap: () { Navigator.pop(ctx); _addAccount(context); },

@@ -711,6 +711,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   }
 
   void _onRemoteItemUpdated(Map<String, dynamic> data) {
+    // Update cover cache buster timestamp
+    final id = data['id'] as String?;
+    final ts = data['updatedAt'] as num?;
+    if (id != null && ts != null) _itemUpdatedAt[id] = ts.toInt();
     loadPersonalizedView(force: true);
     _checkSubscribedPodcastUpdate(data);
   }

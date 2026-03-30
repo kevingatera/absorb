@@ -162,15 +162,24 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
 
   /// Unwrap ABS format: { libraryItem: {...}, sequence: "1" }
   /// Move sequence to top level of the item for consistent access.
+  /// Also registers updatedAt for cover cache busting.
   List<Map<String, dynamic>> _unwrapBooks(List<dynamic> raw) {
+    final lib = _lib ?? (mounted ? context.read<LibraryProvider>() : null);
     final result = <Map<String, dynamic>>[];
     for (final b in raw) {
       if (b is! Map<String, dynamic>) continue;
       if (b.containsKey('libraryItem') && b['libraryItem'] is Map<String, dynamic>) {
         final item = Map<String, dynamic>.from(b['libraryItem'] as Map<String, dynamic>);
         if (b['sequence'] != null) item['sequence'] = b['sequence'];
+        // Register updatedAt for cover cache busting
+        final id = item['id'] as String?;
+        final ts = item['updatedAt'] as num?;
+        if (id != null && ts != null && lib != null) lib.registerUpdatedAt(id, ts.toInt());
         result.add(item);
       } else {
+        final id = b['id'] as String?;
+        final ts = b['updatedAt'] as num?;
+        if (id != null && ts != null && lib != null) lib.registerUpdatedAt(id, ts.toInt());
         result.add(Map<String, dynamic>.from(b));
       }
     }
