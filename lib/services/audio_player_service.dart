@@ -265,7 +265,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       await _service!.skipForward(skipAmount);
     } else {
       final skipAmount = await PlayerSettings.getForwardSkip();
-      await _player.seek(_player.position + Duration(seconds: skipAmount));
+      final adjusted = (skipAmount * _player.speed).round();
+      await _player.seek(_player.position + Duration(seconds: adjusted));
     }
   }
 
@@ -277,7 +278,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       await _service!.skipBackward(skipAmount);
     } else {
       final skipAmount = await PlayerSettings.getBackSkip();
-      var pos = _player.position - Duration(seconds: skipAmount);
+      final adjusted = (skipAmount * _player.speed).round();
+      var pos = _player.position - Duration(seconds: adjusted);
       if (pos < Duration.zero) pos = Duration.zero;
       await _player.seek(pos);
     }
@@ -2338,10 +2340,12 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> skipForward([int seconds = 30]) async {
     if (_player == null) return;
     _resetStuckDetection();
-    debugPrint('[Service] skipForward(${seconds}s) — playing=${_player!.playing}');
-    final newPos = position + Duration(seconds: seconds);
+    // Multiply by speed so the skip feels like the configured amount of real time
+    final adjusted = (seconds * speed).round();
+    debugPrint('[Service] skipForward(${seconds}s × ${speed}x = ${adjusted}s) — playing=${_player!.playing}');
+    final newPos = position + Duration(seconds: adjusted);
     await _seekAbsolute(newPos.inMilliseconds / 1000.0);
-    _logEvent(PlaybackEventType.skipForward, detail: '+${seconds}s');
+    _logEvent(PlaybackEventType.skipForward, detail: '+${seconds}s (${adjusted}s @ ${speed}x)');
     debugPrint('[Service] skipForward done — playing=${_player!.playing}');
   }
 
@@ -2350,8 +2354,10 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> skipBackward([int seconds = 10]) async {
     if (_player == null) return;
     _resetStuckDetection();
+    // Multiply by speed so the skip feels like the configured amount of real time
+    final adjusted = (seconds * speed).round();
     final posS = position.inMilliseconds / 1000.0;
-    final targetS = posS - seconds;
+    final targetS = posS - adjusted;
 
     // Find current chapter start (gated by setting)
     final chapterBarrier = await PlayerSettings.getSkipChapterBarrier();
@@ -2382,7 +2388,7 @@ class AudioPlayerService extends ChangeNotifier {
 
     var n = targetS < 0 ? 0.0 : targetS;
     await _seekAbsolute(n);
-    _logEvent(PlaybackEventType.skipBackward, detail: '-${seconds}s');
+    _logEvent(PlaybackEventType.skipBackward, detail: '-${seconds}s (${adjusted}s @ ${speed}x)');
   }
 
   Future<void> skipToNextChapter() async {
