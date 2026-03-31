@@ -534,6 +534,25 @@ class SleepTimerService extends ChangeNotifier {
     }
   }
 
+  /// Pause battery-intensive operations when app is backgrounded.
+  /// Only pauses shake detection if nothing is playing (user might shake
+  /// with screen off to extend sleep timer).
+  void onAppBackgrounded() {
+    if (!_isPlaybackActive) {
+      _accelSub?.cancel();
+      _accelSub = null;
+      debugPrint('[SleepTimer] Paused shake detection (backgrounded, not playing)');
+    }
+  }
+
+  /// Resume operations when app is foregrounded.
+  void onAppForegrounded() {
+    if (isActive && _accelSub == null) {
+      _startShakeDetection();
+      debugPrint('[SleepTimer] Resumed shake detection (foregrounded)');
+    }
+  }
+
   @override
   void dispose() {
     cancel();

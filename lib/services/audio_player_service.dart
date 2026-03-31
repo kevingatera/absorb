@@ -49,6 +49,9 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   void refreshPlaybackState() {
     try {
       playbackState.add(_transformEvent(_player.playbackEvent));
+      _lastPlaybackStateUpdate = DateTime.now();
+      _lastPlaying = _player.playing;
+      _lastProcessingState = _player.processingState;
     } catch (_) {}
   }
 
@@ -63,10 +66,27 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   int _resubscribeCount = 0;
   DateTime _lastResubscribe = DateTime.now();
 
+  // Throttle playback state updates to avoid excessive notification refreshes
+  DateTime _lastPlaybackStateUpdate = DateTime.now();
+  bool? _lastPlaying;
+  ProcessingState? _lastProcessingState;
+
   void _subscribePlaybackEvents() {
     _player.playbackEventStream.map(_transformEvent).listen(
       (state) {
-        playbackState.add(state);
+        // Only push state on meaningful changes (play/pause, processing state)
+        // or at most every 5 seconds for position updates
+        final now = DateTime.now();
+        final playingChanged = _player.playing != _lastPlaying;
+        final processingChanged = _player.processingState != _lastProcessingState;
+        final elapsed = now.difference(_lastPlaybackStateUpdate);
+
+        if (playingChanged || processingChanged || elapsed.inSeconds >= 5) {
+          playbackState.add(state);
+          _lastPlaybackStateUpdate = now;
+          _lastPlaying = _player.playing;
+          _lastProcessingState = _player.processingState;
+        }
         // Reset error counter on successful events
         _resubscribeCount = 0;
       },
