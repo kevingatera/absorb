@@ -1868,8 +1868,8 @@ class AudioPlayerService extends ChangeNotifier {
     // Safety-net timer for position persistence when Android throttles the
     // Dart position stream in the background. The primary positionStream
     // listener saves every 5s; this only matters when that stream goes silent.
-    debugPrint('[Battery] bgSaveTimer STARTED (30s interval)');
-    _bgSaveTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+    debugPrint('[Battery] bgSaveTimer STARTED (60s interval)');
+    _bgSaveTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
       // [Battery] bgSaveTimer TICK - removed to reduce log noise
       if (_currentItemId == null || _player == null || !_player!.playing) return;
       final pos = position;
@@ -2048,14 +2048,14 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   /// Start a periodic timer that checks if playback position is advancing.
-  /// If position is stuck for ~6 seconds while playing (2 consecutive checks),
+  /// If position is stuck for ~20 seconds while playing (2 consecutive checks),
   /// force a re-seek to the same position to kick the iOS decoder.
   void _startStuckDetection() {
     _stuckCheckTimer?.cancel();
     _resetStuckDetection();
 
-    debugPrint('[Battery] stuckCheckTimer STARTED (3s interval)');
-    _stuckCheckTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+    debugPrint('[Battery] stuckCheckTimer STARTED (10s interval)');
+    _stuckCheckTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       // Only check while actively playing
       if (_player == null || !_player!.playing) {
         _stuckCheckLastPosition = -1;
@@ -2086,7 +2086,7 @@ class AudioPlayerService extends ChangeNotifier {
           // Position hasn't moved
           _stuckConsecutiveCount++;
           if (_stuckConsecutiveCount >= 2) {
-            // Stuck for ~6 seconds - force re-seek
+            // Stuck for ~20 seconds - force re-seek
             _stuckReseekAttempts++;
             _stuckConsecutiveCount = 0;
             debugPrint('[Player] Stuck position detected - re-seeking '
@@ -2314,7 +2314,7 @@ class AudioPlayerService extends ChangeNotifier {
     if (_bgSaveTimer == null || !_bgSaveTimer!.isActive) {
       debugPrint('[Battery] bgSaveTimer RESTARTED (play)');
       _bgSaveTimer?.cancel();
-      _bgSaveTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+      _bgSaveTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
         // [Battery] bgSaveTimer TICK - removed to reduce log noise
         if (_currentItemId == null || _player == null || !_player!.playing) return;
         final pos = position;
