@@ -101,12 +101,10 @@ class _CardEdgeProgressBarState extends State<CardEdgeProgressBar>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      debugPrint('[Battery] CardEdgeProgressBar RESUMED');
       _backgrounded = false;
       _loadSettings();
       _syncTicker();
     } else if (state == AppLifecycleState.paused) {
-      debugPrint('[Battery] CardEdgeProgressBar PAUSED - stopping ticker');
       _backgrounded = true;
       _smoothTicker?.cancel();
       _smoothTicker = null;

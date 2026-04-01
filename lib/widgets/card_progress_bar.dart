@@ -72,12 +72,10 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      debugPrint('[Battery] CardDualProgressBar RESUMED');
       _backgrounded = false;
       _loadSettings();
       _syncTicker();
     } else if (state == AppLifecycleState.paused) {
-      debugPrint('[Battery] CardDualProgressBar PAUSED - stopping ticker');
       _backgrounded = true;
       _smoothTicker?.cancel();
       _smoothTicker = null;

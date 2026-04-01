@@ -1718,10 +1718,9 @@ class AudioPlayerService extends ChangeNotifier {
 
   void _updateWakeLock(bool playing) {
     if (PlayerSettings.keepScreenAwake && playing) {
-      debugPrint('[Battery] WakeLock ENABLED (playing=$playing, keepScreenAwake=true)');
+      debugPrint('[Battery] WakeLock ENABLED');
       WakelockPlus.enable();
     } else {
-      debugPrint('[Battery] WakeLock DISABLED (playing=$playing, keepScreenAwake=${PlayerSettings.keepScreenAwake})');
       WakelockPlus.disable();
     }
   }
@@ -1871,7 +1870,7 @@ class AudioPlayerService extends ChangeNotifier {
     // listener saves every 5s; this only matters when that stream goes silent.
     debugPrint('[Battery] bgSaveTimer STARTED (30s interval)');
     _bgSaveTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
-      debugPrint('[Battery] bgSaveTimer TICK (playing=${_player?.playing}, item=$_currentItemId)');
+      // [Battery] bgSaveTimer TICK - removed to reduce log noise
       if (_currentItemId == null || _player == null || !_player!.playing) return;
       final pos = position;
       final posSec = pos.inMilliseconds / 1000.0;
@@ -2316,7 +2315,7 @@ class AudioPlayerService extends ChangeNotifier {
       debugPrint('[Battery] bgSaveTimer RESTARTED (play)');
       _bgSaveTimer?.cancel();
       _bgSaveTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
-        debugPrint('[Battery] bgSaveTimer TICK (playing=${_player?.playing}, item=$_currentItemId)');
+        // [Battery] bgSaveTimer TICK - removed to reduce log noise
         if (_currentItemId == null || _player == null || !_player!.playing) return;
         final pos = position;
         final posSec = pos.inMilliseconds / 1000.0;
