@@ -194,6 +194,9 @@ class SleepTimerService extends ChangeNotifier {
       // Only count down when playing
       if (isPlaying) {
         _timeRemaining -= const Duration(seconds: 1);
+        if (_timeRemaining.inSeconds % 30 == 0) {
+          debugPrint('[Battery] SleepTimer TICK: ${_timeRemaining.inMinutes}m${_timeRemaining.inSeconds % 60}s remaining');
+        }
 
         // Wind-down warning at 30 seconds: vibration + optional fade
         if (!_warningSent && _timeRemaining <= _warningThreshold && _timeRemaining.inSeconds > 0) {
@@ -215,7 +218,7 @@ class SleepTimerService extends ChangeNotifier {
           _player.setVolume((_fadeStartVolume * fraction).clamp(0.0, 1.0));
         }
 
-        notifyListeners();
+        notifyListeners(); // fires every 1s while playing - drives UI countdown
       }
     });
   }

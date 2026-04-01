@@ -297,7 +297,7 @@ class HomeWidgetService {
     if (_progressTimer?.isActive == true) return;
     debugPrint('[Battery] HomeWidget progressTimer STARTED (60s interval)');
     _progressTimer = Timer.periodic(const Duration(seconds: 60), (_) {
-      // [Battery] HomeWidget TICK - removed to reduce log noise
+      debugPrint('[Battery] HomeWidget progressTimer TICK');
       _scheduleUpdate();
     });
   }
