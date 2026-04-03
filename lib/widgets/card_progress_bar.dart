@@ -174,7 +174,8 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
     if (_isCastMode) {
       if (!_isPlaying) return _lastKnownPos;
       final elapsed = DateTime.now().difference(_lastPosTime).inMilliseconds / 1000.0;
-      return _lastKnownPos + elapsed * _currentSpeed;
+      final capped = elapsed.clamp(0.0, 1.0);
+      return _lastKnownPos + capped * _currentSpeed;
     }
     // If a seek just happened, snap to the target immediately
     final seekTarget = widget.player.activeSeekTarget;
@@ -182,7 +183,13 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
       return seekTarget;
     }
     if (!widget.isActive || !_isPlaying) return _lastKnownPos;
+    // Use the player's real position as the baseline instead of interpolating
+    // from a potentially stale stream event. This prevents overshoot when the
+    // position stream slows down (e.g. tab offstage in IndexedStack).
+    final realPos = widget.player.position.inMilliseconds / 1000.0;
+    // Only interpolate a small amount from the real position for sub-tick smoothing
     final elapsed = DateTime.now().difference(_lastPosTime).inMilliseconds / 1000.0;
+    if (elapsed > 1.0) return realPos;
     return _lastKnownPos + elapsed * _currentSpeed;
   }
 

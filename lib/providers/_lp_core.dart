@@ -491,8 +491,13 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
             return false;
           });
           final overridesBefore = _localProgressOverrides.length;
-          _localProgressOverrides.removeWhere((key, _) =>
-            !_locallyFinishedItems.contains(key));
+          _localProgressOverrides.removeWhere((key, localProgress) {
+            if (_locallyFinishedItems.contains(key)) return false;
+            // Keep the override if local progress is ahead of server
+            final serverProgress = ((_progressMap[key]?['progress'] as num?)?.toDouble()) ?? 0;
+            if (localProgress > serverProgress + 0.001) return false;
+            return true;
+          });
           final cleared = overridesBefore - _localProgressOverrides.length;
           if (cleared > 0) {
             debugPrint('[Progress] Cleared $cleared overrides');

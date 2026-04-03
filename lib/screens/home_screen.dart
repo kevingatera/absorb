@@ -23,13 +23,23 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomeScreen> createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final _player = AudioPlayerService();
   bool _hideEbookOnly = false;
   bool _rectangleCovers = false;
+
+  // ── Scroll-to-hide bars ──
+  final ValueNotifier<bool> barsVisibleNotifier = ValueNotifier(true);
+  late final AnimationController _headerAnimController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 250),
+    value: 1.0,
+  );
+  final _scrollController = ScrollController();
+  double _lastScrollOffset = 0;
 
   // Cached filtered sections — invalidated when source data or settings change.
   List<Map<String, dynamic>>? _cachedSections;
@@ -46,9 +56,34 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _lastKnownItemId;
   bool _lastKnownPlaying = false;
 
+  void _onScrollDirection() {
+    if (!_scrollController.hasClients) return;
+    final offset = _scrollController.offset;
+    final delta = offset - _lastScrollOffset;
+    _lastScrollOffset = offset;
+    if (offset <= 0) { _showBars(); return; }
+    if (delta.abs() < 1.0) return;
+    if (delta > 0) { _hideBars(); } else { _showBars(); }
+  }
+
+  void _showBars() {
+    if (!barsVisibleNotifier.value) {
+      barsVisibleNotifier.value = true;
+      _headerAnimController.forward();
+    }
+  }
+
+  void _hideBars() {
+    if (barsVisibleNotifier.value) {
+      barsVisibleNotifier.value = false;
+      _headerAnimController.reverse();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScrollDirection);
     _player.addListener(_onPlayerChanged);
     PlayerSettings.settingsChanged.addListener(_loadSettings);
     _loadSettings();
@@ -139,6 +174,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
+    _headerAnimController.dispose();
+    barsVisibleNotifier.dispose();
     _player.removeListener(_onPlayerChanged);
     PlayerSettings.settingsChanged.removeListener(_loadSettings);
     super.dispose();
@@ -310,10 +348,14 @@ class _HomeScreenState extends State<HomeScreen> {
               await lib.refresh();
             },
             child: CustomScrollView(
+              controller: _scrollController,
               slivers: [
                 // ── Top bar: ABSORB title + page name ──
                 SliverToBoxAdapter(
-                  child: AbsorbPageHeader(
+                  child: SizeTransition(
+                    sizeFactor: _headerAnimController,
+                    axisAlignment: -1.0,
+                    child: AbsorbPageHeader(
                     title: 'Home',
                     trailing: GestureDetector(
                       onTap: () {
@@ -402,6 +444,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                     ],
+                  ),
                   ),
                 ),
 

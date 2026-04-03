@@ -51,6 +51,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
 
   // Tabs: 0=Home, 1=Library, 2=Absorbing (default), 3=Stats, 4=Settings
   int _currentIndex = 2; // overridden by user preference in initState
+  final _homeKey = GlobalKey<HomeScreenState>();
   final _libraryKey = GlobalKey<LibraryScreenState>();
   final _player = AudioPlayerService();
   final _cast = ChromecastService();
@@ -108,43 +109,47 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     }
   }
 
-  /// Subscribe to library screen's barsVisibleNotifier when on Library tab,
-  /// and ensure the nav bar is visible on all other tabs.
+  /// Subscribe to the active screen's barsVisibleNotifier when on Home or
+  /// Library tab, and ensure the nav bar is visible on all other tabs.
   void _syncNavBarListener(int index) {
-    if (index == 1) {
-      // Entering Library tab - listen to its visibility notifier
-      final notifier = _libraryKey.currentState?.barsVisibleNotifier;
-      if (notifier != null && _navBarListener == null) {
-        _navBarListener = () {
-          if (notifier.value) {
-            _navBarAnimController.forward();
-          } else {
-            _navBarAnimController.reverse();
-          }
-        };
-        notifier.addListener(_navBarListener!);
-        // Sync to current state
-        _navBarListener!();
-      }
+    _detachNavBarListener();
+    ValueNotifier<bool>? notifier;
+    if (index == 0) {
+      notifier = _homeKey.currentState?.barsVisibleNotifier;
+    } else if (index == 1) {
+      notifier = _libraryKey.currentState?.barsVisibleNotifier;
+    }
+    if (notifier != null) {
+      _activeBarNotifier = notifier;
+      _navBarListener = () {
+        if (notifier!.value) {
+          _navBarAnimController.forward();
+        } else {
+          _navBarAnimController.reverse();
+        }
+      };
+      notifier.addListener(_navBarListener!);
+      _navBarListener!();
     } else {
-      // Leaving Library tab - detach and show nav bar
-      _detachNavBarListener();
       _navBarAnimController.forward();
     }
   }
 
+  ValueNotifier<bool>? _activeBarNotifier;
+
   void _detachNavBarListener() {
-    if (_navBarListener != null) {
-      _libraryKey.currentState?.barsVisibleNotifier.removeListener(_navBarListener!);
-      _navBarListener = null;
+    if (_navBarListener != null && _activeBarNotifier != null) {
+      _activeBarNotifier!.removeListener(_navBarListener!);
     }
+    _navBarListener = null;
+    _activeBarNotifier = null;
   }
 
   void _ensurePageBuilt(int index) {
     if (_pages[index] != null) return;
     switch (index) {
       case 0:
-        _pages[index] = const HomeScreen();
+        _pages[index] = HomeScreen(key: _homeKey);
         break;
       case 1:
         _pages[index] = LibraryScreen(key: _libraryKey);
@@ -480,10 +485,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
   }
 
   Widget _buildBottomNav(BuildContext context) {
-    // Lazily attach listener when on Library tab (handles start-on-library case)
-    if (_currentIndex == 1 && _navBarListener == null) {
+    // Lazily attach listener when on Home or Library tab (handles start-on-tab case)
+    if ((_currentIndex == 0 || _currentIndex == 1) && _navBarListener == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _syncNavBarListener(1);
+        if (mounted) _syncNavBarListener(_currentIndex);
       });
     }
     return SizeTransition(

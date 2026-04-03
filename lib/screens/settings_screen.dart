@@ -2497,13 +2497,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerHigh,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
+      useSafeArea: true,
+      backgroundColor: cs.surfaceContainerHigh,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Column(mainAxisSize: MainAxisSize.min, children: [
           Center(child: Container(margin: const EdgeInsets.only(top: 12), width: 36, height: 4,
             decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 16),
@@ -2601,9 +2600,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ]),
             ),
           ),
-          SizedBox(height: MediaQuery.of(ctx).padding.bottom + 12),
+          const SizedBox(height: 12),
         ]),
-      ),
     );
   }
 

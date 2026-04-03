@@ -284,7 +284,6 @@ class LibraryProvider extends ChangeNotifier
     if (isOffline || _api == null) return;
     await ProgressSyncService().flushPendingSync(api: _api!);
     await _refreshProgress();
-    _localProgressOverrides.clear();
     notifyListeners();
   }
 
