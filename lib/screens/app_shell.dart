@@ -62,6 +62,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
   DateTime? _lastBackPress;
   String? _lastCoverItemId; // tracks which item's cover we derived the scheme from
 
+  // ── Scroll-to-hide bottom nav (driven by Library screen) ──
+  late final AnimationController _navBarAnimController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 250),
+    value: 1.0,
+  );
+  VoidCallback? _navBarListener;
+
   // Lazily build tabs so startup on Absorbing does not initialize Home/Library
   // work until the user actually visits those tabs.
   final List<Widget?> _pages = List<Widget?>.filled(5, null, growable: false);
@@ -86,6 +94,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
       return;
     }
     _ensurePageBuilt(index);
+    _syncNavBarListener(index);
     if (snappyTransitionsNotifier.value) {
       setState(() => _currentIndex = index);
     } else {
@@ -96,6 +105,38 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
         });
         _fadeController.forward();
       });
+    }
+  }
+
+  /// Subscribe to library screen's barsVisibleNotifier when on Library tab,
+  /// and ensure the nav bar is visible on all other tabs.
+  void _syncNavBarListener(int index) {
+    if (index == 1) {
+      // Entering Library tab - listen to its visibility notifier
+      final notifier = _libraryKey.currentState?.barsVisibleNotifier;
+      if (notifier != null && _navBarListener == null) {
+        _navBarListener = () {
+          if (notifier.value) {
+            _navBarAnimController.forward();
+          } else {
+            _navBarAnimController.reverse();
+          }
+        };
+        notifier.addListener(_navBarListener!);
+        // Sync to current state
+        _navBarListener!();
+      }
+    } else {
+      // Leaving Library tab - detach and show nav bar
+      _detachNavBarListener();
+      _navBarAnimController.forward();
+    }
+  }
+
+  void _detachNavBarListener() {
+    if (_navBarListener != null) {
+      _libraryKey.currentState?.barsVisibleNotifier.removeListener(_navBarListener!);
+      _navBarListener = null;
     }
   }
 
@@ -190,6 +231,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
   @override
   void dispose() {
     _fadeController.dispose();
+    _detachNavBarListener();
+    _navBarAnimController.dispose();
     _player.removeListener(_onPlayerChanged);
     _cast.removeListener(_onCastChanged);
     try { context.read<LibraryProvider>().removeListener(_onLibraryChanged); } catch (_) {}
@@ -431,29 +474,38 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
           ),
         ),
       ),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          NavigationBar(
-            selectedIndex: _currentIndex,
-            onDestinationSelected: (i) {
-              // If tapping Library while already on Library, clear search
-              if (i == 1 && _currentIndex == 1 &&
-                  _libraryKey.currentState?.isSearchActive == true) {
-                _libraryKey.currentState?.clearSearch();
-                return;
-              }
-              _navigateTo(i);
-              // Refresh data on switching to Library, Home, Absorbing, or Stats
-              if (i == 0 || i == 1 || i == 2 || i == 3) {
-                _refreshDataForTab(i);
-              }
-            },
-            destinations: _buildDestinations(context),
-          ),
-        ],
-      ),
+      bottomNavigationBar: _buildBottomNav(context),
     ),
+    );
+  }
+
+  Widget _buildBottomNav(BuildContext context) {
+    // Lazily attach listener when on Library tab (handles start-on-library case)
+    if (_currentIndex == 1 && _navBarListener == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncNavBarListener(1);
+      });
+    }
+    return SizeTransition(
+      sizeFactor: _navBarAnimController,
+      axisAlignment: 1.0,
+      child: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (i) {
+          // If tapping Library while already on Library, clear search
+          if (i == 1 && _currentIndex == 1 &&
+              _libraryKey.currentState?.isSearchActive == true) {
+            _libraryKey.currentState?.clearSearch();
+            return;
+          }
+          _navigateTo(i);
+          // Refresh data on switching to Library, Home, Absorbing, or Stats
+          if (i == 0 || i == 1 || i == 2 || i == 3) {
+            _refreshDataForTab(i);
+          }
+        },
+        destinations: _buildDestinations(context),
+      ),
     );
   }
 

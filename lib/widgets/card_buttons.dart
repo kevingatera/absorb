@@ -644,7 +644,7 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
                         },
                         onLongPress: () => _editBookmark(bm),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Padding(
                               padding: const EdgeInsets.only(top: 2),
@@ -686,8 +686,8 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
                                 _load();
                               },
                               child: Padding(
-                                padding: const EdgeInsets.all(4),
-                                child: Icon(Icons.close_rounded, size: 16, color: cs.onSurface.withValues(alpha: 0.24)),
+                                padding: const EdgeInsets.all(10),
+                                child: Icon(Icons.delete_outline_rounded, size: 22, color: cs.onSurface.withValues(alpha: 0.35)),
                               ),
                             ),
                           ]),
