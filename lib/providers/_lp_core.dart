@@ -142,6 +142,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       _buildOfflineSections();
       notifyListeners();
       AndroidAutoService().refresh(force: true);
+      CarPlayService().refreshTemplates();
       if (_deviceHasConnectivity && !_manualOffline) {
         _startServerPingTimer();
       }
@@ -160,6 +161,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         (this as LibraryProvider).refresh();
       }
       AndroidAutoService().refresh(force: true);
+      CarPlayService().refreshTemplates();
     }
   }
 

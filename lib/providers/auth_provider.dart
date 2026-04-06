@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/android_auto_service.dart';
+import '../services/carplay_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/session_cache.dart';
 import '../services/socket_service.dart';
@@ -476,8 +477,9 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (_) {}
 
-    // Clear Android Auto browse tree cache so it doesn't show stale data
+    // Clear Android Auto / CarPlay browse tree cache so it doesn't show stale data
     AndroidAutoService().clearCache();
+    CarPlayService().clearAndRefresh();
 
     // Clear cached session metadata for this user (track URLs would be invalid
     // on next login anyway)
@@ -528,8 +530,9 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (_) {}
 
-    // Clear Android Auto browse tree cache so it refreshes for the new user
+    // Clear Android Auto / CarPlay browse tree cache so it refreshes for the new user
     AndroidAutoService().clearCache();
+    CarPlayService().clearAndRefresh();
 
     // Set the new account as active in the account service
     UserAccountService().switchTo(account.serverUrl, account.username);

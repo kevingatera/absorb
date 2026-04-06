@@ -4,12 +4,18 @@ import AVFoundation
 import MediaPlayer
 import just_audio
 
+let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadlessExecution: true)
+
 @main
-@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+@objc class AppDelegate: FlutterAppDelegate {
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // Start the shared Flutter engine (used by both phone scene and CarPlay scene)
+    flutterEngine.run()
+    GeneratedPluginRegistrant.register(with: flutterEngine)
+
     // Register for remote control events so lock screen / Control Center
     // media controls appear. The audio_service plugin activates
     // MPRemoteCommandCenter but doesn't call this, which can prevent
@@ -29,6 +35,9 @@ import just_audio
     // Listen for Darwin notifications from the widget extension so controls
     // work without opening the app.
     registerWidgetNotifications()
+
+    // Register platform channels on the shared engine
+    registerPlatformChannels()
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -68,13 +77,30 @@ import just_audio
     }
   }
 
-  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
-    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+  private func registerPlatformChannels() {
+    let messenger = flutterEngine.binaryMessenger
 
-    guard let controller = window?.rootViewController as? FlutterViewController else { return }
+    let channel = FlutterMethodChannel(name: "com.absorb.audio_output",
+                                       binaryMessenger: messenger)
+    channel.setMethodCallHandler { [weak self] (call, result) in
+      switch call.method {
+      case "getAudioOutputDevices":
+        result(self?.getAudioOutputDevices() ?? [])
+      case "setAudioOutputDevice":
+        if let args = call.arguments as? [String: Any], let id = args["id"] as? Int {
+          result(self?.setAudioOutputDevice(portIndex: id) ?? false)
+        } else {
+          result(false)
+        }
+      case "resetAudioOutput":
+        result(self?.resetAudioOutput() ?? false)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
 
     let storageChannel = FlutterMethodChannel(name: "com.absorb.storage",
-                                              binaryMessenger: controller.binaryMessenger)
+                                              binaryMessenger: messenger)
     storageChannel.setMethodCallHandler { (call, result) in
       switch call.method {
       case "getDeviceStorage":
@@ -91,7 +117,7 @@ import just_audio
     }
 
     let widgetChannel = FlutterMethodChannel(name: "com.absorb.widget",
-                                               binaryMessenger: controller.binaryMessenger)
+                                               binaryMessenger: messenger)
     widgetChannel.setMethodCallHandler { (call, result) in
       switch call.method {
       case "getGroupContainerPath":
@@ -106,7 +132,7 @@ import just_audio
     }
 
     let eqChannel = FlutterMethodChannel(name: "com.absorb.equalizer",
-                                          binaryMessenger: controller.binaryMessenger)
+                                          binaryMessenger: messenger)
     eqChannel.setMethodCallHandler { [weak self] (call, result) in
       let args = call.arguments as? [String: Any]
       switch call.method {
