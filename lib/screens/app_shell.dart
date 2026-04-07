@@ -396,6 +396,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     if (state == AppLifecycleState.resumed) {
       context.read<LibraryProvider>().onAppForegrounded();
       SleepTimerService().onAppForegrounded();
+      AudioPlayerService.onAppForegrounded();
       _refreshDataForTab(_currentIndex);
       // Check auto sleep in case we resumed into the window
       SleepTimerService().checkAutoSleep();

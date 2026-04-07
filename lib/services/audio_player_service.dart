@@ -1063,8 +1063,11 @@ class AudioPlayerService extends ChangeNotifier {
       androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
       androidWillPauseWhenDucked: true,
     ));
-    await session.setActive(true);
-    debugPrint('[Battery] AudioSession ACTIVATED');
+    // Don't activate the session here — defer to first playback.
+    // Activating during init creates a stale MediaSession that Android
+    // can garbage-collect after hours in background, leaving bluetooth /
+    // notification / widget controls permanently broken.
+    // play() and startLocalPlayback() call setActive(true) before playing.
 
     _interruptSub?.cancel();
     _interruptSub = session.interruptionEventStream.listen((event) async {
@@ -1144,6 +1147,35 @@ class AudioPlayerService extends ChangeNotifier {
       debugPrint('[AudioSession] Noisy stream error - re-subscribing: $e');
       _configureAudioSession();
     });
+  }
+
+  /// Refresh the media session when the app returns to foreground.
+  /// After a long background idle, Android can garbage-collect the stale
+  /// MediaSession, leaving bluetooth / notification / widget controls dead.
+  /// Re-activating the audio session and re-pushing handler state recovers it.
+  static Future<void> onAppForegrounded() async {
+    final service = _instance;
+    if (!service.hasBook) return;
+    // Re-activate audio session to get a fresh system token
+    if (!_audioFocusDisabled) {
+      try { (await AudioSession.instance).setActive(true); } catch (_) {}
+    }
+    // Re-push playback state so the system re-registers the MediaSession
+    _handler?.refreshPlaybackState();
+    // Re-push media item so notification metadata is fresh
+    if (service._currentItemId != null && service._currentTitle != null) {
+      final chapterTitle = service._lastNotifiedChapterIndex >= 0 && service._chapters.isNotEmpty
+          ? (service._chapters[service._lastNotifiedChapterIndex] as Map<String, dynamic>)['title'] as String?
+          : null;
+      service._pushMediaItem(
+        service._currentItemId!,
+        service._currentTitle!,
+        service._currentAuthor ?? '',
+        service._currentCoverUrl,
+        service._totalDuration,
+        chapter: chapterTitle,
+      );
+    }
   }
 
   String? _currentEpisodeId;
