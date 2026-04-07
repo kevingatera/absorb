@@ -267,7 +267,9 @@ class ProgressSyncService {
             );
           }
           debugPrint('[Sync] Flushed $itemId via progress update: ${localTime}s');
-          _consecutiveFailures = 0; // reset backoff on success
+          // Decay backoff on success instead of resetting - avoids
+          // hammering when the server is intermittently reachable
+          if (_consecutiveFailures > 0) _consecutiveFailures--;
 
           final updated = await ScopedPrefs.getStringList('pending_syncs');
           updated.remove(itemId);
@@ -283,6 +285,7 @@ class ProgressSyncService {
               msg.contains('Connection refused') ||
               msg.contains('Connection reset') ||
               msg.contains('timed out') ||
+              msg.contains('TimeoutException') ||
               msg.contains('Network is unreachable')) {
             debugPrint('[Sync] Network/TLS error - stopping flush');
             _consecutiveFailures++;
@@ -290,12 +293,17 @@ class ProgressSyncService {
           }
         }
       }
+      // Also flush offline listening time while we have a connection
+      if (_consecutiveFailures == 0) {
+        await _flushOfflineListeningTimeInternal(api: api);
+      }
     } finally {
       _isFlushing = false;
     }
 
     final remaining = await ScopedPrefs.getStringList('pending_syncs');
-    if ((_flushAgain || remaining.isNotEmpty) && _isOnline) {
+    final pendingOffline = await ScopedPrefs.getStringList('pending_offline_listening');
+    if ((_flushAgain || remaining.isNotEmpty || pendingOffline.isNotEmpty) && _isOnline) {
       _flushAgain = false;
 
       // Exponential backoff: 5s, 10s, 20s, 40s, ... capped at 5 minutes
@@ -338,9 +346,14 @@ class ProgressSyncService {
 
   /// Flush accumulated offline listening time to the server by creating
   /// a session, syncing the accumulated time, and closing it.
+  /// Called externally (e.g. from library_provider) and also internally
+  /// from flushPendingSync's retry loop.
   Future<void> flushOfflineListeningTime({required ApiService api}) async {
     if (!_isOnline) return;
+    await _flushOfflineListeningTimeInternal(api: api);
+  }
 
+  Future<void> _flushOfflineListeningTimeInternal({required ApiService api}) async {
     final pending = List<String>.from(
         await ScopedPrefs.getStringList('pending_offline_listening'));
     if (pending.isEmpty) return;
@@ -353,6 +366,7 @@ class ProgressSyncService {
       final seconds = await ScopedPrefs.getInt(key) ?? 0;
       if (seconds <= 0) {
         await ScopedPrefs.remove(key);
+        flushed.add(itemId);
         continue;
       }
 
@@ -387,7 +401,15 @@ class ProgressSyncService {
         flushed.add(itemId);
       } catch (e) {
         debugPrint('[Sync] Failed to flush offline listening for $itemId: $e');
-        if (e.toString().contains('SocketException')) break;
+        final msg = e.toString();
+        if (msg.contains('SocketException') ||
+            msg.contains('TimeoutException') ||
+            msg.contains('timed out') ||
+            msg.contains('Connection refused') ||
+            msg.contains('Network is unreachable')) {
+          _consecutiveFailures++;
+          break;
+        }
       }
     }
 
