@@ -1357,13 +1357,13 @@ class ApiService {
           'narrators': narrators,
           'releaseDate': details['release_date'] ?? '',
           'runtimeMinutes': details['runtime_length_min'] ?? 0,
-          'rating': rating?['overall_distribution']?['display_average_rating']
-              ?? rating?['num_reviews'] != null ? (rating?['overall_distribution']?['display_average_rating'] ?? 0.0) : 0.0,
+          'rating': rating?['overall_distribution']?['display_average_rating'] ?? 0.0,
           'numRatings': rating?['overall_distribution']?['num_ratings'] ?? 0,
           'coverUrl': details['product_images']?['500'] ?? details['product_images']?['1024'] ?? '',
           'sequence': book['sequence'] ?? '',
           'sort': book['sort'] ?? '0',
           'publisherSummary': details['publisher_summary'] ?? '',
+          'allAsins': book['_allAsins'] ?? <String>[asin],
         };
       });
       final batchResults = await Future.wait(futures);

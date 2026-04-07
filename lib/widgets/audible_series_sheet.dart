@@ -65,19 +65,38 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
         return;
       }
       setState(() { _allBooks = books; _isLoading = false; });
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('[AudibleSeries] discoverAudibleSeries error: $e\n$st');
       if (!mounted) return;
       setState(() { _isLoading = false; _error = 'Failed to load series from Audible'; });
     }
   }
 
+  static final _parenthetical = RegExp(r'\s*\([^)]*\)\s*');
+  static final _nonAlphaNum = RegExp(r'[^a-z0-9 ]');
+  static final _multiSpace = RegExp(r'\s+');
+
+  String _normalizeTitle(String title) {
+    return title
+        .toLowerCase()
+        .replaceAll(_parenthetical, ' ')
+        .replaceAll(_nonAlphaNum, ' ')
+        .replaceAll(_multiSpace, ' ')
+        .trim();
+  }
+
   bool _isOwned(Map<String, dynamic> book) {
     final asin = book['asin'] as String? ?? '';
     if (widget.ownedAsins.contains(asin)) return true;
-    // Fuzzy title match — normalize and compare
-    final title = (book['title'] as String? ?? '').toLowerCase().trim();
+    // Check all regional ASIN variants
+    final allAsins = book['allAsins'] as List<dynamic>? ?? [];
+    for (final a in allAsins) {
+      if (widget.ownedAsins.contains(a)) return true;
+    }
+    final title = _normalizeTitle(book['title'] as String? ?? '');
+    if (title.isEmpty) return false;
     for (final owned in widget.ownedTitles) {
-      if (owned.toLowerCase().trim() == title) return true;
+      if (_normalizeTitle(owned) == title) return true;
     }
     return false;
   }

@@ -588,6 +588,22 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
   }
 
   Future<void> _findOnAudible() async {
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Find Missing Books'),
+        content: const Text(
+          'This searches Audible to find books in this series that may be missing from your library.\n\n'
+          'Books are matched by ASIN first (depending on whether your server has ASINs for its books), '
+          'then falls back to title matching. Results may not be perfectly accurate.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Search')),
+        ],
+      ),
+    );
+    if (proceed != true || !mounted) return;
+
     // Collect owned titles and ASINs for cross-referencing
     final ownedTitles = <String>{};
     final ownedAsins = <String>{};
