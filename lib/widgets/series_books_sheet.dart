@@ -618,6 +618,9 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
 
     // Try to get a series ASIN from one of the books via Audnexus
     String? seriesAsin;
+    String resolveMethod = 'none';
+
+    debugPrint('[FindSeries] Starting lookup for "${widget.seriesName}" (region=${ApiService.debugRegion}, tld=${ApiService.debugTld})');
 
     for (final book in _books) {
       final media = book['media'] as Map<String, dynamic>? ?? {};
@@ -625,19 +628,28 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
       final bookAsin = metadata['asin'] as String? ?? '';
       if (bookAsin.isEmpty) continue;
 
+      debugPrint('[FindSeries] Trying book ASIN $bookAsin via Audnexus');
       final audnexus = await ApiService.getAudnexusBook(bookAsin);
-      if (audnexus == null) continue;
+      if (audnexus == null) {
+        debugPrint('[FindSeries] Audnexus returned null for $bookAsin');
+        continue;
+      }
 
       final primary = audnexus['seriesPrimary'] as Map<String, dynamic>?;
       if (primary != null && primary['asin'] != null) {
         seriesAsin = primary['asin'] as String;
+        resolveMethod = 'audnexus-primary';
+        debugPrint('[FindSeries] Got series ASIN $seriesAsin from primary (book $bookAsin)');
         break;
       }
       final secondary = audnexus['seriesSecondary'] as Map<String, dynamic>?;
       if (secondary != null && secondary['asin'] != null) {
         seriesAsin = secondary['asin'] as String;
+        resolveMethod = 'audnexus-secondary';
+        debugPrint('[FindSeries] Got series ASIN $seriesAsin from secondary (book $bookAsin)');
         break;
       }
+      debugPrint('[FindSeries] Audnexus had no series info for $bookAsin');
     }
 
     // Fallback: search Audible for the first book if no ASINs found
@@ -648,11 +660,13 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
       final title = metadata['title'] as String? ?? '';
       final author = metadata['authorName'] as String? ?? '';
 
+      debugPrint('[FindSeries] Falling back to title search: "$title" by "$author"');
       if (title.isNotEmpty && mounted) {
         final auth = context.read<AuthProvider>();
         final api = auth.apiService;
         if (api != null) {
           final results = await api.searchBooks(title: title, author: author.isNotEmpty ? author : null);
+          debugPrint('[FindSeries] Title search returned ${results.length} results');
           for (final r in results) {
             final asin = r['asin'] as String? ?? '';
             if (asin.isEmpty) continue;
@@ -661,6 +675,8 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
             final primary = audnexus['seriesPrimary'] as Map<String, dynamic>?;
             if (primary != null && primary['asin'] != null) {
               seriesAsin = primary['asin'] as String;
+              resolveMethod = 'title-search';
+              debugPrint('[FindSeries] Got series ASIN $seriesAsin from title search (asin $asin)');
               break;
             }
           }
@@ -668,12 +684,12 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
       }
     }
 
+    debugPrint('[FindSeries] Result: seriesAsin=$seriesAsin via $resolveMethod');
+
     if (!mounted) return;
 
     if (seriesAsin == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not find this series on Audible')),
-      );
+      showOverlayToast(context, 'Could not find this series on Audible', icon: Icons.search_off_rounded);
       return;
     }
 

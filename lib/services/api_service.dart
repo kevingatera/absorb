@@ -16,6 +16,10 @@ class ApiService {
     return code == 'gb' ? 'uk' : code;
   }
 
+  /// Exposed for debug logging in find-series flow.
+  static String get debugRegion => _region;
+  static String get debugTld => _audibleTld;
+
   /// Call once at startup to read the real version from pubspec via package_info_plus.
   static Future<void> initVersion() async {
     try {
