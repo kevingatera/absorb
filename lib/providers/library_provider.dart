@@ -203,6 +203,7 @@ class LibraryProvider extends ChangeNotifier
               ? bookLibraries.first['id']
               : _libraries.first['id'];
         }
+
         await _loadSectionPrefs();
         await loadPersonalizedView(force: true);
       }
@@ -246,6 +247,7 @@ class LibraryProvider extends ChangeNotifier
     await loadPersonalizedView(force: true);
     AndroidAutoService().refresh(force: true);
   }
+
 
   Future<void> refresh() async {
     if (isOffline) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/api_service.dart';
+import '../services/player_settings.dart';
 import 'stackable_sheet.dart';
 
 /// Show a bottom sheet with Audible series discovery results.
@@ -49,16 +50,27 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
   bool _isLoading = true;
   String? _error;
   int _filter = 0; // 0 = missing, 1 = upcoming, 2 = all
+  late String _region;
 
   @override
   void initState() {
     super.initState();
+    _region = ApiService.debugRegion;
+    _loadRegionAndFetch();
+  }
+
+  Future<void> _loadRegionAndFetch() async {
+    final saved = await PlayerSettings.getAudibleRegion();
+    if (saved.isNotEmpty && ApiService.audibleRegions.containsKey(saved)) {
+      _region = saved;
+    }
     _fetchSeries();
   }
 
   Future<void> _fetchSeries() async {
+    setState(() { _isLoading = true; _error = null; _allBooks = []; });
     try {
-      final books = await ApiService.discoverAudibleSeries(widget.seriesAsin);
+      final books = await ApiService.discoverAudibleSeries(widget.seriesAsin, region: _region);
       if (!mounted) return;
       if (books.isEmpty) {
         setState(() { _isLoading = false; _error = 'No books found on Audible'; });
@@ -70,6 +82,61 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
       if (!mounted) return;
       setState(() { _isLoading = false; _error = 'Failed to load series from Audible'; });
     }
+  }
+
+  void _showRegionPicker() {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      isScrollControlled: true,
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Column(children: [
+              Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+              Text('Audible Region', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 12),
+            ]),
+          ),
+          Flexible(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              shrinkWrap: true,
+              children: ApiService.audibleRegions.entries.map((e) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    if (e.key != _region) {
+                      setState(() => _region = e.key);
+                      PlayerSettings.setAudibleRegion(e.key);
+                      _fetchSeries();
+                    }
+                  },
+                  child: Container(height: 40,
+                    decoration: BoxDecoration(
+                      color: e.key == _region ? cs.primary.withValues(alpha: 0.15) : cs.onSurface.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: e.key == _region ? cs.primary.withValues(alpha: 0.3) : cs.onSurface.withValues(alpha: 0.1)),
+                    ),
+                    child: Center(child: Text(e.value, style: TextStyle(
+                      color: e.key == _region ? cs.primary : cs.onSurfaceVariant,
+                      fontSize: 13, fontWeight: FontWeight.w500)))),
+                ),
+              )).toList(),
+            ),
+          ),
+        ]),
+      ),
+    );
   }
 
   static final _parenthetical = RegExp(r'\s*\([^)]*\)\s*');
@@ -170,6 +237,20 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
             '${_allBooks.length} on Audible · $missingCount missing${upcomingCount > 0 ? ' · $upcomingCount upcoming' : ''}',
             style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
           ),
+        const SizedBox(height: 4),
+        GestureDetector(
+          onTap: _showRegionPicker,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.language_rounded, size: 12, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+            const SizedBox(width: 4),
+            Text(
+              ApiService.audibleRegions[_region] ?? _region.toUpperCase(),
+              style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+            ),
+            const SizedBox(width: 2),
+            Icon(Icons.arrow_drop_down_rounded, size: 14, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+          ]),
+        ),
         const SizedBox(height: 8),
 
         // Filter toggle

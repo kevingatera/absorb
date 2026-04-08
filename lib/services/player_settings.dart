@@ -86,6 +86,11 @@ class PlayerSettings {
   static Future<double> getDefaultSpeed() => _get('defaultSpeed', 1.0);
   static Future<void> setDefaultSpeed(double speed) => _set('defaultSpeed', speed);
 
+  /// Audible region override for Find Missing Books (e.g. "us", "uk", "de").
+  /// Empty string means use device locale.
+  static Future<String> getAudibleRegion() => _get('audibleRegion', '');
+  static Future<void> setAudibleRegion(String value) => _set('audibleRegion', value);
+
   static Future<bool> getWifiOnlyDownloads() => _get('wifiOnlyDownloads', false);
   static Future<void> setWifiOnlyDownloads(bool value) => _set('wifiOnlyDownloads', value);
 

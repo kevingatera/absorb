@@ -8,11 +8,10 @@ import 'package:package_info_plus/package_info_plus.dart';
 class ApiService {
   static String appVersion = '1.3.0'; // fallback; overwritten by initVersion()
 
-  /// Device country code (e.g. "us", "uk", "de") derived from the platform locale.
+  /// Audible region code derived from device locale.
   static String get _region {
     final locale = PlatformDispatcher.instance.locale;
     final code = (locale.countryCode ?? 'us').toLowerCase();
-    // Audnexus uses "uk" not "gb"
     return code == 'gb' ? 'uk' : code;
   }
 
@@ -1229,15 +1228,32 @@ class ApiService {
 
   // ─── Audible Series Discovery ─────────────────────────────
 
+  /// Supported Audible regions for series discovery.
+  static const audibleRegions = {
+    'us': 'Audible.com (US)',
+    'uk': 'Audible.co.uk (UK)',
+    'au': 'Audible.com.au (AU)',
+    'ca': 'Audible.ca (CA)',
+    'de': 'Audible.de (DE)',
+    'fr': 'Audible.fr (FR)',
+    'it': 'Audible.it (IT)',
+    'es': 'Audible.es (ES)',
+    'jp': 'Audible.co.jp (JP)',
+    'in': 'Audible.in (IN)',
+    'br': 'Audible.com.br (BR)',
+  };
+
   /// Map region code to Audible API TLD.
-  static String get _audibleTld {
+  static String _audibleTldFor(String region) {
     const tlds = {
       'us': '.com', 'uk': '.co.uk', 'gb': '.co.uk', 'au': '.com.au',
       'ca': '.ca', 'de': '.de', 'fr': '.fr', 'it': '.it', 'es': '.es',
       'jp': '.co.jp', 'in': '.in', 'br': '.com.br',
     };
-    return tlds[_region] ?? '.com';
+    return tlds[region] ?? '.com';
   }
+
+  static String get _audibleTld => _audibleTldFor(_region);
 
   /// Fetch full book metadata from Audnexus by ASIN.
   /// Returns the raw Audnexus response including seriesPrimary, releaseDate, etc.
@@ -1259,9 +1275,10 @@ class ApiService {
 
   /// Get all book ASINs in an Audible series using the catalog relationships endpoint.
   /// Returns a list of { asin, sequence, sort } maps.
-  static Future<List<Map<String, dynamic>>> getAudibleSeriesBooks(String seriesAsin) async {
+  static Future<List<Map<String, dynamic>>> getAudibleSeriesBooks(String seriesAsin, {String? region}) async {
     try {
-      final url = 'https://api.audible$_audibleTld/1.0/catalog/products/$seriesAsin'
+      final tld = region != null ? _audibleTldFor(region) : _audibleTld;
+      final url = 'https://api.audible$tld/1.0/catalog/products/$seriesAsin'
           '?response_groups=relationships';
       debugPrint('[API] getAudibleSeriesBooks: $url');
       final response = await http.get(Uri.parse(url))
@@ -1294,9 +1311,10 @@ class ApiService {
 
   /// Fetch details for a single book from the Audible catalog API.
   /// Returns title, authors, narrators, release_date, runtime, rating, cover, etc.
-  static Future<Map<String, dynamic>?> getAudibleBookDetails(String asin) async {
+  static Future<Map<String, dynamic>?> getAudibleBookDetails(String asin, {String? region}) async {
     try {
-      final url = 'https://api.audible$_audibleTld/1.0/catalog/products/$asin'
+      final tld = region != null ? _audibleTldFor(region) : _audibleTld;
+      final url = 'https://api.audible$tld/1.0/catalog/products/$asin'
           '?response_groups=product_attrs,product_desc,product_details,series,rating,media';
       final response = await http.get(Uri.parse(url))
           .timeout(const Duration(seconds: 10));
@@ -1316,8 +1334,8 @@ class ApiService {
   /// Returns a list of book maps with: asin, title, subtitle, authors, narrators,
   /// releaseDate, runtimeMinutes, rating, coverUrl, sequence.
   /// Books are deduplicated by sequence (prefers user's region) and sorted.
-  static Future<List<Map<String, dynamic>>> discoverAudibleSeries(String seriesAsin) async {
-    final relationships = await getAudibleSeriesBooks(seriesAsin);
+  static Future<List<Map<String, dynamic>>> discoverAudibleSeries(String seriesAsin, {String? region}) async {
+    final relationships = await getAudibleSeriesBooks(seriesAsin, region: region);
     if (relationships.isEmpty) return [];
 
     final bySequence = <String, List<Map<String, dynamic>>>{};
@@ -1341,7 +1359,7 @@ class ApiService {
       final batch = uniqueBooks.skip(i).take(10);
       final futures = batch.map((book) async {
         final asin = book['asin'] as String;
-        final details = await getAudibleBookDetails(asin);
+        final details = await getAudibleBookDetails(asin, region: region);
         if (details == null) return null;
 
         final authors = (details['authors'] as List<dynamic>? ?? [])
