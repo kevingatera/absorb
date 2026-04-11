@@ -575,7 +575,9 @@ class ApiService {
         },
         'forceDirectPlay': !forceTranscode,
         'forceTranscode': forceTranscode,
-        'mediaPlayer': 'unknown',
+        // Match what the native ABS Android app sends so the server treats us
+        // as a known ExoPlayer client and picks direct-play correctly.
+        'mediaPlayer': 'exo-player',
         'supportedMimeTypes': [
           'audio/flac',
           'audio/mpeg',
@@ -816,7 +818,7 @@ class ApiService {
           },
           'forceDirectPlay': !forceTranscode,
           'forceTranscode': forceTranscode,
-          'mediaPlayer': 'unknown',
+          'mediaPlayer': 'exo-player',
           'supportedMimeTypes': [
             'audio/flac',
             'audio/mpeg',

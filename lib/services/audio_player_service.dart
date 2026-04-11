@@ -1860,7 +1860,23 @@ class AudioPlayerService extends ChangeNotifier {
            errStr.contains('Decoder') ||
            errStr.contains('format_supported'))) {
         debugPrint('[Player] Codec error detected - retrying with server transcoding');
+        // Preserve item identity before wiping state so the absorbing card
+        // stays visible during the retry and the episode endpoint can be used
+        // correctly. _clearState() would null _currentItemId/_currentEpisodeId,
+        // making hasBook = false (card vanishes) and breaking podcast retries.
+        final retryItemId = _currentItemId;
+        final retryEpId = _currentEpisodeId;
+        final retryEpTitle = _currentEpisodeTitle;
+        final retryTitle = _currentTitle;
+        final retryAuthor = _currentAuthor;
+        final retryCover = _currentCoverUrl;
         _clearState();
+        _currentItemId = retryItemId;
+        _currentEpisodeId = retryEpId;
+        _currentEpisodeTitle = retryEpTitle;
+        _currentTitle = retryTitle;
+        _currentAuthor = retryAuthor;
+        _currentCoverUrl = retryCover;
         // Close the failed session
         if (_playbackSessionId != null) {
           try { await api.closePlaybackSession(_playbackSessionId!); } catch (_) {}
@@ -1916,6 +1932,14 @@ class AudioPlayerService extends ChangeNotifier {
               final sleepTimer = SleepTimerService();
               sleepTimer.resetDismiss();
               sleepTimer.checkAutoSleep();
+              // Cache the transcoded session so next cold start is instant
+              SessionCache.save(
+                itemId: itemId,
+                episodeId: _currentEpisodeId,
+                audioTracks: retryTracks,
+                chapters: _chapters,
+                totalDuration: totalDuration,
+              );
               return null;
             } catch (retryError) {
               debugPrint('[Player] Transcoded playback also failed: $retryError');
