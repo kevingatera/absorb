@@ -17,6 +17,7 @@ class LogService {
   static const _maxSize = 1 * 1024 * 1024; // 1 MB
   static const _keepSize = 512 * 1024; // 512 KB
   static const _rotateCheckInterval = 500; // check every N writes
+  static const _createdAtKey = 'log_created_at';
 
   File? _logFile;
   bool _enabled = false;
@@ -34,12 +35,35 @@ class LogService {
     final dir = await getApplicationDocumentsDirectory();
     _logFile = File('${dir.path}/absorb_logs.txt');
 
-    // Auto-clear if log is older than 24 hours
-    if (_logFile!.existsSync()) {
-      final lastModified = _logFile!.lastModifiedSync();
-      if (DateTime.now().difference(lastModified).inHours >= 24) {
-        _logFile!.writeAsStringSync('');
+    // Auto-clear if log is older than 24 hours.
+    // Track creation time via a sidecar file since lastModified updates
+    // on every write and can't be used for age checks.
+    final createdAtFile = File('${dir.path}/$_createdAtKey');
+    bool shouldClear = false;
+    if (_logFile!.existsSync() && createdAtFile.existsSync()) {
+      try {
+        final createdMs = int.tryParse(createdAtFile.readAsStringSync().trim());
+        if (createdMs != null) {
+          final age = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(createdMs));
+          if (age.inHours >= 24) shouldClear = true;
+        }
+      } catch (_) {
+        shouldClear = true;
       }
+    }
+
+    if (shouldClear || !_logFile!.existsSync()) {
+      // Start fresh - write device/server info header
+      final header = StringBuffer()
+        ..writeln('=== Absorb Log ===')
+        ..writeln('App Version: ${ApiService.appVersion}')
+        ..writeln('Device: ${ApiService.deviceManufacturer} ${ApiService.deviceModel}')
+        ..writeln('OS: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}')
+        ..writeln('Created: ${DateTime.now().toIso8601String()}')
+        ..writeln('==================')
+        ..writeln();
+      await _logFile!.writeAsString(header.toString());
+      createdAtFile.writeAsStringSync(DateTime.now().millisecondsSinceEpoch.toString());
     }
 
     // Rotate on startup if needed
@@ -119,6 +143,12 @@ class LogService {
   Future<void> clearLogs() async {
     if (_logFile != null && await _logFile!.exists()) {
       await _logFile!.writeAsString('');
+      // Reset creation timestamp so next init writes a fresh header
+      try {
+        final dir = _logFile!.parent;
+        final createdAtFile = File('${dir.path}/$_createdAtKey');
+        if (createdAtFile.existsSync()) createdAtFile.deleteSync();
+      } catch (_) {}
     }
   }
 
