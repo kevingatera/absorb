@@ -177,11 +177,9 @@ class UpcomingReleasesService extends ChangeNotifier {
 
     try {
       // Use filter data to get series list - lightweight, no embedded books
-      debugPrint('[Upcoming] Fetching filter data for library $libraryId');
       final filterData = await api.getLibraryFilterData(libraryId);
       if (_generation != gen) return;
       if (filterData == null) {
-        debugPrint('[Upcoming] filterData returned null');
         _error = 'Failed to load series';
         _isRunning = false;
         await _cancelScanNotification();
@@ -189,10 +187,8 @@ class UpcomingReleasesService extends ChangeNotifier {
         return;
       }
 
-      debugPrint('[Upcoming] filterData keys: ${filterData.keys.toList()}');
       final seriesList = filterData['series'] as List<dynamic>? ?? [];
       _totalSeries = seriesList.length;
-      debugPrint('[Upcoming] Found $_totalSeries series via filter data');
       notifyListeners();
 
       if (_totalSeries == 0) {
@@ -207,7 +203,6 @@ class UpcomingReleasesService extends ChangeNotifier {
       for (final s in seriesList) {
         if (_generation != gen) return;
         if (s is! Map<String, dynamic>) {
-          debugPrint('[Upcoming] Skipping non-map series entry: ${s.runtimeType}');
           _processedCount++;
           notifyListeners();
           continue;
@@ -262,19 +257,14 @@ class UpcomingReleasesService extends ChangeNotifier {
       final cached = _asinCache[seriesId]!;
       if (cached.isEmpty) {
         // No ASIN for this series, skip
-        debugPrint('[Upcoming] $seriesName: skipping (cached no ASIN)');
         _processedCount++;
         notifyListeners();
         return;
       }
-      debugPrint('[Upcoming] $seriesName: fetching books for ownership check');
       books = await api.getBooksBySeries(libraryId, seriesId, limit: 500);
-      debugPrint('[Upcoming] $seriesName: got ${books.length} books for ownership');
     } else {
       // Fetch a small batch for ASIN resolution first
-      debugPrint('[Upcoming] $seriesName: fetching up to 10 books for ASIN resolution');
       books = await api.getBooksBySeries(libraryId, seriesId, limit: 10);
-      debugPrint('[Upcoming] $seriesName: got ${books.length} books');
     }
     if (_generation != gen) return;
 
@@ -283,18 +273,14 @@ class UpcomingReleasesService extends ChangeNotifier {
     if (_asinCache.containsKey(seriesId)) {
       final cached = _asinCache[seriesId]!;
       audibleAsin = cached.isEmpty ? null : cached;
-      debugPrint('[Upcoming] $seriesName: ASIN cache ${cached.isEmpty ? "miss (no ASIN)" : cached}');
     } else {
       audibleAsin = await _resolveSeriesAsin(books, seriesName, gen);
       if (_generation != gen) return;
       _asinCache[seriesId] = audibleAsin ?? '';
-      debugPrint('[Upcoming] $seriesName: resolved ASIN=${audibleAsin ?? "NONE"} (${books.length} books checked)');
 
       // If we resolved an ASIN, fetch more books for ownership check
       if (audibleAsin != null && books.length >= 10) {
-        debugPrint('[Upcoming] $seriesName: fetching full book list for ownership check');
         books = await api.getBooksBySeries(libraryId, seriesId, limit: 500);
-        debugPrint('[Upcoming] $seriesName: got ${books.length} books for ownership');
         if (_generation != gen) return;
       }
     }
@@ -333,8 +319,6 @@ class UpcomingReleasesService extends ChangeNotifier {
         }
       }
 
-      debugPrint('[Upcoming] $seriesName: discovered ${allBooks.length} books on Audible');
-
       // Filter to upcoming and recently released
       final upcoming = allBooks.where(_isUpcoming).toList();
       final recent = <Map<String, dynamic>>[];
@@ -346,7 +330,6 @@ class UpcomingReleasesService extends ChangeNotifier {
       }
 
       if (upcoming.isNotEmpty || recent.isNotEmpty) {
-        debugPrint('[Upcoming] $seriesName: ${upcoming.length} upcoming, ${recent.length} recent');
         _results.add(UpcomingSeriesResult(
           seriesId: seriesId,
           seriesName: seriesName,
@@ -450,10 +433,7 @@ class UpcomingReleasesService extends ChangeNotifier {
       final bookAsin = metadata['asin'] as String? ?? '';
       if (bookAsin.isEmpty) continue;
       booksWithAsin++;
-      if (audnexusAttempts >= _maxAsinAttempts) {
-        debugPrint('[Upcoming]   $seriesName: hit ASIN attempt cap ($_maxAsinAttempts), stopping');
-        break;
-      }
+      if (audnexusAttempts >= _maxAsinAttempts) break;
       audnexusAttempts++;
 
       for (var attempt = 0; attempt < 3; attempt++) {
@@ -461,32 +441,24 @@ class UpcomingReleasesService extends ChangeNotifier {
         try {
           final audnexus = await ApiService.getAudnexusBook(bookAsin, region: _region);
           if (_generation != gen) return null;
-          if (audnexus == null) {
-            debugPrint('[Upcoming]   $seriesName: Audnexus returned null for ASIN=$bookAsin');
-            break; // null response means the book isn't on Audnexus, no point retrying
-          }
+          if (audnexus == null) break; // not on Audnexus, no point retrying
 
           final primary = audnexus['seriesPrimary'] as Map<String, dynamic>?;
           if (primary != null && primary['asin'] != null) {
-            debugPrint('[Upcoming]   $seriesName: found via seriesPrimary from book ASIN=$bookAsin');
             return primary['asin'] as String;
           }
           final secondary = audnexus['seriesSecondary'] as Map<String, dynamic>?;
           if (secondary != null && secondary['asin'] != null) {
-            debugPrint('[Upcoming]   $seriesName: found via seriesSecondary from book ASIN=$bookAsin');
             return secondary['asin'] as String;
           }
-          debugPrint('[Upcoming]   $seriesName: Audnexus has no series ASIN for book ASIN=$bookAsin');
-          break; // got a valid response but no series info, no point retrying
+          break; // valid response but no series info, no point retrying
         } catch (e) {
-          debugPrint('[Upcoming]   $seriesName: Audnexus error for $bookAsin (attempt ${attempt + 1}/3): $e');
           if (attempt < 2) {
             await Future.delayed(const Duration(seconds: 2));
           }
         }
       }
     }
-    debugPrint('[Upcoming]   $seriesName: no series ASIN found ($booksWithAsin books had ASINs, $audnexusAttempts checked)');
     return null;
   }
 

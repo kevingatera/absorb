@@ -15,7 +15,7 @@ class ApiService {
     return code == 'gb' ? 'uk' : code;
   }
 
-  /// Exposed for debug logging in find-series flow.
+  /// Current Audible region/TLD for default region in series discovery UI.
   static String get debugRegion => _region;
   static String get debugTld => _audibleTld;
 
