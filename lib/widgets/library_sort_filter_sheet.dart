@@ -25,6 +25,7 @@ class SortFilterSheet extends StatefulWidget {
   final ValueChanged<bool> onCollapseSeriesChanged;
   final bool isPodcastLibrary;
   final LibraryTab libraryTab;
+  final VoidCallback? onUpcomingReleases;
 
   const SortFilterSheet({
     super.key,
@@ -37,6 +38,7 @@ class SortFilterSheet extends StatefulWidget {
     this.collapseSeries = false, required this.onCollapseSeriesChanged,
     required this.isPodcastLibrary,
     this.libraryTab = LibraryTab.library,
+    this.onUpcomingReleases,
   });
 
   @override
@@ -114,7 +116,7 @@ class _SortFilterSheetState extends State<SortFilterSheet> with SingleTickerProv
   }
 
   double _calcHeight() {
-    if (widget.libraryTab == LibraryTab.series) return 230;
+    if (widget.libraryTab == LibraryTab.series) return widget.onUpcomingReleases != null ? 330 : 230;
     if (widget.libraryTab == LibraryTab.authors) return 180;
     return _genreExpanded ? 420 : (widget.isPodcastLibrary ? 200 : 400);
   }
@@ -179,6 +181,36 @@ class _SortFilterSheetState extends State<SortFilterSheet> with SingleTickerProv
               ]),
             ),
           ),
+        if (widget.libraryTab == LibraryTab.series && widget.onUpcomingReleases != null) ...[
+          const Divider(height: 24),
+          GestureDetector(
+            onTap: widget.onUpcomingReleases,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: cs.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: cs.primary.withValues(alpha: 0.15)),
+              ),
+              child: Row(children: [
+                Icon(Icons.calendar_month_rounded, size: 20, color: cs.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Upcoming Releases', style: TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600, color: cs.primary)),
+                      Text('Scan Audible for new releases in your series', style: TextStyle(
+                        fontSize: 11, color: cs.onSurfaceVariant)),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, size: 20, color: cs.primary),
+              ]),
+            ),
+          ),
+        ],
       ],
     );
   }

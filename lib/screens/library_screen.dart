@@ -17,6 +17,8 @@ import '../widgets/library_books_tab.dart';
 import '../widgets/library_series_tab.dart';
 import '../widgets/library_authors_tab.dart';
 import 'admin_podcasts_screen.dart';
+import 'upcoming_releases_screen.dart';
+import '../widgets/audible_series_sheet.dart' show showAudibleRegionPicker;
 
 /// Responsive grid column count based on available width.
 /// Returns 3 on phones, scales up on tablets/iPads.
@@ -1152,6 +1154,10 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
           _loadPage();
         },
         isPodcastLibrary: context.read<LibraryProvider>().isPodcastLibrary,
+        onUpcomingReleases: tab == LibraryTab.series ? () {
+          Navigator.pop(ctx);
+          _openUpcomingReleases();
+        } : null,
       ),
     );
   }
@@ -1361,63 +1367,76 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
 
   Widget _buildFloatingTabBar(ColorScheme cs) {
     const labels = ['Library', 'Series', 'Authors'];
-    return Center(
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: cs.surface.withValues(alpha: 0.6),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: cs.primary.withValues(alpha: 0.25)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(3, (i) {
-                final active = _currentTab == i;
-                return GestureDetector(
-                  onTap: () {
-                    if (active) {
-                      _showSortFilterSheet(context, cs, Theme.of(context).textTheme);
-                    } else {
-                      _tabController?.animateTo(i);
-                    }
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeInOut,
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: active ? cs.primary.withValues(alpha: 0.15) : Colors.transparent,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          labels[i],
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                            color: active ? cs.primary : cs.onSurfaceVariant,
-                          ),
-                        ),
-                        if (active) ...[
-                          const SizedBox(width: 4),
-                          Icon(Icons.sort_rounded, size: 14, color: cs.primary),
-                        ],
-                      ],
-                    ),
+    return Center(child: ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: cs.surface.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: cs.primary.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(3, (i) {
+              final active = _currentTab == i;
+              return GestureDetector(
+                onTap: () {
+                  if (active) {
+                    _showSortFilterSheet(context, cs, Theme.of(context).textTheme);
+                  } else {
+                    _tabController?.animateTo(i);
+                  }
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: active ? cs.primary.withValues(alpha: 0.15) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                );
-              }),
-            ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        labels[i],
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                          color: active ? cs.primary : cs.onSurfaceVariant,
+                        ),
+                      ),
+                      if (active) ...[
+                        const SizedBox(width: 4),
+                        Icon(Icons.sort_rounded, size: 14, color: cs.primary),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            }),
           ),
         ),
       ),
-    );
+    ));
+  }
+
+
+  Future<void> _openUpcomingReleases() async {
+    final saved = await PlayerSettings.getAudibleRegion();
+    if (saved.isEmpty) {
+      if (!mounted) return;
+      final chosen = await showAudibleRegionPicker(context, currentRegion: '');
+      if (chosen == null || !mounted) return;
+      await PlayerSettings.setAudibleRegion(chosen);
+    }
+    if (!mounted) return;
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => const UpcomingReleasesScreen(),
+    ));
   }
 
   Widget _buildFloatingSortButton(ColorScheme cs, TextTheme tt) {
@@ -1749,3 +1768,4 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
     );
   }
 }
+

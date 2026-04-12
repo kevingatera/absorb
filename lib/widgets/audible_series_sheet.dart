@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import '../services/player_settings.dart';
+import 'overlay_toast.dart';
 import 'stackable_sheet.dart';
 
 /// Show a bottom sheet with Audible series discovery results.
@@ -84,59 +87,13 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
     }
   }
 
-  void _showRegionPicker() {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      isScrollControlled: true,
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
-      builder: (ctx) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Column(children: [
-              Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
-              Text('Audible Region', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 12),
-            ]),
-          ),
-          Flexible(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              shrinkWrap: true,
-              children: ApiService.audibleRegions.entries.map((e) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: GestureDetector(
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    if (e.key != _region) {
-                      setState(() => _region = e.key);
-                      PlayerSettings.setAudibleRegion(e.key);
-                      _fetchSeries();
-                    }
-                  },
-                  child: Container(height: 40,
-                    decoration: BoxDecoration(
-                      color: e.key == _region ? cs.primary.withValues(alpha: 0.15) : cs.onSurface.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: e.key == _region ? cs.primary.withValues(alpha: 0.3) : cs.onSurface.withValues(alpha: 0.1)),
-                    ),
-                    child: Center(child: Text(e.value, style: TextStyle(
-                      color: e.key == _region ? cs.primary : cs.onSurfaceVariant,
-                      fontSize: 13, fontWeight: FontWeight.w500)))),
-                ),
-              )).toList(),
-            ),
-          ),
-        ]),
-      ),
-    );
+  void _showRegionPicker() async {
+    final chosen = await showAudibleRegionPicker(context, currentRegion: _region);
+    if (chosen != null && chosen != _region && mounted) {
+      setState(() => _region = chosen);
+      PlayerSettings.setAudibleRegion(chosen);
+      _fetchSeries();
+    }
   }
 
   static final _parenthetical = RegExp(r'\s*\([^)]*\)\s*');
@@ -342,7 +299,10 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Card(
+      child: GestureDetector(
+        onTap: () => showAudibleBookMenu(context,
+          book: book, seriesName: widget.seriesName, region: _region),
+        child: Card(
         elevation: 0,
         color: upcoming
             ? cs.primaryContainer.withValues(alpha: 0.3)
@@ -463,6 +423,7 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
             ]),
         ),
       ),
+      ),
     );
   }
 
@@ -471,5 +432,182 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
       color: cs.surfaceContainerHighest,
       child: Center(child: Icon(Icons.auto_stories_rounded, color: cs.onSurface.withValues(alpha: 0.15), size: 32)),
     );
+  }
+}
+
+/// Shared Audible region picker bottom sheet.
+/// Returns the selected region code, or null if dismissed.
+Future<String?> showAudibleRegionPicker(BuildContext context, {required String currentRegion}) {
+  final cs = Theme.of(context).colorScheme;
+  final tt = Theme.of(context).textTheme;
+  return showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    isScrollControlled: true,
+    constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
+    builder: (ctx) => SafeArea(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Column(children: [
+            Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+            Text('Audible Region', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+          ]),
+        ),
+        Flexible(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            shrinkWrap: true,
+            children: ApiService.audibleRegions.entries.map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: GestureDetector(
+                onTap: () => Navigator.pop(ctx, e.key),
+                child: Container(height: 40,
+                  decoration: BoxDecoration(
+                    color: e.key == currentRegion ? cs.primary.withValues(alpha: 0.15) : cs.onSurface.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: e.key == currentRegion ? cs.primary.withValues(alpha: 0.3) : cs.onSurface.withValues(alpha: 0.1)),
+                  ),
+                  child: Center(child: Text(e.value, style: TextStyle(
+                    color: e.key == currentRegion ? cs.primary : cs.onSurfaceVariant,
+                    fontSize: 13, fontWeight: FontWeight.w500)))),
+              ),
+            )).toList(),
+          ),
+        ),
+      ]),
+    ),
+  );
+}
+
+/// Show a bottom sheet menu for an Audible book with Open, Calendar, etc.
+void showAudibleBookMenu(BuildContext context, {
+  required Map<String, dynamic> book,
+  required String seriesName,
+  required String region,
+  List<Widget> extraActions = const [],
+}) {
+  final cs = Theme.of(context).colorScheme;
+  final tt = Theme.of(context).textTheme;
+  final title = book['title'] as String? ?? '';
+  final asin = book['asin'] as String? ?? '';
+  final releaseDate = book['releaseDate'] as String? ?? '';
+
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 8, bottom: 12),
+          decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Text(title, style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+        ),
+        if (releaseDate.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(_formatBookDate(releaseDate),
+              style: tt.bodySmall?.copyWith(color: cs.primary, fontWeight: FontWeight.w600)),
+          ),
+        const SizedBox(height: 12),
+        if (asin.isNotEmpty)
+          ListTile(
+            leading: Icon(Icons.open_in_new_rounded, color: cs.primary, size: 22),
+            title: const Text('Open on Audible', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            dense: true, visualDensity: VisualDensity.compact,
+            onTap: () {
+              Navigator.pop(ctx);
+              _openOnAudible(context, asin, region);
+            },
+          ),
+        if (releaseDate.isNotEmpty)
+          ListTile(
+            leading: Icon(Icons.calendar_month_rounded, color: cs.primary, size: 22),
+            title: const Text('Add to Calendar', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            dense: true, visualDensity: VisualDensity.compact,
+            onTap: () {
+              Navigator.pop(ctx);
+              _addToCalendar(context, title, seriesName, releaseDate);
+            },
+          ),
+        ...extraActions,
+        const SizedBox(height: 8),
+      ]),
+    ),
+  );
+}
+
+String _formatBookDate(String dateStr) {
+  final date = DateTime.tryParse(dateStr);
+  if (date == null) return dateStr;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return '${months[date.month - 1]} ${date.day}, ${date.year}';
+}
+
+String _audibleTldForRegion(String region) {
+  const tlds = {
+    'us': '.com', 'uk': '.co.uk', 'gb': '.co.uk', 'au': '.com.au',
+    'ca': '.ca', 'de': '.de', 'fr': '.fr', 'it': '.it', 'es': '.es',
+    'jp': '.co.jp', 'in': '.in', 'br': '.com.br',
+  };
+  return tlds[region] ?? '.com';
+}
+
+Future<void> _openOnAudible(BuildContext context, String asin, String region) async {
+  final tld = _audibleTldForRegion(region);
+  final uri = Uri.parse('https://www.audible$tld/pd/$asin');
+  try {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (e) {
+    if (context.mounted) showOverlayToast(context, 'Could not open Audible', icon: Icons.error_outline_rounded);
+  }
+}
+
+Future<void> _addToCalendar(BuildContext context, String title, String seriesName, String dateStr) async {
+  final date = DateTime.tryParse(dateStr);
+  if (date == null) return;
+
+  final eventTitle = '$title - $seriesName';
+  final description = 'New audiobook release in the $seriesName series';
+
+  if (Platform.isAndroid) {
+    final begin = DateTime(date.year, date.month, date.day).millisecondsSinceEpoch;
+    final end = DateTime(date.year, date.month, date.day, 23, 59).millisecondsSinceEpoch;
+    final uri = Uri.parse(
+      'content://com.android.calendar/events'
+      '?title=${Uri.encodeComponent(eventTitle)}'
+      '&description=${Uri.encodeComponent(description)}'
+      '&beginTime=$begin'
+      '&endTime=$end'
+      '&allDay=1',
+    );
+    try {
+      await launchUrl(uri);
+      return;
+    } catch (_) {}
+  }
+
+  final dateFormatted = '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';
+  final uri = Uri.parse(
+    'https://calendar.google.com/calendar/render?action=TEMPLATE'
+    '&text=${Uri.encodeComponent(eventTitle)}'
+    '&dates=$dateFormatted/$dateFormatted'
+    '&details=${Uri.encodeComponent(description)}',
+  );
+  try {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (e) {
+    if (context.mounted) showOverlayToast(context, 'Could not open calendar', icon: Icons.error_outline_rounded);
   }
 }
