@@ -404,6 +404,8 @@ class SleepTimerService extends ChangeNotifier {
   }
 
   /// Play a gentle bell chime to warn that sleep timer is ending soon.
+  /// Ducks the main player volume briefly so the chime is audible over the
+  /// audiobook, then restores it.
   ja.AudioPlayer? _chimePlayer;
   void _playChime() async {
     try {
@@ -413,9 +415,18 @@ class SleepTimerService extends ChangeNotifier {
       _chimePlayer = chime;
       await chime.setVolume(vol);
       await chime.setAsset('assets/audio/bell.mp3');
-      debugPrint('[SleepTimer] Chime: playing (vol=$vol)');
+
+      // Duck the main player so the chime cuts through
+      final player = AudioPlayerService();
+      final prevVol = player.volume;
+      final ducked = (prevVol * 0.15).clamp(0.0, 1.0);
+      await player.setVolume(ducked);
+      debugPrint('[SleepTimer] Chime: playing (vol=$vol, ducked main ${prevVol.toStringAsFixed(2)} -> ${ducked.toStringAsFixed(2)})');
+
       chime.play();
       chime.playerStateStream.where((s) => s.processingState == ja.ProcessingState.completed).first.then((_) {
+        // Restore main player volume after chime finishes
+        player.setVolume(prevVol);
         chime.dispose();
         if (_chimePlayer == chime) _chimePlayer = null;
       });
