@@ -76,7 +76,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       if (oId.isNotEmpty && oId == userId) return true;
       final oName = o['username'] as String? ?? '';
       return oName.isNotEmpty && oName == username;
-    }) || _isRecentlyActive(user);
+    });
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -118,19 +118,6 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         ),
       ),
     );
-  }
-
-  static bool _isRecentlyActive(dynamic user) {
-    if (user is! Map<String, dynamic>) return false;
-    final progress = user['mediaProgress'] as List<dynamic>?;
-    if (progress == null) return false;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    for (final p in progress) {
-      if (p is! Map<String, dynamic>) continue;
-      final lastUpdate = p['lastUpdate'] as num? ?? 0;
-      if ((now - lastUpdate) < 300000) return true; // 5 minutes
-    }
-    return false;
   }
 
   void _showUserDetail(Map<String, dynamic> user) {
@@ -281,7 +268,7 @@ class _UserDetailScreenState extends State<_UserDetailScreen> {
     final now = DateTime.now().millisecondsSinceEpoch;
     for (final p in _progressItems) {
       final lastUpdate = p['lastUpdate'] as num? ?? 0;
-      if ((now - lastUpdate) < 300000) return true; // 5 minutes
+      if ((now - lastUpdate) < 300000) return true;
     }
     return false;
   }
