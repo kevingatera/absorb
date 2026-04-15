@@ -347,7 +347,7 @@ class PlayerSettings {
 
   // ── Card button order ──
 
-  static const defaultButtonOrder = ['chapters', 'speed', 'sleep', 'bookmarks', 'details', 'equalizer', 'cast', 'history', 'remove', 'car'];
+  static const defaultButtonOrder = ['chapters', 'speed', 'sleep', 'bookmarks', 'details', 'equalizer', 'cast', 'history', 'remove', 'car', 'notes', 'download'];
 
   static Future<List<String>> getCardButtonOrder() async {
     final stored = await ScopedPrefs.getStringList('card_button_order');
@@ -357,7 +357,7 @@ class PlayerSettings {
     }
     // Append any new buttons that were added since the user last saved their order
     final knownIds = allCardButtons.map((b) => b.id).toSet();
-    final result = stored.where((id) => knownIds.contains(id)).toList();
+    final result = stored.where((id) => knownIds.contains(id) || id == '_more').toList();
     for (final b in allCardButtons) {
       if (!result.contains(b.id)) result.add(b.id);
     }
@@ -371,9 +371,28 @@ class PlayerSettings {
 
   // ── Card button layout ──
 
-  static const defaultButtonLayout = 'standard';
+  static const defaultButtonVisibleCount = 4;
 
-  static int buttonCountForLayout(String layout) {
+  static Future<int> getCardButtonVisibleCount() async {
+    // Migrate old layout string to count on first load
+    final oldLayout = await ScopedPrefs.getString('card_button_layout');
+    if (oldLayout != null) {
+      final count = _layoutToCount(oldLayout);
+      await ScopedPrefs.remove('card_button_layout');
+      await _set('card_button_visible_count', count);
+      return count;
+    }
+    final v = await ScopedPrefs.getInt('card_button_visible_count');
+    final raw = v ?? defaultButtonVisibleCount;
+    return raw.clamp(1, 9);
+  }
+
+  static Future<void> setCardButtonVisibleCount(int count) async {
+    await _set('card_button_visible_count', count.clamp(1, 9));
+    _notify();
+  }
+
+  static int _layoutToCount(String layout) {
     switch (layout) {
       case 'compact': return 3;
       case 'standard': return 4;
@@ -384,11 +403,14 @@ class PlayerSettings {
     }
   }
 
-  static Future<String> getCardButtonLayout() => _get('card_button_layout', defaultButtonLayout);
-  static Future<void> setCardButtonLayout(String value) async {
-    await _set('card_button_layout', value);
-    _notify();
-  }
+  static Future<bool> getCardIconsOnly() => _get('card_icons_only', false);
+  static Future<void> setCardIconsOnly(bool v) async { await _set('card_icons_only', v); _notify(); }
+
+  static Future<bool> getCardSingleRow() => _get('card_single_row', false);
+  static Future<void> setCardSingleRow(bool v) async { await _set('card_single_row', v); _notify(); }
+
+  static Future<bool> getCardMoreInline() => _get('card_more_inline', false);
+  static Future<void> setCardMoreInline(bool v) async { await _set('card_more_inline', v); _notify(); }
 
   // ── Appearance ──
 

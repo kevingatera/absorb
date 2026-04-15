@@ -81,7 +81,9 @@ class _ExpandedCardState extends State<ExpandedCard> {
   bool _wasPlaying = false;
   bool _isPopping = false; // Prevent double-pop and setState during exit
   List<String> _buttonOrder = PlayerSettings.defaultButtonOrder;
-  String _buttonLayout = PlayerSettings.defaultButtonLayout;
+  int _buttonVisibleCount = PlayerSettings.defaultButtonVisibleCount;
+  bool _iconsOnly = false;
+  bool _moreInline = false;
   bool _rectangleCovers = false;
   bool _coverPlayButton = false;
   bool _speedAdjustedTime = true;
@@ -180,8 +182,25 @@ class _ExpandedCardState extends State<ExpandedCard> {
     PlayerSettings.getCardButtonOrder().then((o) {
       if (mounted && o.join(',') != _buttonOrder.join(',')) setState(() => _buttonOrder = o);
     });
-    PlayerSettings.getCardButtonLayout().then((l) {
-      if (mounted && l != _buttonLayout) setState(() => _buttonLayout = l);
+    PlayerSettings.getCardButtonVisibleCount().then((c) {
+      if (mounted && c != _buttonVisibleCount) setState(() => _buttonVisibleCount = c);
+    });
+    PlayerSettings.getCardIconsOnly().then((v) {
+      if (mounted && v != _iconsOnly) setState(() => _iconsOnly = v);
+    });
+    PlayerSettings.getCardMoreInline().then((v) {
+      if (mounted && v != _moreInline) {
+        setState(() {
+          _moreInline = v;
+          if (v && !_buttonOrder.contains('_more')) {
+            final insertAt = (_buttonVisibleCount >= 9 ? 8 : _buttonVisibleCount).clamp(0, _buttonOrder.length);
+            _buttonOrder.insert(insertAt, '_more');
+            _buttonVisibleCount = (_buttonVisibleCount < 9 ? _buttonVisibleCount + 1 : 9);
+            PlayerSettings.setCardButtonOrder(_buttonOrder);
+            PlayerSettings.setCardButtonVisibleCount(_buttonVisibleCount);
+          }
+        });
+      }
     });
     PlayerSettings.getRectangleCovers().then((v) {
       if (mounted && v != _rectangleCovers) setState(() => _rectangleCovers = v);
@@ -785,6 +804,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                     // ── Button grid ──
                                     ..._buildButtonGrid(accent, tt),
                                     SizedBox(height: compact ? 4 : 14),
+                                    if (!_moreInline) ...[
                                     // More menu / Cast controls
                                     Center(
                                       child: ListenableBuilder(
@@ -819,6 +839,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                         },
                                       ),
                                     ),
+                                    ],
                                     SizedBox(height: compact ? 4 : 12),
                                   ],
                                 ),
@@ -978,17 +999,20 @@ class _ExpandedCardState extends State<ExpandedCard> {
     isCastingThis: _isCastingThis,
     speedAdjustedTime: _speedAdjustedTime,
     savedSpeed: 1.0,
-    buttonLayout: _buttonLayout,
+    visibleCount: _buttonVisibleCount,
+    iconsOnly: _iconsOnly,
+    moreInline: _moreInline,
     buttonOrder: _buttonOrder,
     removeFromAbsorbing: _removeFromAbsorbing,
     onRemoveExtra: _dismissExpanded,
-    onReorder: (newOrder) {
-      setState(() => _buttonOrder = newOrder);
+    onReorder: (newOrder, newCount) {
+      setState(() { _buttonOrder = newOrder; _buttonVisibleCount = newCount; });
       PlayerSettings.setCardButtonOrder(newOrder);
+      PlayerSettings.setCardButtonVisibleCount(newCount);
     },
   );
 
-  int get _visibleButtonCount => PlayerSettings.buttonCountForLayout(_buttonLayout);
+  int get _visibleButtonCount => _buttonVisibleCount;
 
   List<Widget> _buildButtonGrid(Color accent, TextTheme tt) => _makeActions().buildButtonGrid(accent, tt);
 

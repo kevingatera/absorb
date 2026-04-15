@@ -24,6 +24,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
   String _sort = 'newest';
   // Selected bookmarks as "itemId::bookmarkId" keys
   final Set<String> _selected = {};
+  final Map<String, String> _titleCache = {};
 
   @override
   void initState() {
@@ -89,6 +90,20 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
       if (!mounted) break;
       await BookmarkService().syncBookmarks(itemId, api,
         preloadedServerBookmarks: serverByItem[itemId] ?? []);
+    }
+    // Fetch titles for items not in any local cache
+    for (final itemId in itemIds) {
+      if (!mounted) break;
+      final resolved = _resolveTitle(itemId);
+      if (resolved.contains('-') || resolved.endsWith('...')) {
+        final item = await api.getLibraryItem(itemId);
+        if (item != null) {
+          final media = item['media'] as Map<String, dynamic>? ?? {};
+          final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+          final title = metadata['title'] as String?;
+          if (title != null && title.isNotEmpty) _titleCache[itemId] = title;
+        }
+      }
     }
     // Reload after sync
     if (mounted) _load();
@@ -185,7 +200,6 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     }
   }
 
-  /// Best-effort title lookup — no API calls.
   String _resolveTitle(String itemId) {
     final cache = context.read<LibraryProvider>().absorbingItemCache[itemId];
     if (cache != null) {
@@ -196,7 +210,9 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     }
     final dl = DownloadService().getInfo(itemId);
     if (dl.title != null && dl.title!.isNotEmpty) return dl.title!;
-    return itemId.length > 12 ? '${itemId.substring(0, 12)}…' : itemId;
+    final cached = _titleCache[itemId];
+    if (cached != null) return cached;
+    return itemId.length > 12 ? '${itemId.substring(0, 12)}...' : itemId;
   }
 
   Future<void> _editBookmark(String itemId, Bookmark bookmark) async {

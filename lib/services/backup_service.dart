@@ -68,7 +68,10 @@ class BackupService {
       'localServerEnabled': await PlayerSettings.getLocalServerEnabled(),
       'localServerUrl': await PlayerSettings.getLocalServerUrl(),
       'startScreen': await PlayerSettings.getStartScreen(),
-      'cardButtonLayout': await PlayerSettings.getCardButtonLayout(),
+      'cardButtonVisibleCount': await PlayerSettings.getCardButtonVisibleCount(),
+      'cardIconsOnly': await PlayerSettings.getCardIconsOnly(),
+      'cardSingleRow': await PlayerSettings.getCardSingleRow(),
+      'cardMoreInline': await PlayerSettings.getCardMoreInline(),
       'rectangleCovers': await PlayerSettings.getRectangleCovers(),
       'coverPlayButton': await PlayerSettings.getCoverPlayButton(),
       'whenFinished': await PlayerSettings.getWhenFinished(),
@@ -276,7 +279,10 @@ class BackupService {
     if (s['localServerEnabled'] != null) PlayerSettings.setLocalServerEnabled(s['localServerEnabled'] as bool);
     if (s['localServerUrl'] != null) PlayerSettings.setLocalServerUrl(s['localServerUrl'] as String);
     if (s['startScreen'] != null) PlayerSettings.setStartScreen(s['startScreen'] as int);
-    if (s['cardButtonLayout'] != null) PlayerSettings.setCardButtonLayout(s['cardButtonLayout'] as String);
+    if (s['cardButtonVisibleCount'] != null) PlayerSettings.setCardButtonVisibleCount(s['cardButtonVisibleCount'] as int);
+    if (s['cardIconsOnly'] != null) PlayerSettings.setCardIconsOnly(s['cardIconsOnly'] as bool);
+    if (s['cardSingleRow'] != null) PlayerSettings.setCardSingleRow(s['cardSingleRow'] as bool);
+    if (s['cardMoreInline'] != null) PlayerSettings.setCardMoreInline(s['cardMoreInline'] as bool);
     if (s['rectangleCovers'] != null) PlayerSettings.setRectangleCovers(s['rectangleCovers'] as bool);
     if (s['coverPlayButton'] != null) PlayerSettings.setCoverPlayButton(s['coverPlayButton'] as bool);
     if (s['sleepRewindSeconds'] != null) PlayerSettings.setSleepRewindSeconds(s['sleepRewindSeconds'] as int);

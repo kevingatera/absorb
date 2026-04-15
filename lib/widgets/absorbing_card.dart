@@ -37,7 +37,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   ui.Image? _blurredCover; // Precached blurred background
   String? _blurredCoverUrl; // URL the blur was built from
   List<String> _buttonOrder = PlayerSettings.defaultButtonOrder;
-  String _buttonLayout = PlayerSettings.defaultButtonLayout;
+  int _buttonVisibleCount = PlayerSettings.defaultButtonVisibleCount;
+  bool _iconsOnly = false;
+  bool _moreInline = false;
   bool _rectangleCovers = false;
   bool _coverPlayButton = false;
   bool _speedAdjustedTime = true;
@@ -136,8 +138,25 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     PlayerSettings.getCardButtonOrder().then((o) {
       if (mounted && o.join(',') != _buttonOrder.join(',')) setState(() => _buttonOrder = o);
     });
-    PlayerSettings.getCardButtonLayout().then((l) {
-      if (mounted && l != _buttonLayout) setState(() => _buttonLayout = l);
+    PlayerSettings.getCardButtonVisibleCount().then((c) {
+      if (mounted && c != _buttonVisibleCount) setState(() => _buttonVisibleCount = c);
+    });
+    PlayerSettings.getCardIconsOnly().then((v) {
+      if (mounted && v != _iconsOnly) setState(() => _iconsOnly = v);
+    });
+    PlayerSettings.getCardMoreInline().then((v) {
+      if (mounted && v != _moreInline) {
+        setState(() {
+          _moreInline = v;
+          if (v && !_buttonOrder.contains('_more')) {
+            final insertAt = (_buttonVisibleCount >= 9 ? 8 : _buttonVisibleCount).clamp(0, _buttonOrder.length);
+            _buttonOrder.insert(insertAt, '_more');
+            _buttonVisibleCount = (_buttonVisibleCount < 9 ? _buttonVisibleCount + 1 : 9);
+            PlayerSettings.setCardButtonOrder(_buttonOrder);
+            PlayerSettings.setCardButtonVisibleCount(_buttonVisibleCount);
+          }
+        });
+      }
     });
     PlayerSettings.getRectangleCovers().then((v) {
       if (mounted && v != _rectangleCovers) setState(() => _rectangleCovers = v);
@@ -753,6 +772,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           ..._buildButtonGrid(accent, tt),
+                          if (!_moreInline) ...[
                           const SizedBox(height: 6),
                           Center(
                             child: ListenableBuilder(
@@ -787,6 +807,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                               },
                             ),
                           ),
+                          ],
                           SizedBox(height: compact ? 4 : 8),
                         ],
                       ),
@@ -939,16 +960,19 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     isCastingThis: _isCastingThis,
     speedAdjustedTime: _speedAdjustedTime,
     savedSpeed: _savedSpeed,
-    buttonLayout: _buttonLayout,
+    visibleCount: _buttonVisibleCount,
+    iconsOnly: _iconsOnly,
+    moreInline: _moreInline,
     buttonOrder: _buttonOrder,
     removeFromAbsorbing: _removeFromAbsorbing,
-    onReorder: (newOrder) {
-      setState(() => _buttonOrder = newOrder);
+    onReorder: (newOrder, newCount) {
+      setState(() { _buttonOrder = newOrder; _buttonVisibleCount = newCount; });
       PlayerSettings.setCardButtonOrder(newOrder);
+      PlayerSettings.setCardButtonVisibleCount(newCount);
     },
   );
 
-  int get _visibleButtonCount => PlayerSettings.buttonCountForLayout(_buttonLayout);
+  int get _visibleButtonCount => _buttonVisibleCount;
 
   List<Widget> _buildButtonGrid(Color accent, TextTheme tt) => _makeActions().buildButtonGrid(accent, tt);
 

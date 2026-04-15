@@ -926,6 +926,7 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
         Expanded(
           child: ReorderableListView.builder(
             buildDefaultDragHandles: false,
+            onReorderStart: (_) => HapticFeedback.mediumImpact(),
             padding: EdgeInsets.only(bottom: bottomInset + 16),
             proxyDecorator: (child, index, animation) {
               return AnimatedBuilder(

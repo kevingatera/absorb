@@ -26,6 +26,7 @@ import '../main.dart' show applyThemeMode, applyTrustAllCerts, oledNotifier, sna
 import '../widgets/absorb_page_header.dart';
 import '../widgets/absorb_slider.dart';
 import '../widgets/collapsible_section.dart';
+import '../widgets/overlay_toast.dart';
 import '../widgets/tips_sheet.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -75,7 +76,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _showExplicitBadge = true;
   bool _loggingEnabled = false;
   bool _fullScreenPlayer = false;
-  String _cardButtonLayout = 'standard';
+  // card button layout is now managed in the edit sheet (more menu)
   bool _snappyTransitions = false;
   bool _rectangleCovers = false;
   bool _coverPlayButton = false;
@@ -184,7 +185,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       PlayerSettings.getAutoDownloadOnStream(),                  // 33
       PlayerSettings.getStartScreen(),                           // 36
       PlayerSettings.getPodcastQueueMode(),                      // 37
-      PlayerSettings.getCardButtonLayout(),                        // 38
+      Future.value(''),                                              // 38 (unused, kept for index stability)
       PlayerSettings.getRectangleCovers(),                           // 39
       PlayerSettings.getTrustAllCerts(),                               // 40
       PlayerSettings.getCoverPlayButton(),                             // 41
@@ -230,7 +231,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final autoDlStream = results[32] as bool;
     final startScreen = results[33] as int;
     final podcastQueueMode = results[34] as String;
-    final cardBtnLayout = results[35] as String;
+    // results[35] was cardButtonLayout, now unused
     final rectCovers = results[36] as bool;
     final trustCerts = results[37] as bool;
     final coverPlay = results[38] as bool;
@@ -280,7 +281,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _localServerUrl = localUrl;
       _localServerController.text = localUrl;
       _startScreen = startScreen;
-      _cardButtonLayout = cardBtnLayout;
+      // cardBtnLayout removed (now managed in edit sheet)
       _rectangleCovers = rectCovers;
       _coverPlayButton = coverPlay;
       _skipChapterBarrier = skipBarrier;
@@ -651,37 +652,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       } : null,
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('Button layout', style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
-                        const SizedBox(height: 4),
-                        Text('How action buttons are arranged on the card',
-                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                        const SizedBox(height: 8),
-                        SizedBox(width: double.infinity, child: SegmentedButton<String>(
-                          showSelectedIcon: false,
-                          style: ButtonStyle(
-                            visualDensity: VisualDensity.compact,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
-                          ),
-                          segments: const [
-                            ButtonSegment(value: 'compact', label: Text('1x3', style: TextStyle(fontSize: 13))),
-                            ButtonSegment(value: 'standard', label: Text('2x2', style: TextStyle(fontSize: 13))),
-                            ButtonSegment(value: 'row', label: Text('1x5', style: TextStyle(fontSize: 13))),
-                            ButtonSegment(value: 'expanded', label: Text('2x3', style: TextStyle(fontSize: 13))),
-                            ButtonSegment(value: 'full', label: Text('3x3', style: TextStyle(fontSize: 13))),
-                          ],
-                          selected: {_cardButtonLayout},
-                          onSelectionChanged: _loaded ? (v) {
-                            setState(() => _cardButtonLayout = v.first);
-                            PlayerSettings.setCardButtonLayout(v.first);
-                          } : null,
-                        )),
-                      ]),
-                    ),
-                    const Divider(height: 1, indent: 16, endIndent: 16),
                     SwitchListTile(
                       title: Row(children: [
                         const Flexible(child: Text('Merge libraries')),
@@ -817,6 +787,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ],
                       ]),
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Center(child: TextButton.icon(
+                        onPressed: _loaded ? () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Reset button grid?'),
+                              content: const Text('This will restore the default button layout, order, and toggle settings.'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                                TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Reset')),
+                              ],
+                            ),
+                          );
+                          if (confirmed != true || !mounted) return;
+                          await PlayerSettings.setCardButtonOrder(PlayerSettings.defaultButtonOrder);
+                          await PlayerSettings.setCardButtonVisibleCount(PlayerSettings.defaultButtonVisibleCount);
+                          await PlayerSettings.setCardIconsOnly(false);
+                          await PlayerSettings.setCardMoreInline(false);
+                          if (mounted) showOverlayToast(context, 'Button grid reset', icon: Icons.restart_alt_rounded);
+                        } : null,
+                        icon: Icon(Icons.restart_alt_rounded, size: 16, color: cs.onSurfaceVariant),
+                        label: Text('Reset button grid', style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
+                      )),
                     ),
                   ],
                 ),

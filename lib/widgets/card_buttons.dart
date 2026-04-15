@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
@@ -84,25 +85,27 @@ class CardWideButton extends StatelessWidget {
   final bool alwaysEnabled;
   final bool large;
   final bool compact;
+  final bool iconsOnly;
   final VoidCallback? onTap;
-  final Widget? child; // if provided, renders child instead (for stateful buttons)
+  final Widget? child;
 
   const CardWideButton({
     super.key,
     required this.icon, required this.label,
     required this.accent, required this.isActive,
     this.alwaysEnabled = false, this.large = false, this.compact = false,
-    this.onTap, this.child,
+    this.iconsOnly = false, this.onTap, this.child,
   });
 
   @override Widget build(BuildContext context) {
     if (child != null) return child!;
     final cs = Theme.of(context).colorScheme;
     final enabled = isActive || alwaysEnabled;
-    final iconSize = compact ? 13.0 : (large ? 18.0 : 15.0);
+    final iconSize = compact ? 13.0 : (large ? 20.0 : 16.0);
     final fontSize = compact ? 10.0 : (large ? 13.0 : 11.0);
     final vPad = compact ? 8.0 : (large ? 14.0 : 10.0);
     final radius = compact ? 10.0 : (large ? 14.0 : 12.0);
+    final showIconOnly = compact || iconsOnly;
     return Pressable(
       onTap: enabled ? onTap : () => showInactiveToast(context),
       child: Container(
@@ -112,7 +115,7 @@ class CardWideButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(radius),
           border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
         ),
-        child: compact
+        child: showIconOnly
           ? Center(child: Icon(icon, size: iconSize, color: enabled ? cs.onSurfaceVariant : cs.onSurface.withValues(alpha: 0.24)))
           : Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -176,7 +179,8 @@ class CardSleepButtonInline extends StatelessWidget {
   final bool isActive;
   final bool large;
   final bool compact;
-  const CardSleepButtonInline({super.key, required this.accent, required this.isActive, this.large = false, this.compact = false});
+  final bool iconsOnly;
+  const CardSleepButtonInline({super.key, required this.accent, required this.isActive, this.large = false, this.compact = false, this.iconsOnly = false});
 
   @override Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -228,7 +232,7 @@ class CardSleepButtonInline extends StatelessWidget {
                     ),
                   ),
                 ),
-              Center(child: compact && !active
+              Center(child: (compact || iconsOnly) && !active
                 ? Icon(Icons.nightlight_round_outlined, size: iconSz,
                     color: isActive ? cs.onSurfaceVariant : cs.onSurface.withValues(alpha: 0.24))
                 : Row(
@@ -262,7 +266,8 @@ class CardDownloadButtonInline extends StatelessWidget {
   final Color accent;
   final bool large;
   final bool compact;
-  const CardDownloadButtonInline({super.key, required this.itemId, required this.title, this.author, this.coverUrl, required this.accent, this.large = false, this.compact = false});
+  final bool iconsOnly;
+  const CardDownloadButtonInline({super.key, required this.itemId, required this.title, this.author, this.coverUrl, required this.accent, this.large = false, this.compact = false, this.iconsOnly = false});
 
   @override Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -320,7 +325,7 @@ class CardDownloadButtonInline extends StatelessWidget {
                     ),
                   ),
                 ),
-              Center(child: compact && !downloaded && !downloading
+              Center(child: iconsOnly || (compact && !downloaded && !downloading)
                 ? Icon(icon, size: iconSz, color: color)
                 : Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -377,7 +382,8 @@ class CardBookmarkButtonInline extends StatefulWidget {
   final bool large;
   final bool compact;
   final bool short;
-  const CardBookmarkButtonInline({super.key, required this.player, required this.accent, required this.isActive, required this.itemId, this.large = false, this.compact = false, this.short = false});
+  final bool iconsOnly;
+  const CardBookmarkButtonInline({super.key, required this.player, required this.accent, required this.isActive, required this.itemId, this.large = false, this.compact = false, this.short = false, this.iconsOnly = false});
   @override State<CardBookmarkButtonInline> createState() => _CardBookmarkButtonInlineState();
 }
 
@@ -422,7 +428,7 @@ class _CardBookmarkButtonInlineState extends State<CardBookmarkButtonInline> {
           borderRadius: BorderRadius.circular(radius),
           border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
         ),
-        child: cp
+        child: cp || widget.iconsOnly
           ? Center(child: Icon(Icons.bookmark_outline_rounded, size: iconSz, color: cs.onSurfaceVariant))
           : Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -930,7 +936,7 @@ class MoreMenuSheet extends StatefulWidget {
   final int visibleCount;
   final Color accent;
   final Widget Function(String id) buildItem;
-  final ValueChanged<List<String>> onReorder;
+  final void Function(List<String>, int) onReorder;
   const MoreMenuSheet({super.key, required this.overflowIds, required this.allIds, this.visibleCount = 4, required this.accent, required this.buildItem, required this.onReorder});
   @override State<MoreMenuSheet> createState() => _MoreMenuSheetState();
 }
@@ -938,11 +944,29 @@ class MoreMenuSheet extends StatefulWidget {
 class _MoreMenuSheetState extends State<MoreMenuSheet> {
   bool _editing = false;
   late List<String> _order;
+  late int _visibleCount;
+  bool _iconsOnly = false;
+  bool _moreInline = false;
 
   @override
   void initState() {
     super.initState();
     _order = List.from(widget.allIds);
+    _visibleCount = widget.visibleCount;
+    _loadToggles();
+  }
+
+  void _loadToggles() async {
+    final io = await PlayerSettings.getCardIconsOnly();
+    final mi = await PlayerSettings.getCardMoreInline();
+    if (mounted) setState(() {
+      _iconsOnly = io; _moreInline = mi;
+      if (mi && !_order.contains('_more')) {
+        final insertAt = (_visibleCount >= 9 ? 8 : _visibleCount).clamp(0, _order.length);
+        _order.insert(insertAt, '_more');
+        _visibleCount = (_visibleCount < 9 ? _visibleCount + 1 : 9);
+      }
+    });
   }
 
   @override
@@ -966,7 +990,6 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Drag handle + edit button
               Stack(
                 alignment: Alignment.center,
                 children: [
@@ -998,7 +1021,7 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
 
   Widget _buildEditMode(ColorScheme cs, TextTheme tt) {
     return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
       decoration: BoxDecoration(
         color: Theme.of(context).bottomSheetTheme.backgroundColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -1016,9 +1039,54 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
                 IconButton(
                   icon: Icon(Icons.check_rounded, color: widget.accent),
                   onPressed: () {
-                    widget.onReorder(_order);
+                    // Ensure _more stays in visible zone
+                    final moreIdx = _order.indexOf('_more');
+                    if (moreIdx >= 0 && moreIdx >= _visibleCount) {
+                      _order.remove('_more');
+                      final insertAt = (_visibleCount >= 9 ? 8 : _visibleCount - 1).clamp(0, _order.length);
+                      _order.insert(insertAt, '_more');
+                    }
+                    widget.onReorder(List.from(_order), _visibleCount);
                     Navigator.pop(context);
                   },
+                ),
+              ]),
+            ),
+            // Toggles
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+              child: Wrap(spacing: 8, runSpacing: 4, children: [
+                FilterChip(
+                  label: const Text('Icons only', style: TextStyle(fontSize: 12)),
+                  selected: _iconsOnly,
+                  onSelected: (v) { setState(() => _iconsOnly = v); PlayerSettings.setCardIconsOnly(v); },
+                  selectedColor: widget.accent.withValues(alpha: 0.2),
+                  checkmarkColor: widget.accent,
+                  visualDensity: VisualDensity.compact,
+                ),
+                FilterChip(
+                  label: const Text('"More" in grid', style: TextStyle(fontSize: 12)),
+                  selected: _moreInline,
+                  onSelected: (v) {
+                    setState(() {
+                      _moreInline = v;
+                      if (v && !_order.contains('_more')) {
+                        // Insert _more as last visible slot, pushing that button to hidden if at cap
+                        final insertAt = (_visibleCount >= 9 ? 8 : _visibleCount).clamp(0, _order.length);
+                        _order.insert(insertAt, '_more');
+                        _visibleCount = (_visibleCount < 9 ? _visibleCount + 1 : 9);
+                      } else if (!v && _order.contains('_more')) {
+                        final idx = _order.indexOf('_more');
+                        _order.remove('_more');
+                        if (idx < _visibleCount) _visibleCount--;
+                        if (_visibleCount < 1) _visibleCount = 1;
+                      }
+                    });
+                    PlayerSettings.setCardMoreInline(v);
+                  },
+                  selectedColor: widget.accent.withValues(alpha: 0.2),
+                  checkmarkColor: widget.accent,
+                  visualDensity: VisualDensity.compact,
                 ),
               ]),
             ),
@@ -1027,6 +1095,7 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
               child: ReorderableListView.builder(
                 shrinkWrap: true,
                 buildDefaultDragHandles: false,
+                onReorderStart: (_) => HapticFeedback.mediumImpact(),
                 proxyDecorator: (child, index, animation) {
                   return AnimatedBuilder(
                     animation: animation,
@@ -1043,17 +1112,30 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
                 onReorder: (oldIdx, newIdx) {
                   setState(() {
                     if (newIdx > oldIdx) newIdx--;
-                    final item = _order.removeAt(oldIdx);
-                    _order.insert(newIdx, item);
+                    final id = _order[oldIdx];
+                    // Prevent _more from leaving visible zone
+                    if (id == '_more' && newIdx >= _visibleCount) {
+                      newIdx = _visibleCount - 1;
+                    }
+                    final movedOut = oldIdx < _visibleCount && newIdx >= _visibleCount;
+                    final movedIn = oldIdx >= _visibleCount && newIdx < _visibleCount;
+                    // Cap: max 9 total visible slots (including _more)
+                    if (movedIn && _visibleCount >= 9) return;
+                    _order.removeAt(oldIdx);
+                    _order.insert(newIdx, id);
+                    if (movedOut) _visibleCount--;
+                    if (movedIn) _visibleCount++;
+                    _visibleCount = _visibleCount.clamp(1, _order.length);
                   });
                 },
                 itemBuilder: (context, i) {
                   final id = _order[i];
-                  final def = buttonDefById(id);
-                  if (def == null) return SizedBox.shrink(key: ValueKey(id));
+                  final isMore = id == '_more';
+                  final def = isMore ? null : buttonDefById(id);
+                  if (def == null && !isMore) return SizedBox.shrink(key: ValueKey(id));
 
-                  final isOnCard = i < widget.visibleCount;
-                  final showDivider = i == widget.visibleCount;
+                  final isOnCard = i < _visibleCount;
+                  final showDivider = i == _visibleCount;
 
                   return Column(
                     key: ValueKey(id),
@@ -1066,7 +1148,8 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
                             Expanded(child: Divider(color: cs.onSurface.withValues(alpha: 0.12))),
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 12),
-                              child: Text('In menu', style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.4))),
+                              child: Text(_moreInline ? 'Hidden' : 'In menu',
+                                style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.4))),
                             ),
                             Expanded(child: Divider(color: cs.onSurface.withValues(alpha: 0.12))),
                           ]),
@@ -1080,9 +1163,10 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(children: [
-                            Icon(def.icon, size: 20, color: id == 'remove' ? Colors.red.shade300 : cs.onSurface.withValues(alpha: 0.7)),
+                            Icon(isMore ? Icons.more_horiz_rounded : def!.icon, size: 20,
+                              color: id == 'remove' ? Colors.red.shade300 : cs.onSurface.withValues(alpha: 0.7)),
                             const SizedBox(width: 12),
-                            Expanded(child: Text(def.label, style: tt.bodyMedium)),
+                            Expanded(child: Text(isMore ? 'More' : def!.label, style: tt.bodyMedium)),
                             if (isOnCard)
                               Padding(
                                 padding: const EdgeInsets.only(right: 8),
@@ -1131,11 +1215,13 @@ class CardActionDelegate {
   final bool isCastingThis;
   final bool speedAdjustedTime;
   final double savedSpeed;
-  final String buttonLayout;
+  final int visibleCount;
+  final bool iconsOnly;
+  final bool moreInline;
   final List<String> buttonOrder;
   final VoidCallback removeFromAbsorbing;
   final VoidCallback? onRemoveExtra;
-  final void Function(List<String>) onReorder;
+  final void Function(List<String>, int) onReorder;
 
   CardActionDelegate({
     required this.context,
@@ -1156,7 +1242,9 @@ class CardActionDelegate {
     required this.isCastingThis,
     required this.speedAdjustedTime,
     required this.savedSpeed,
-    required this.buttonLayout,
+    required this.visibleCount,
+    this.iconsOnly = false,
+    this.moreInline = false,
     required this.buttonOrder,
     required this.removeFromAbsorbing,
     this.onRemoveExtra,
@@ -1165,82 +1253,141 @@ class CardActionDelegate {
 
   Map<String, dynamic> get _media => item['media'] as Map<String, dynamic>? ?? {};
 
-  int get visibleButtonCount => PlayerSettings.buttonCountForLayout(buttonLayout);
+  int get visibleButtonCount => visibleCount;
+
+  // Predefined row groupings per button count.
+  // Labels: max 3 per row. Icons: max 4 per row (5 allowed at count=5).
+  static const _labelRows = <int, List<int>>{
+    1: [1], 2: [2], 3: [3], 4: [2, 2], 5: [2, 3],
+    6: [3, 3], 7: [2, 2, 3], 8: [2, 3, 3], 9: [3, 3, 3],
+  };
+  static const _iconRows = <int, List<int>>{
+    1: [1], 2: [2], 3: [3], 4: [4], 5: [5], 6: [3, 3],
+    7: [3, 4], 8: [4, 4], 9: [3, 3, 3],
+  };
 
   List<Widget> buildButtonGrid(Color accent, TextTheme tt) {
     final count = visibleButtonCount;
     final ids = buttonOrder.take(count).toList();
+    final n = ids.length;
+    if (n == 0) return [];
 
-    int cols;
-    switch (buttonLayout) {
-      case 'compact': cols = 3; break;
-      case 'row': cols = 5; break;
-      case 'expanded': cols = 3; break;
-      case 'full': cols = 3; break;
-      default: cols = 2; break;
-    }
+    final compact = false;
+    final short = iconsOnly || n >= 3;
 
-    final compact = cols >= 5;
-    final short = cols >= 3;
-    final singleRow = count == ids.length && ids.length <= cols;
+    final table = iconsOnly ? _iconRows : _labelRows;
+    final rowSizes = table[n] ?? _labelRows[n] ?? [n];
+
     final rows = <Widget>[];
-    if (singleRow) rows.add(const SizedBox(height: 8));
-    for (int r = 0; r < ids.length; r += cols) {
+    int offset = 0;
+    for (int r = 0; r < rowSizes.length; r++) {
       if (r > 0) rows.add(const SizedBox(height: 6));
-      final end = (r + cols).clamp(0, ids.length);
-      final rowIds = ids.sublist(r, end);
-      rows.add(Row(children: [
-        for (int c = 0; c < rowIds.length; c++) ...[
+      final rowLen = rowSizes[r];
+      final rowSlots = ids.sublist(offset, (offset + rowLen).clamp(0, n));
+      offset += rowLen;
+
+      Widget row = Row(children: [
+        for (int c = 0; c < rowSlots.length; c++) ...[
           if (c > 0) const SizedBox(width: 8),
-          Expanded(child: buildCardButton(rowIds[c], accent, tt, compact: compact, short: short)),
+          Expanded(child: rowSlots[c] == '_more'
+              ? _buildInlineMoreButton(accent, compact: compact, short: short)
+              : buildCardButton(rowSlots[c], accent, tt, compact: compact, short: short, iconsOnly: iconsOnly)),
         ],
-      ]));
+      ]);
+
+      // Center single-button rows at 1/3 width
+      if (rowSlots.length == 1 && n == 1) {
+        row = FractionallySizedBox(widthFactor: 0.34, child: row);
+      }
+
+      rows.add(row);
     }
-    if (singleRow) rows.add(const SizedBox(height: 6));
     return rows;
   }
 
-  Widget buildCardButton(String id, Color accent, TextTheme tt, {bool compact = false, bool short = false}) {
+  Widget _buildInlineMoreButton(Color accent, {bool compact = false, bool short = false}) {
+    final cs = Theme.of(context).colorScheme;
+    final large = MediaQuery.sizeOf(context).height > 700;
+    final h = compact ? 30.0 : (large ? 48.0 : 36.0);
+    final iconSz = compact ? 13.0 : (large ? 20.0 : 16.0);
+    final fontSize = compact ? 10.0 : (large ? 13.0 : 11.0);
+    final vPad = compact ? 8.0 : (large ? 14.0 : 10.0);
+    final radius = compact ? 10.0 : (large ? 14.0 : 12.0);
+    return ListenableBuilder(
+      listenable: ChromecastService(),
+      builder: (_, __) {
+        final castActive = ChromecastService().isCasting &&
+            !buttonOrder.take(visibleCount).contains('cast');
+        final iconColor = castActive ? accent : cs.onSurfaceVariant;
+        final moreIcon = castActive ? Icons.cast_connected_rounded : Icons.more_horiz_rounded;
+        return Pressable(
+          onTap: () => showMoreMenu(accent, Theme.of(context).textTheme),
+          child: Container(
+            height: h,
+            padding: EdgeInsets.symmetric(vertical: vPad),
+            decoration: BoxDecoration(
+              color: castActive ? accent.withValues(alpha: 0.1) : cs.onSurface.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(radius),
+              border: Border.all(color: castActive ? accent.withValues(alpha: 0.3) : cs.onSurface.withValues(alpha: 0.08)),
+            ),
+            child: iconsOnly
+              ? Center(child: Icon(moreIcon, size: iconSz, color: iconColor))
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(moreIcon, size: iconSz, color: iconColor),
+                    const SizedBox(width: 6),
+                    Flexible(child: Text(castActive ? 'Casting' : 'More', overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: iconColor, fontSize: fontSize, fontWeight: FontWeight.w500))),
+                  ],
+                ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget buildCardButton(String id, Color accent, TextTheme tt, {bool compact = false, bool short = false, bool iconsOnly = false}) {
     final large = MediaQuery.sizeOf(context).height > 700;
     switch (id) {
       case 'chapters':
         return CardWideButton(
           icon: Icons.list_rounded, label: 'Chapters',
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
+          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
           onTap: chapters.isNotEmpty ? () => showChapters(context, accent, tt) : null,
         );
       case 'speed':
         return CardWideButton(
           icon: Icons.speed_rounded, label: 'Speed',
-          accent: accent, isActive: isPlaybackActive, large: large, compact: compact,
+          accent: accent, isActive: isPlaybackActive, large: large, compact: compact, iconsOnly: iconsOnly,
           child: CardSpeedButtonInline(player: player, accent: accent, isActive: isActive, large: large, compact: compact, itemId: itemId),
         );
       case 'sleep':
         return CardWideButton(
           icon: Icons.nightlight_round_outlined, label: 'Timer',
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
-          child: CardSleepButtonInline(accent: accent, isActive: isPlaybackActive, large: large, compact: compact),
+          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
+          child: CardSleepButtonInline(accent: accent, isActive: isPlaybackActive, large: large, compact: compact, iconsOnly: iconsOnly),
         );
       case 'bookmarks':
         return CardWideButton(
           icon: Icons.bookmark_outline_rounded, label: 'Bookmarks',
-          accent: accent, isActive: isPlaybackActive, large: large, compact: compact,
+          accent: accent, isActive: isPlaybackActive, large: large, compact: compact, iconsOnly: iconsOnly,
           child: CardBookmarkButtonInline(
             player: player, accent: accent,
-            isActive: isActive, itemId: itemId, large: large, compact: compact, short: short,
+            isActive: isActive, itemId: itemId, large: large, compact: compact, short: short, iconsOnly: iconsOnly,
           ),
         );
       case 'details':
         return CardWideButton(
           icon: (episodeId != null || isPodcastEpisode) ? Icons.podcasts_rounded : Icons.info_outline_rounded,
           label: short ? 'Details' : ((episodeId != null || isPodcastEpisode) ? 'Episode Details' : 'Book Details'),
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
+          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
           onTap: () => _openDetails(),
         );
       case 'equalizer':
         return CardWideButton(
           icon: Icons.equalizer_rounded, label: compact ? 'EQ' : 'Equalizer',
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
+          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
           onTap: () => showEqualizerSheet(context, accent),
         );
       case 'cast':
@@ -1260,7 +1407,7 @@ class CardActionDelegate {
             }
             return CardWideButton(
               icon: cast.isConnected ? Icons.cast_connected_rounded : Icons.cast_rounded,
-              label: castLabel, accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
+              label: castLabel, accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
               onTap: () => handleCastTap(context, accent),
             );
           },
@@ -1268,34 +1415,34 @@ class CardActionDelegate {
       case 'history':
         return CardWideButton(
           icon: Icons.history_rounded, label: (compact || short) ? 'History' : 'Playback History',
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
+          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
           onTap: () => showHistory(context, accent, tt),
         );
       case 'remove':
         return CardWideButton(
           icon: Icons.remove_circle_outline_rounded, label: (compact || short) ? 'Remove' : 'Remove from Absorbing',
-          accent: Colors.red.shade300, isActive: true, alwaysEnabled: true, large: large, compact: compact,
+          accent: Colors.red.shade300, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
           onTap: () { removeFromAbsorbing(); onRemoveExtra?.call(); },
         );
       case 'car':
         return CardWideButton(
           icon: Icons.directions_car_rounded, label: 'Car Mode',
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
+          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
           onTap: () => openCarMode(context),
         );
       case 'notes':
         return CardWideButton(
           icon: Icons.note_rounded, label: 'Notes',
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
+          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
           onTap: () => showNotes(context, accent),
         );
       case 'download':
         return CardWideButton(
           icon: Icons.download_outlined, label: 'Download',
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
+          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
           child: CardDownloadButtonInline(
             itemId: itemId, title: title, author: author, coverUrl: coverUrl,
-            accent: accent, large: large, compact: compact,
+            accent: accent, large: large, compact: compact, iconsOnly: iconsOnly,
           ),
         );
       default:
@@ -1459,7 +1606,7 @@ class CardActionDelegate {
 
   void showMoreMenu(Color accent, TextTheme tt) {
     final count = visibleButtonCount;
-    final overflowIds = buttonOrder.skip(count).toList();
+    final overflowIds = buttonOrder.skip(count).where((id) => id != '_more').toList();
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1470,7 +1617,7 @@ class CardActionDelegate {
         visibleCount: count,
         accent: accent,
         buildItem: (id) => buildMoreMenuItem(id, accent, tt, ctx),
-        onReorder: onReorder,
+        onReorder: (order, newCount) => onReorder(order, newCount),
       ),
     );
   }
