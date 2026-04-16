@@ -62,6 +62,7 @@ mixin _StateMixin on ChangeNotifier {
   bool _networkOffline = false;
   bool _deviceHasConnectivity = true;
   Timer? _serverPingTimer;
+  Timer? _healthCheckTimer;
 
   bool _isBackgrounded = false;
   bool _socketSoftDisconnected = false;

@@ -67,6 +67,7 @@ class LibraryProvider extends ChangeNotifier
         _networkOffline = false;
         _connectivitySub?.cancel();
         _stopServerPingTimer();
+        _stopHealthCheckTimer();
         _isLoading = true;
         notifyListeners();
       }
@@ -124,6 +125,9 @@ class LibraryProvider extends ChangeNotifier
           ProgressSyncService().flushPendingSync(api: _api!);
           ProgressSyncService().flushOfflineListeningTime(api: _api!);
           DownloadService().enrichMetadata(_api!);
+          // Start proactive reachability verification so the cloud icon
+          // reflects actual server state, not just the initial login result.
+          _startHealthCheckTimer();
         }
         if (auth.serverUrl != null && auth.token != null) {
           final socket = SocketService();
@@ -162,6 +166,7 @@ class LibraryProvider extends ChangeNotifier
       _connectivitySub?.cancel();
       _progressRefreshDebounce?.cancel();
       _stopServerPingTimer();
+      _stopHealthCheckTimer();
       SocketService().disconnect();
       _personalizedInFlight = null;
       _lastPersonalizedFetchAt = null;

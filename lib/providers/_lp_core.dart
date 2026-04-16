@@ -138,6 +138,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     final wasOffline = _networkOffline;
     _networkOffline = offline;
     if (offline && !wasOffline) {
+      _stopHealthCheckTimer();
       _buildOfflineSections();
       notifyListeners();
       AndroidAutoService().refresh(force: true);
@@ -146,6 +147,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       }
     } else if (!offline && wasOffline && !_manualOffline) {
       _stopServerPingTimer();
+      _startHealthCheckTimer();
       PaintingBinding.instance.imageCache.clear();
       if (_api != null) {
         debugPrint('[Library] Back online — flushing pending syncs');
@@ -539,11 +541,28 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         _auth?.clearLocalOverride();
       } else if (!_manualOffline) {
         if (result.contains(ConnectivityResult.wifi)) {
-          setNetworkOffline(false);
-          _auth?.checkLocalServer();
-          if (_rollingDownloadSeries.isNotEmpty) _catchUpRollingDownloads();
-          _catchUpQueueAutoDownloads();
-          (this as LibraryProvider).catchUpSubscribedPodcasts();
+          // Verify server is actually reachable before flipping to online.
+          // A wifi reconnect during a server outage should not make the cloud
+          // icon look connected while API calls are still 5xx.
+          await _auth?.checkLocalServer();
+          final serverUrl = _auth?.activeServerUrl ?? _auth?.serverUrl ?? '';
+          final reachable = serverUrl.isNotEmpty
+              ? await ApiService.pingServer(serverUrl, customHeaders: _auth?.customHeaders ?? {})
+                  .timeout(const Duration(seconds: 5), onTimeout: () => false)
+              : false;
+          if (reachable) {
+            setNetworkOffline(false);
+            if (_rollingDownloadSeries.isNotEmpty) _catchUpRollingDownloads();
+            _catchUpQueueAutoDownloads();
+            (this as LibraryProvider).catchUpSubscribedPodcasts();
+          } else {
+            debugPrint('[Library] Wifi connected but server unreachable — starting ping timer');
+            if (_networkOffline) {
+              _startServerPingTimer();
+            } else {
+              _goOffline();
+            }
+          }
         } else {
           _auth?.clearLocalOverride();
           final serverUrl = _auth?.serverUrl ?? '';
@@ -615,11 +634,43 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     _serverPingTimer = null;
   }
 
+  // ── Health check (proactive reachability verification while online) ──
+  //
+  // The offline state only flips via explicit triggers (connectivity change,
+  // ping timer success, manual toggle). HTTP 5xx bursts and socket connect
+  // failures don't feed back, so during a server outage the cloud icon stays
+  // green until the next explicit event. This periodic ping closes that gap.
+
+  void _startHealthCheckTimer() {
+    _healthCheckTimer?.cancel();
+    if (_isBackgrounded) return;
+    debugPrint('[Library] Health check timer started (60s ping while online)');
+    _healthCheckTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
+      if (_networkOffline || _manualOffline || !_deviceHasConnectivity) return;
+      final serverUrl = _auth?.activeServerUrl ?? _auth?.serverUrl ?? '';
+      if (serverUrl.isEmpty) return;
+      final reachable = await ApiService.pingServer(
+        serverUrl,
+        customHeaders: _auth?.customHeaders ?? {},
+      ).timeout(const Duration(seconds: 10), onTimeout: () => false);
+      if (!reachable) {
+        debugPrint('[Library] Health check failed — server unreachable, going offline');
+        setNetworkOffline(true);
+      }
+    });
+  }
+
+  void _stopHealthCheckTimer() {
+    _healthCheckTimer?.cancel();
+    _healthCheckTimer = null;
+  }
+
   // ── Battery-saving lifecycle ──
 
   void onAppBackgrounded() {
     _isBackgrounded = true;
     _stopServerPingTimer();
+    _stopHealthCheckTimer();
     _idleDisconnectTimer?.cancel(); // No timers in background
     _idleDisconnectTimer = null;
     _softDisconnectSocket(); // Always disconnect, even during playback
@@ -630,6 +681,8 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     _softReconnectSocket();
     if (_networkOffline && _deviceHasConnectivity && !_manualOffline) {
       _startServerPingTimer();
+    } else if (!_networkOffline && !_manualOffline) {
+      _startHealthCheckTimer();
     }
     _restartIdleTimer();
   }
