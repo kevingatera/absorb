@@ -534,6 +534,11 @@ class AuthProvider extends ChangeNotifier {
     // Set the new account as active in the account service
     UserAccountService().switchTo(account.serverUrl, account.username);
 
+    // Notify widgets that read scoped settings (e.g. card button layout) so
+    // they reload from the new account's ScopedPrefs instead of keeping the
+    // previous account's values cached in widget state.
+    PlayerSettings.notifySettingsChanged();
+
     // Set credentials
     _serverUrl = account.serverUrl;
     _accessToken = account.token;

@@ -68,6 +68,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
           id == 'continue-series' ||
           id == 'downloaded-books') {
         final isContinueSeries = id == 'continue-series';
+        final isDownloadedOnly = id == 'downloaded-books';
         for (final e in (section['entities'] as List<dynamic>? ?? [])) {
           if (e is Map<String, dynamic>) {
             final itemId = e['id'] as String?;
@@ -77,6 +78,14 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
               final episodeId = recentEpisode['id'] as String?;
               if (episodeId != null) {
                 final key = '$itemId-$episodeId';
+                // Downloads are shared across accounts on disk; don't auto-add
+                // them to this account's absorbing list unless this account has
+                // played them or manually added them.
+                if (isDownloadedOnly &&
+                    !_progressMap.containsKey(key) &&
+                    !_manualAbsorbAdds.contains(key)) {
+                  continue;
+                }
                 allowedKeys.add(key);
                 showEntities[itemId] = e;
                 if (!_manualAbsorbRemoves.contains(key)) {
@@ -86,6 +95,11 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
                 }
               }
             } else {
+              if (isDownloadedOnly &&
+                  !_progressMap.containsKey(itemId) &&
+                  !_manualAbsorbAdds.contains(itemId)) {
+                continue;
+              }
               allowedKeys.add(itemId);
               if (!_manualAbsorbRemoves.contains(itemId)) {
                 _absorbingIdsAdd(itemId, atFront: false);
