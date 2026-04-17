@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import '../providers/library_provider.dart';
 import '../screens/app_shell.dart';
 import '../services/audio_player_service.dart';
 import '../services/bookmark_service.dart';
+import '../services/scoped_prefs.dart';
 import '../widgets/card_buttons.dart';
 import '../services/download_service.dart';
 import '../widgets/absorb_page_header.dart';
@@ -26,6 +28,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
   final Set<String> _selected = {};
   final Map<String, String> _titleCache = {};
 
+  static const _titleCacheKey = 'bookmark_book_titles';
+
   @override
   void initState() {
     super.initState();
@@ -34,9 +38,31 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
 
   Future<void> _loadSort() async {
     _sort = await PlayerSettings.getBookmarkSort();
+    // Read the persisted title cache before rendering so rows don't flash
+    // raw item-ID fragments on the first paint while _syncAll fetches.
+    await _loadTitleCache();
     // Show local bookmarks immediately, then sync with server
     _load();
     _syncAll();
+  }
+
+  Future<void> _loadTitleCache() async {
+    final raw = await ScopedPrefs.getString(_titleCacheKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        decoded.forEach((k, v) {
+          if (k is String && v is String) _titleCache[k] = v;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveTitleCache() async {
+    try {
+      await ScopedPrefs.setString(_titleCacheKey, jsonEncode(_titleCache));
+    } catch (_) {}
   }
 
   Future<void> _load() async {
@@ -92,19 +118,31 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
         preloadedServerBookmarks: serverByItem[itemId] ?? []);
     }
     // Fetch titles for items not in any local cache
+    bool titleCacheDirty = false;
     for (final itemId in itemIds) {
       if (!mounted) break;
+      if (_titleCache.containsKey(itemId)) continue;
+      // Only need a server fetch when no cache (library/download/title) has it.
       final resolved = _resolveTitle(itemId);
-      if (resolved.contains('-') || resolved.endsWith('...')) {
+      if (resolved == null) {
         final item = await api.getLibraryItem(itemId);
         if (item != null) {
           final media = item['media'] as Map<String, dynamic>? ?? {};
           final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
           final title = metadata['title'] as String?;
-          if (title != null && title.isNotEmpty) _titleCache[itemId] = title;
+          if (title != null && title.isNotEmpty) {
+            _titleCache[itemId] = title;
+            titleCacheDirty = true;
+          }
         }
+      } else {
+        // Promote library/download-resolved titles into our persisted cache
+        // so future cold visits don't flash the fallback either.
+        _titleCache[itemId] = resolved;
+        titleCacheDirty = true;
       }
     }
+    if (titleCacheDirty) await _saveTitleCache();
     // Reload after sync
     if (mounted) _load();
   }
@@ -200,19 +238,23 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     }
   }
 
-  String _resolveTitle(String itemId) {
-    final cache = context.read<LibraryProvider>().absorbingItemCache[itemId];
-    if (cache != null) {
-      final media = cache['media'] as Map<String, dynamic>? ?? {};
+  /// Returns the book title for [itemId] from any available cache, or null
+  /// when the title isn't known locally yet. Callers should render a neutral
+  /// placeholder on null rather than the raw item ID.
+  String? _resolveTitle(String itemId) {
+    final cached = _titleCache[itemId];
+    if (cached != null && cached.isNotEmpty) return cached;
+    final libCache =
+        context.read<LibraryProvider>().absorbingItemCache[itemId];
+    if (libCache != null) {
+      final media = libCache['media'] as Map<String, dynamic>? ?? {};
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
       final title = metadata['title'] as String?;
       if (title != null && title.isNotEmpty) return title;
     }
     final dl = DownloadService().getInfo(itemId);
     if (dl.title != null && dl.title!.isNotEmpty) return dl.title!;
-    final cached = _titleCache[itemId];
-    if (cached != null) return cached;
-    return itemId.length > 12 ? '${itemId.substring(0, 12)}...' : itemId;
+    return null;
   }
 
   Future<void> _editBookmark(String itemId, Bookmark bookmark) async {
@@ -446,11 +488,11 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                           final lib = context.read<LibraryProvider>();
                           final itemId = _allBookmarks.keys.elementAt(i);
                           final bookmarks = _allBookmarks[itemId]!;
-                          final title = _resolveTitle(itemId);
+                          final resolvedTitle = _resolveTitle(itemId);
                           final coverUrl = lib.getCoverUrl(itemId, width: 400);
                           return _BookGroup(
                             itemId: itemId,
-                            title: title,
+                            title: resolvedTitle,
                             coverUrl: coverUrl,
                             mediaHeaders: lib.mediaHeaders,
                             bookmarks: bookmarks,
@@ -461,7 +503,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                             onToggle: _toggleSelect,
                             onToggleGroup: () => _toggleBookGroup(itemId, bookmarks),
                             onLongPress: _enterSelection,
-                            onJump: (id, bm) => _jumpToBookmark(id, bm, title),
+                            onJump: (id, bm) =>
+                                _jumpToBookmark(id, bm, resolvedTitle ?? ''),
                           );
                         },
                       ),
@@ -504,7 +547,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
 
 class _BookGroup extends StatelessWidget {
   final String itemId;
-  final String title;
+  final String? title;
   final String? coverUrl;
   final Map<String, String> mediaHeaders;
   final List<Bookmark> bookmarks;
@@ -574,12 +617,21 @@ class _BookGroup extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      title,
-                      style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    child: title == null
+                        ? Container(
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: cs.onSurface.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          )
+                        : Text(
+                            title!,
+                            style: tt.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                   ),
                   Text(
                     '${bookmarks.length}',
