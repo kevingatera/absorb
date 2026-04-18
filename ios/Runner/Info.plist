@@ -97,5 +97,40 @@
 		<string>Absorb needs access to your photo library to save or select images.</string>
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false/>
+		<key>UIApplicationShortcutItems</key>
+		<array>
+			<dict>
+				<key>UIApplicationShortcutItemType</key>
+				<string>continue_listening</string>
+				<key>UIApplicationShortcutItemTitle</key>
+				<string>Play</string>
+				<key>UIApplicationShortcutItemIconType</key>
+				<string>UIApplicationShortcutIconTypePlay</string>
+			</dict>
+			<dict>
+				<key>UIApplicationShortcutItemType</key>
+				<string>open_search</string>
+				<key>UIApplicationShortcutItemTitle</key>
+				<string>Search</string>
+				<key>UIApplicationShortcutItemIconType</key>
+				<string>UIApplicationShortcutIconTypeSearch</string>
+			</dict>
+			<dict>
+				<key>UIApplicationShortcutItemType</key>
+				<string>open_downloads</string>
+				<key>UIApplicationShortcutItemTitle</key>
+				<string>Downloads</string>
+				<key>UIApplicationShortcutItemIconType</key>
+				<string>UIApplicationShortcutIconTypeCloud</string>
+			</dict>
+			<dict>
+				<key>UIApplicationShortcutItemType</key>
+				<string>open_bookmarks</string>
+				<key>UIApplicationShortcutItemTitle</key>
+				<string>Bookmarks</string>
+				<key>UIApplicationShortcutItemIconType</key>
+				<string>UIApplicationShortcutIconTypeBookmark</string>
+			</dict>
+		</array>
 	</dict>
 </plist>

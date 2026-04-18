@@ -494,11 +494,14 @@ class _AuthGateState extends State<AuthGate> {
         Future.microtask(() => AndroidAutoService().refresh());
         // Initialize homescreen widget
         await HomeWidgetService().init();
-        // App-icon long-press shortcuts (Continue Listening / Downloads).
-        // Depends on AudioPlayerService + HomeWidgetService so they're ready
-        // when the shortcut handler fires.
-        await QuickActionsService().init();
       }
+      // App-icon long-press shortcuts. On Android the service registers
+      // dynamic shortcuts + handler; on iOS it only wires the handler since
+      // shortcut items themselves are declared statically in Info.plist
+      // (so we get real UIKit system icon types like `.play`, `.search`).
+      // Depends on AudioPlayerService + HomeWidgetService so they're ready
+      // when the shortcut handler fires.
+      await QuickActionsService().init();
     } catch (e) {
       debugPrint('[Init] Service init failed: $e');
     }

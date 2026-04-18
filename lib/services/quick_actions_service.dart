@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:quick_actions/quick_actions.dart';
@@ -50,6 +52,13 @@ class QuickActionsService {
           break;
       }
     });
+
+    // iOS relies on static UIApplicationShortcutItems entries in Info.plist
+    // so it can use UIKit system icon types (.play, .search, .cloud, .bookmark)
+    // without bundling any image assets. The quick_actions_ios plugin's
+    // setShortcutItems only supports templateImageName (bundled PNGs), so
+    // calling it here would replace our nice system icons with nothing.
+    if (!Platform.isAndroid) return;
 
     try {
       await _quickActions.setShortcutItems(const <ShortcutItem>[
