@@ -70,14 +70,14 @@ Alpha `.ipa` files are included in GitHub pre-releases alongside the Android APK
 
 ## Android Auto
 
-Absorb supports Android Auto for browsing and listening from your car. To use it, you'll need to enable unknown sources in Android Auto:
+Absorb supports Android Auto for browsing and listening from your car. If you are using the github version, you'll need to enable unknown sources in Android Auto:
 
 > 1. Open **Android Auto** settings on your phone
 > 2. Tap **Version** at the bottom repeatedly to enable Developer mode
 > 3. Tap the three-dot menu (top right) and select **Developer settings**
 > 4. Enable **Unknown sources**
 >
-> This is required because Absorb is not distributed through Google Play's production track.
+> This is required because Absorb from Github is not distributed through Google Play's production track.
 
 ## iOS
 
