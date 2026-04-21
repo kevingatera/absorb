@@ -275,6 +275,7 @@ class CardSleepButtonInline extends StatelessWidget {
 /// Download button as wide card
 class CardDownloadButtonInline extends StatelessWidget {
   final String itemId;
+  final String? episodeId;
   final String title;
   final String? author;
   final String? coverUrl;
@@ -282,7 +283,10 @@ class CardDownloadButtonInline extends StatelessWidget {
   final bool large;
   final bool compact;
   final bool iconsOnly;
-  const CardDownloadButtonInline({super.key, required this.itemId, required this.title, this.author, this.coverUrl, required this.accent, this.large = false, this.compact = false, this.iconsOnly = false});
+  const CardDownloadButtonInline({super.key, required this.itemId, this.episodeId, required this.title, this.author, this.coverUrl, required this.accent, this.large = false, this.compact = false, this.iconsOnly = false});
+
+  // Podcast downloads are keyed 'parentId-episodeId'; books use the plain itemId.
+  String get _key => episodeId != null ? '$itemId-$episodeId' : itemId;
 
   @override Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -291,9 +295,9 @@ class CardDownloadButtonInline extends StatelessWidget {
         final cs = Theme.of(context).colorScheme;
         final l = AppLocalizations.of(context)!;
         final dl = DownloadService();
-        final downloading = dl.isDownloading(itemId);
-        final downloaded = dl.isDownloaded(itemId);
-        final progress = dl.downloadProgress(itemId);
+        final downloading = dl.isDownloading(_key);
+        final downloaded = dl.isDownloaded(_key);
+        final progress = dl.downloadProgress(_key);
 
         final isDark = Theme.of(context).brightness == Brightness.dark;
         final dlGreen = isDark ? Colors.greenAccent.withValues(alpha: 0.7) : Colors.green.shade700;
@@ -363,26 +367,26 @@ class CardDownloadButtonInline extends StatelessWidget {
 
   void _handleTap(BuildContext context, DownloadService dl) async {
     final l = AppLocalizations.of(context)!;
-    if (dl.isDownloaded(itemId)) {
+    if (dl.isDownloaded(_key)) {
       showDialog(context: context, builder: (ctx) => AlertDialog(
         title: Text(l.removeDownloadQuestion),
         content: Text(l.removeDownloadContent),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l.cancel)),
           TextButton(onPressed: () {
-            dl.deleteDownload(itemId);
+            dl.deleteDownload(_key);
             Navigator.pop(ctx);
             showOverlayToast(context, l.downloadRemoved, icon: Icons.delete_outline_rounded);
           }, child: Text(l.remove, style: const TextStyle(color: Colors.redAccent))),
         ],
       ));
-    } else if (dl.isDownloading(itemId)) {
-      dl.cancelDownload(itemId);
+    } else if (dl.isDownloading(_key)) {
+      dl.cancelDownload(_key);
     } else {
       final auth = context.read<AuthProvider>();
       final api = auth.apiService;
       if (api == null) return;
-      final error = await dl.downloadItem(api: api, itemId: itemId, title: title, author: author, coverUrl: coverUrl, libraryId: context.read<LibraryProvider>().selectedLibraryId);
+      final error = await dl.downloadItem(api: api, itemId: itemId, episodeId: episodeId, title: title, author: author, coverUrl: coverUrl, libraryId: context.read<LibraryProvider>().selectedLibraryId);
       if (error != null && context.mounted) {
         showOverlayToast(context, error, icon: Icons.error_outline_rounded);
       }
@@ -1519,7 +1523,8 @@ class CardActionDelegate {
           icon: Icons.download_outlined, label: l.download,
           accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
           child: CardDownloadButtonInline(
-            itemId: itemId, title: title, author: author, coverUrl: coverUrl,
+            itemId: itemId, episodeId: episodeId,
+            title: title, author: author, coverUrl: coverUrl,
             accent: accent, large: large, compact: compact, iconsOnly: iconsOnly,
           ),
         );
@@ -1629,9 +1634,10 @@ class CardActionDelegate {
           listenable: DownloadService(),
           builder: (_, __) {
             final dl = DownloadService();
-            final downloaded = dl.isDownloaded(itemId);
-            final downloading = dl.isDownloading(itemId);
-            final progress = dl.downloadProgress(itemId);
+            final dlKey = episodeId != null ? '$itemId-$episodeId' : itemId;
+            final downloaded = dl.isDownloaded(dlKey);
+            final downloading = dl.isDownloading(dlKey);
+            final progress = dl.downloadProgress(dlKey);
             final isDark = Theme.of(context).brightness == Brightness.dark;
             final dlGreen = isDark ? Colors.greenAccent.withValues(alpha: 0.7) : Colors.green.shade700;
             final String dlLabel;
@@ -1649,26 +1655,26 @@ class CardActionDelegate {
               onTap: () {
                 Navigator.pop(ctx);
                 final dl = DownloadService();
-                if (dl.isDownloaded(itemId)) {
+                if (dl.isDownloaded(dlKey)) {
                   showDialog(context: context, builder: (dCtx) => AlertDialog(
                     title: Text(l.removeDownloadQuestion),
                     content: Text(l.removeDownloadContent),
                     actions: [
                       TextButton(onPressed: () => Navigator.pop(dCtx), child: Text(l.cancel)),
                       TextButton(onPressed: () {
-                        dl.deleteDownload(itemId);
+                        dl.deleteDownload(dlKey);
                         Navigator.pop(dCtx);
                         showOverlayToast(context, l.downloadRemoved, icon: Icons.delete_outline_rounded);
                       }, child: Text(l.remove, style: const TextStyle(color: Colors.redAccent))),
                     ],
                   ));
-                } else if (dl.isDownloading(itemId)) {
-                  dl.cancelDownload(itemId);
+                } else if (dl.isDownloading(dlKey)) {
+                  dl.cancelDownload(dlKey);
                 } else {
                   final auth = context.read<AuthProvider>();
                   final api = auth.apiService;
                   if (api == null) return;
-                  dl.downloadItem(api: api, itemId: itemId, title: title, author: author, coverUrl: coverUrl, libraryId: context.read<LibraryProvider>().selectedLibraryId).then((error) {
+                  dl.downloadItem(api: api, itemId: itemId, episodeId: episodeId, title: title, author: author, coverUrl: coverUrl, libraryId: context.read<LibraryProvider>().selectedLibraryId).then((error) {
                     if (error != null && context.mounted) {
                       showOverlayToast(context, error, icon: Icons.error_outline_rounded);
                     }
