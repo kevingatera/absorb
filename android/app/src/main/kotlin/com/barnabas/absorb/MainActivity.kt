@@ -98,6 +98,21 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.absorb.cast_service")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "start" -> {
+                        CastForegroundService.start(this)
+                        result.success(true)
+                    }
+                    "stop" -> {
+                        CastForegroundService.stop(this)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     private fun handleInit(result: MethodChannel.Result) {

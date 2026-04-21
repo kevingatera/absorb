@@ -92,6 +92,14 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Keeps the Absorb process alive (out of Doze) during Chromecast
+             playback so the Dart-side listening-time sync timer isn't
+             throttled. Fixes GH #184. -->
+        <service
+            android:name=".CastForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
         <!-- FileProvider for share_plus file sharing -->
         <provider
             android:name="androidx.core.content.FileProvider"
