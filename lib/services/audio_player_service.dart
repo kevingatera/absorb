@@ -710,6 +710,18 @@ class AudioPlayerService extends ChangeNotifier {
     final pending = _pendingBookFinishedKey;
     if (cb == null || pending == null) return;
     _pendingBookFinishedKey = null;
+
+    // If something is loaded in the player by the time the drain fires, the
+    // user already moved on (manually selected a new item in AA, or is paused
+    // mid-book). Replaying the completion here would auto-advance on top of
+    // their current state — the "phantom resume after pause" regression.
+    // Drop the stale completion instead.
+    final loaded = _instance._currentItemId;
+    if (loaded != null) {
+      debugPrint('[Player] Dropping stale book-finished drain (player has item=$loaded, buffered key=$pending)');
+      return;
+    }
+
     debugPrint('[Player] Draining buffered book-finished key=$pending');
     cb(pending);
   }
