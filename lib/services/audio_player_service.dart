@@ -183,34 +183,18 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
-  // Alpha: dedupe repeated queueIndex logs to the most recent value so we only
-  // see transitions (otherwise this fires on every state broadcast). Remove
-  // with the rest of the [AAQueue] diagnostics when the scroll issue is solved.
-  int? _lastLoggedQueueIndex = -2; // sentinel differs from null and 0
-
-  // Defers the chapter queue push so it lands AFTER the player has seeked
-  // to its saved position. Without the delay, the first state broadcast with
-  // a populated queue carries queueIndex=0 (pre-seek), which Android Auto
-  // caches as the queue view's initial scroll target.
-  Timer? _pendingQueuePush;
-
   /// Return the index of the chapter containing the current playback position,
   /// or null if there are no chapters.  Used as queueIndex so Android Auto
-  /// highlights and scrolls to the active chapter in the queue view.
+  /// highlights the active chapter in the queue view.
   int? _safeCurrentChapterIndex() {
     try {
       if (_service == null) return null;
       final posSec = _player.position.inMilliseconds / 1000.0;
-      final idx = ChapterLookup.indexAt(
+      return ChapterLookup.indexAt(
         _service!.chapters,
         posSec,
         _service!.totalDuration,
       );
-      if (idx != _lastLoggedQueueIndex) {
-        _lastLoggedQueueIndex = idx;
-        debugPrint('[AAQueue] queueIndex=$idx pos=${posSec.toStringAsFixed(1)}s chapters=${_service!.chapters.length} queueLen=${queue.value.length}');
-      }
-      return idx;
     } catch (e) {
       debugPrint('[Handler] _safeCurrentChapterIndex error: $e');
       return null;
@@ -505,13 +489,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   /// Populate the MediaSession queue with chapter entries so AA shows
   /// a chapter list via the queue button on the Now Playing screen.
   void updateChaptersQueue(List<dynamic> chapters) {
-    // Any pending deferred push is now stale — a fresh call supersedes it.
-    _pendingQueuePush?.cancel();
-    _pendingQueuePush = null;
-
     if (chapters.isEmpty) {
       queue.add(const []);
-      debugPrint('[AAQueue] pushed empty queue');
       return;
     }
     final items = chapters.asMap().entries.map((e) {
@@ -524,15 +503,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
         duration: Duration(milliseconds: ((end - start) * 1000).round()),
       );
     }).toList();
-
-    // Delay the push so the seek-to-saved-position has time to complete.
-    // Otherwise the first state broadcast after queue population carries
-    // queueIndex=0, and Android Auto locks its queue view scroll to that.
-    _pendingQueuePush = Timer(const Duration(milliseconds: 1500), () {
-      _pendingQueuePush = null;
-      queue.add(items);
-      debugPrint('[AAQueue] pushed ${items.length} chapters (deferred)');
-    });
+    queue.add(items);
   }
 
   @override
