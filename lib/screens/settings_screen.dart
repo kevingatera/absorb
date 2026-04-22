@@ -59,6 +59,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _sleepChime = false;
   double _sleepChimeVolume = 0.7;
   int _shakeAddMinutes = 5;
+  String _shakeSensitivity = 'medium';
   String _bookQueueMode = 'off';
   String _podcastQueueMode = 'off';
   // Returns the more restrictive of the two modes so the merged control
@@ -196,6 +197,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       PlayerSettings.getSleepFadeDuration(),                                  // 45
       PlayerSettings.getSleepChime(),                                         // 46
       PlayerSettings.getSleepChimeVolume(),                                   // 47
+      PlayerSettings.getShakeSensitivity(),                                   // 48
     ]);
     final s = results[0] as AutoRewindSettings;
     final speed = results[1] as double;
@@ -242,6 +244,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final fadeDur = results[42] as int;
     final chime = results[43] as bool;
     final chimeVol = results[44] as double;
+    final shakeSens = results[45] as String;
     if (mounted) setState(() {
       _rewindSettings = s;
       _defaultSpeed = speed;
@@ -292,10 +295,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _sleepFadeDuration = fadeDur;
       _sleepChime = chime;
       _sleepChimeVolume = chimeVol;
+      _shakeSensitivity = shakeSens;
       _canPickDownloadLocation = !_isPlayStoreBuild;
 
       _loaded = true;
     });
+  }
+
+  static const _shakeSensitivityKeys = ['veryLow', 'low', 'medium', 'high', 'veryHigh'];
+
+  int _shakeSensitivityIndex(String key) {
+    final i = _shakeSensitivityKeys.indexOf(key);
+    return i < 0 ? 2 : i;
+  }
+
+  String _shakeSensitivityKey(int index) =>
+      _shakeSensitivityKeys[index.clamp(0, _shakeSensitivityKeys.length - 1)];
+
+  String _shakeSensitivityLabel(AppLocalizations l, String key) {
+    switch (key) {
+      case 'veryLow': return l.shakeSensitivityVeryLow;
+      case 'low': return l.shakeSensitivityLow;
+      case 'high': return l.shakeSensitivityHigh;
+      case 'veryHigh': return l.shakeSensitivityVeryHigh;
+      case 'medium':
+      default: return l.shakeSensitivityMedium;
+    }
   }
 
   Widget _infoIcon(String title, String content) {
@@ -1141,10 +1166,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           onSelectionChanged: _loaded ? (v) {
                             setState(() => _shakeMode = v.first);
                             PlayerSettings.setShakeMode(v.first);
+                            SleepTimerService().restartShakeDetection();
                           } : null,
                         ),
                       ),
                     ),
+                    if (_shakeMode != 'off') ...[
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(l.shakeSensitivity, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                            Text(_shakeSensitivityLabel(l, _shakeSensitivity),
+                              style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.primary)),
+                          ],
+                        ),
+                      ),
+                      AbsorbSlider(
+                        value: _shakeSensitivityIndex(_shakeSensitivity).toDouble(),
+                        min: 0, max: 4, divisions: 4,
+                        onChanged: _loaded ? (v) {
+                          final key = _shakeSensitivityKey(v.round());
+                          setState(() => _shakeSensitivity = key);
+                          PlayerSettings.setShakeSensitivity(key);
+                          SleepTimerService().restartShakeDetection();
+                        } : null,
+                      ),
+                      const SizedBox(height: 4),
+                    ],
                     if (_shakeMode == 'addTime') ...[
                       const Divider(height: 1, indent: 16, endIndent: 16),
                       Padding(

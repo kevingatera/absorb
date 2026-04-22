@@ -1844,6 +1844,42 @@ abstract class AppLocalizations {
   /// **'{minutes} min'**
   String shakeAddsValue(int minutes);
 
+  /// No description provided for @shakeSensitivity.
+  ///
+  /// In en, this message translates to:
+  /// **'Shake sensitivity'**
+  String get shakeSensitivity;
+
+  /// No description provided for @shakeSensitivityVeryLow.
+  ///
+  /// In en, this message translates to:
+  /// **'Very low'**
+  String get shakeSensitivityVeryLow;
+
+  /// No description provided for @shakeSensitivityLow.
+  ///
+  /// In en, this message translates to:
+  /// **'Low'**
+  String get shakeSensitivityLow;
+
+  /// No description provided for @shakeSensitivityMedium.
+  ///
+  /// In en, this message translates to:
+  /// **'Medium'**
+  String get shakeSensitivityMedium;
+
+  /// No description provided for @shakeSensitivityHigh.
+  ///
+  /// In en, this message translates to:
+  /// **'High'**
+  String get shakeSensitivityHigh;
+
+  /// No description provided for @shakeSensitivityVeryHigh.
+  ///
+  /// In en, this message translates to:
+  /// **'Very high'**
+  String get shakeSensitivityVeryHigh;
+
   /// No description provided for @resetTimerOnPause.
   ///
   /// In en, this message translates to:

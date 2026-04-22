@@ -29,6 +29,7 @@ class BackupService {
       'backSkip': await PlayerSettings.getBackSkip(),
       'shakeMode': await PlayerSettings.getShakeMode(),
       'shakeAddMinutes': await PlayerSettings.getShakeAddMinutes(),
+      'shakeSensitivity': await PlayerSettings.getShakeSensitivity(),
       'resetSleepOnPause': await PlayerSettings.getResetSleepOnPause(),
       'sleepFadeOut': await PlayerSettings.getSleepFadeOut(),
       'sleepFadeDuration': await PlayerSettings.getSleepFadeDuration(),
@@ -236,6 +237,7 @@ class BackupService {
       PlayerSettings.setShakeMode(s['shakeToResetSleep'] as bool ? 'addTime' : 'off');
     }
     if (s['shakeAddMinutes'] != null) PlayerSettings.setShakeAddMinutes(s['shakeAddMinutes'] as int);
+    if (s['shakeSensitivity'] != null) PlayerSettings.setShakeSensitivity(s['shakeSensitivity'] as String);
     if (s['resetSleepOnPause'] != null) PlayerSettings.setResetSleepOnPause(s['resetSleepOnPause'] as bool);
     if (s['sleepFadeOut'] != null) PlayerSettings.setSleepFadeOut(s['sleepFadeOut'] as bool);
     if (s['sleepFadeDuration'] != null) PlayerSettings.setSleepFadeDuration(s['sleepFadeDuration'] as int);

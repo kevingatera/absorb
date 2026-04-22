@@ -962,6 +962,24 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get shakeSensitivity => 'Shake sensitivity';
+
+  @override
+  String get shakeSensitivityVeryLow => 'Very low';
+
+  @override
+  String get shakeSensitivityLow => 'Low';
+
+  @override
+  String get shakeSensitivityMedium => 'Medium';
+
+  @override
+  String get shakeSensitivityHigh => 'High';
+
+  @override
+  String get shakeSensitivityVeryHigh => 'Very high';
+
+  @override
   String get resetTimerOnPause => 'Reset timer on pause';
 
   @override

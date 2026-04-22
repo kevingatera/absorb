@@ -199,6 +199,23 @@ class PlayerSettings {
   static Future<int> getShakeAddMinutes() => _get('shakeAddMinutes', 5);
   static Future<void> setShakeAddMinutes(int minutes) => _set('shakeAddMinutes', minutes);
 
+  // 'veryLow', 'low', 'medium', 'high', 'veryHigh'
+  static Future<String> getShakeSensitivity() => _get('shakeSensitivity', 'medium');
+  static Future<void> setShakeSensitivity(String value) => _set('shakeSensitivity', value);
+
+  /// Linear-acceleration threshold (m/s², gravity excluded) that a shake must
+  /// exceed to be registered. Lower = more sensitive.
+  static double shakeThresholdFor(String sensitivity) {
+    switch (sensitivity) {
+      case 'veryHigh': return 8.0;
+      case 'high': return 13.0;
+      case 'low': return 23.0;
+      case 'veryLow': return 28.0;
+      case 'medium':
+      default: return 18.0;
+    }
+  }
+
   static Future<int> getSleepTimerMinutes() => _get('sleepTimerMinutes', 30);
   static Future<void> setSleepTimerMinutes(int minutes) => _set('sleepTimerMinutes', minutes);
 

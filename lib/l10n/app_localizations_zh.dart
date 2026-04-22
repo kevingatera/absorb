@@ -934,6 +934,24 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get shakeSensitivity => '摇一摇灵敏度';
+
+  @override
+  String get shakeSensitivityVeryLow => '非常低';
+
+  @override
+  String get shakeSensitivityLow => '低';
+
+  @override
+  String get shakeSensitivityMedium => '中';
+
+  @override
+  String get shakeSensitivityHigh => '高';
+
+  @override
+  String get shakeSensitivityVeryHigh => '非常高';
+
+  @override
   String get resetTimerOnPause => '暂停时重置定时器';
 
   @override
