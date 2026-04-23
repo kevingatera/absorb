@@ -16,6 +16,8 @@ class CarPlayService {
   final _autoService = AndroidAutoService();
   final _flutterCarplay = FlutterCarplay();
   bool _initialized = false;
+  bool _buildingRoot = false;
+  DateTime? _lastRootBuilt;
 
   void init() {
     if (!Platform.isIOS || _initialized) return;
@@ -30,9 +32,20 @@ class CarPlayService {
 
   void _onConnectionChange(ConnectionStatusTypes status) {
     debugPrint('[CarPlay] Connection status: $status');
-    if (status == ConnectionStatusTypes.connected) {
-      _buildRootTemplate();
+    if (status != ConnectionStatusTypes.connected) return;
+
+    // iOS often fires `connected` twice in quick succession. Without this
+    // guard, two concurrent _buildRootTemplate() calls race: the second one's
+    // refresh() early-returns because the first holds _isRefreshing, so it
+    // builds tabs from half-loaded data and calls setRootTemplate first —
+    // which flutter_carplay then keeps as the rendered template.
+    final now = DateTime.now();
+    if (_buildingRoot) return;
+    if (_lastRootBuilt != null &&
+        now.difference(_lastRootBuilt!) < const Duration(seconds: 1)) {
+      return;
     }
+    _buildRootTemplate();
   }
 
   /// Clear cache and rebuild templates (e.g. on account switch).
@@ -51,19 +64,27 @@ class CarPlayService {
   // ─── Root template ──────────────────────────────────────────────────
 
   Future<void> _buildRootTemplate() async {
-    // Ensure data is populated
-    await _autoService.refresh();
+    _buildingRoot = true;
+    try {
+      // Force refresh so we fully await the server fetch before building tabs.
+      // Without `force`, a concurrent refresh in progress (or a recent one)
+      // causes this call to early-return, producing tabs with stale/empty data.
+      await _autoService.refresh(force: true);
 
-    final continueTab = await _buildContinueTab();
-    final libraryTab = await _buildLibraryTab();
-    final downloadsTab = await _buildDownloadsTab();
+      final continueTab = await _buildContinueTab();
+      final libraryTab = await _buildLibraryTab();
+      final downloadsTab = await _buildDownloadsTab();
 
-    FlutterCarplay.setRootTemplate(
-      rootTemplate: CPTabBarTemplate(
-        templates: [continueTab, libraryTab, downloadsTab],
-      ),
-    );
-    debugPrint('[CarPlay] Root template set');
+      FlutterCarplay.setRootTemplate(
+        rootTemplate: CPTabBarTemplate(
+          templates: [continueTab, libraryTab, downloadsTab],
+        ),
+      );
+      _lastRootBuilt = DateTime.now();
+      debugPrint('[CarPlay] Root template set');
+    } finally {
+      _buildingRoot = false;
+    }
   }
 
   // ─── Continue Listening tab ─────────────────────────────────────────

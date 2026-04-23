@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:audio_service/audio_service.dart';
 
 import 'package:flutter/foundation.dart';
@@ -197,7 +198,7 @@ class AndroidAutoService {
     _lastRefresh = null;
     _downloadsReady = false;
     _isRefreshing = false;
-    debugPrint('[AndroidAuto] Cache cleared (user switch/logout)');
+    debugPrint('[AutoBrowse] Cache cleared (user switch/logout)');
   }
 
   // ── API helpers ──
@@ -228,9 +229,9 @@ class AndroidAutoService {
   /// this populates Continue and Library tabs in the background.
   void _backgroundRefresh() {
     refresh().then((_) {
-      debugPrint('[AndroidAuto] Background refresh completed');
+      debugPrint('[AutoBrowse] Background refresh completed');
     }).catchError((e) {
-      debugPrint('[AndroidAuto] Background refresh failed: $e');
+      debugPrint('[AutoBrowse] Background refresh failed: $e');
     });
   }
 
@@ -250,14 +251,14 @@ class AndroidAutoService {
     }
 
     _isRefreshing = true;
-    debugPrint('[AndroidAuto] Refreshing browse tree...');
+    debugPrint('[AutoBrowse] Refreshing browse tree...');
 
     // Server fetch is best-effort — don't block the browse tree
     try {
       await _refreshDownloaded(); // re-fetch in case downloads changed
       await _refreshFromServer();
       _lastRefresh = DateTime.now();
-      debugPrint('[AndroidAuto] Refresh done: '
+      debugPrint('[AutoBrowse] Refresh done: '
           '${_continueListening.length} continue, '
           '${_downloaded.length} downloaded, '
           '${_libraries.length} libraries '
@@ -266,14 +267,17 @@ class AndroidAutoService {
     } catch (e) {
       // Server unreachable — downloads are still available.
       _lastRefresh = DateTime.now();
-      debugPrint('[AndroidAuto] Server refresh failed (downloads still available): $e');
+      debugPrint('[AutoBrowse] Server refresh failed (downloads still available): $e');
     } finally {
       _isRefreshing = false;
-      // Tell the head unit to re-fetch the root browse tree now that data has changed.
-      try {
-        // ignore: deprecated_member_use
-        await AudioServiceBackground.notifyChildrenChanged(AutoMediaIds.root);
-      } catch (_) {}
+      // Tell Android Auto's MediaBrowser to re-fetch the root browse tree.
+      // iOS CarPlay uses this service for data but doesn't have a MediaBrowser.
+      if (Platform.isAndroid) {
+        try {
+          // ignore: deprecated_member_use
+          await AudioServiceBackground.notifyChildrenChanged(AutoMediaIds.root);
+        } catch (_) {}
+      }
     }
   }
 
@@ -329,7 +333,7 @@ class AndroidAutoService {
         episodeId: episodeId,
         showId: showId,
       ));
-      debugPrint('[AndroidAuto] Download entry: ${dl.title} cover=$coverUrl');
+      debugPrint('[AutoBrowse] Download entry: ${dl.title} cover=$coverUrl');
     }
 
     _downloaded = entries;
@@ -402,7 +406,7 @@ class AndroidAutoService {
       // Server unreachable — clear stale tabs so only Downloads shows offline
       _continueListening = [];
       _libraries = [];
-      debugPrint('[AndroidAuto] Server fetch error: $e');
+      debugPrint('[AutoBrowse] Server fetch error: $e');
     }
   }
 
@@ -569,7 +573,7 @@ class AndroidAutoService {
         try {
           await _refreshFromServer();
         } catch (e) {
-          debugPrint('[AndroidAuto] On-demand continue fetch failed: $e');
+          debugPrint('[AutoBrowse] On-demand continue fetch failed: $e');
         }
       }
       return _continueListening.map((e) => e.toMediaItem()).toList();
@@ -587,7 +591,7 @@ class AndroidAutoService {
         try {
           await _refreshFromServer();
         } catch (e) {
-          debugPrint('[AndroidAuto] On-demand library fetch failed: $e');
+          debugPrint('[AutoBrowse] On-demand library fetch failed: $e');
         }
       }
       // If only one library, skip picker → go straight to its contents
@@ -688,14 +692,14 @@ class AndroidAutoService {
       }
 
       if (allBooks.length > maxItems) {
-        debugPrint('[AndroidAuto] Trimmed books from ${allBooks.length} to $maxItems (Binder limit)');
+        debugPrint('[AutoBrowse] Trimmed books from ${allBooks.length} to $maxItems (Binder limit)');
         return allBooks.sublist(0, maxItems);
       }
 
-      debugPrint('[AndroidAuto] Fetched ${allBooks.length} books');
+      debugPrint('[AutoBrowse] Fetched ${allBooks.length} books');
       return allBooks;
     } catch (e) {
-      debugPrint('[AndroidAuto] Error fetching library books: $e');
+      debugPrint('[AutoBrowse] Error fetching library books: $e');
     }
     return [];
   }
@@ -734,10 +738,10 @@ class AndroidAutoService {
         page++;
       }
 
-      debugPrint('[AndroidAuto] Fetched ${allSeries.length} series');
+      debugPrint('[AutoBrowse] Fetched ${allSeries.length} series');
       return allSeries;
     } catch (e) {
-      debugPrint('[AndroidAuto] Error fetching series: $e');
+      debugPrint('[AutoBrowse] Error fetching series: $e');
     }
     return [];
   }
@@ -763,11 +767,11 @@ class AndroidAutoService {
         }).whereType<MediaItem>().toList();
 
         items.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
-        debugPrint('[AndroidAuto] Fetched ${items.length} authors');
+        debugPrint('[AutoBrowse] Fetched ${items.length} authors');
         return items;
       }
     } catch (e) {
-      debugPrint('[AndroidAuto] Error fetching authors: $e');
+      debugPrint('[AutoBrowse] Error fetching authors: $e');
     }
     return [];
   }
@@ -785,7 +789,7 @@ class AndroidAutoService {
           .map((e) => e.toMediaItem())
           .toList();
     } catch (e) {
-      debugPrint('[AndroidAuto] Error fetching series books: $e');
+      debugPrint('[AutoBrowse] Error fetching series books: $e');
       return [];
     }
   }
@@ -803,7 +807,7 @@ class AndroidAutoService {
           .map((e) => e.toMediaItem())
           .toList();
     } catch (e) {
-      debugPrint('[AndroidAuto] Error fetching author books: $e');
+      debugPrint('[AutoBrowse] Error fetching author books: $e');
       return [];
     }
   }
@@ -854,10 +858,10 @@ class AndroidAutoService {
         return allShows.sublist(0, maxItems);
       }
 
-      debugPrint('[AndroidAuto] Fetched ${allShows.length} podcast shows');
+      debugPrint('[AutoBrowse] Fetched ${allShows.length} podcast shows');
       return allShows;
     } catch (e) {
-      debugPrint('[AndroidAuto] Error fetching podcast shows: $e');
+      debugPrint('[AutoBrowse] Error fetching podcast shows: $e');
     }
     return [];
   }
@@ -906,10 +910,10 @@ class AndroidAutoService {
         ));
       }
 
-      debugPrint('[AndroidAuto] Fetched ${items.length} episodes for "$showTitle"');
+      debugPrint('[AutoBrowse] Fetched ${items.length} episodes for "$showTitle"');
       return items;
     } catch (e) {
-      debugPrint('[AndroidAuto] Error fetching show episodes: $e');
+      debugPrint('[AutoBrowse] Error fetching show episodes: $e');
     }
     return [];
   }
@@ -947,7 +951,7 @@ class AndroidAutoService {
       }
       return allEntries.length > maxItems ? allEntries.sublist(0, maxItems) : allEntries;
     } catch (e) {
-      debugPrint('[AndroidAuto] Error fetching library books data: $e');
+      debugPrint('[AutoBrowse] Error fetching library books data: $e');
       return [];
     }
   }
@@ -978,7 +982,7 @@ class AndroidAutoService {
       }
       return allSeries;
     } catch (e) {
-      debugPrint('[AndroidAuto] Error fetching series data: $e');
+      debugPrint('[AutoBrowse] Error fetching series data: $e');
       return [];
     }
   }
@@ -1001,7 +1005,7 @@ class AndroidAutoService {
         return items;
       }
     } catch (e) {
-      debugPrint('[AndroidAuto] Error fetching authors data: $e');
+      debugPrint('[AutoBrowse] Error fetching authors data: $e');
     }
     return [];
   }
@@ -1018,7 +1022,7 @@ class AndroidAutoService {
           .whereType<AutoBookEntry>()
           .toList();
     } catch (e) {
-      debugPrint('[AndroidAuto] Error fetching series books data: $e');
+      debugPrint('[AutoBrowse] Error fetching series books data: $e');
       return [];
     }
   }
@@ -1035,7 +1039,7 @@ class AndroidAutoService {
           .whereType<AutoBookEntry>()
           .toList();
     } catch (e) {
-      debugPrint('[AndroidAuto] Error fetching author books data: $e');
+      debugPrint('[AutoBrowse] Error fetching author books data: $e');
       return [];
     }
   }
@@ -1071,7 +1075,7 @@ class AndroidAutoService {
       }
       return allShows.length > maxItems ? allShows.sublist(0, maxItems) : allShows;
     } catch (e) {
-      debugPrint('[AndroidAuto] Error fetching podcast shows data: $e');
+      debugPrint('[AutoBrowse] Error fetching podcast shows data: $e');
       return [];
     }
   }
@@ -1111,7 +1115,7 @@ class AndroidAutoService {
       }
       return entries;
     } catch (e) {
-      debugPrint('[AndroidAuto] Error fetching show episodes data: $e');
+      debugPrint('[AutoBrowse] Error fetching show episodes data: $e');
       return [];
     }
   }
@@ -1164,7 +1168,7 @@ class AndroidAutoService {
       }
       return items;
     } catch (e) {
-      debugPrint('[AndroidAuto] Search error: $e');
+      debugPrint('[AutoBrowse] Search error: $e');
       return [];
     }
   }
