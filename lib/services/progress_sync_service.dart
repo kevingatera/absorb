@@ -18,6 +18,7 @@ class ProgressSyncService {
   bool _isOnline = true;
   bool _isFlushing = false;
   bool _flushAgain = false;
+  bool _isFlushingOfflineListening = false;
   int _consecutiveFailures = 0;
   static const _maxConsecutiveFailures = 10;
 
@@ -360,71 +361,90 @@ class ProgressSyncService {
   }
 
   Future<void> _flushOfflineListeningTimeInternal({required ApiService api}) async {
-    final pending = List<String>.from(
-        await ScopedPrefs.getStringList('pending_offline_listening'));
-    if (pending.isEmpty) return;
-    final flushed = <String>{};
+    // Guard against concurrent runs. Without this, "back online" triggers
+    // both the external flushOfflineListeningTime and flushPendingSync's
+    // internal tail-call to this method, producing duplicate listening
+    // sessions on the server.
+    if (_isFlushingOfflineListening) return;
+    _isFlushingOfflineListening = true;
+    try {
+      final pending = List<String>.from(
+          await ScopedPrefs.getStringList('pending_offline_listening'));
+      if (pending.isEmpty) return;
+      final flushed = <String>{};
 
-    debugPrint('[Sync] Flushing offline listening time for ${pending.length} item(s)');
+      debugPrint('[Sync] Flushing offline listening time for ${pending.length} item(s)');
 
-    for (final itemId in pending) {
-      final key = 'offline_listening_$itemId';
-      final seconds = await ScopedPrefs.getInt(key) ?? 0;
-      if (seconds <= 0) {
-        await ScopedPrefs.remove(key);
-        flushed.add(itemId);
-        continue;
-      }
+      for (final itemId in pending) {
+        final key = 'offline_listening_$itemId';
+        final seconds = await ScopedPrefs.getInt(key) ?? 0;
+        if (seconds <= 0) {
+          await ScopedPrefs.remove(key);
+          flushed.add(itemId);
+          continue;
+        }
 
-      final data = await getLocal(itemId);
-      final currentTime = (data?['currentTime'] as num?)?.toDouble() ?? 0;
-      final duration = (data?['duration'] as num?)?.toDouble() ?? 0;
+        final data = await getLocal(itemId);
+        final currentTime = (data?['currentTime'] as num?)?.toDouble() ?? 0;
+        final duration = (data?['duration'] as num?)?.toDouble() ?? 0;
 
-      try {
-        final isCompound = itemId.length > 36;
-        final apiItemId = isCompound ? itemId.substring(0, 36) : itemId;
-        final episodeId = isCompound ? itemId.substring(37) : null;
+        try {
+          final isCompound = itemId.length > 36;
+          final apiItemId = isCompound ? itemId.substring(0, 36) : itemId;
+          final episodeId = isCompound ? itemId.substring(37) : null;
 
-        final sessionData = episodeId != null
-            ? await api.startEpisodePlaybackSession(apiItemId, episodeId)
-            : await api.startPlaybackSession(apiItemId);
+          final sessionData = episodeId != null
+              ? await api.startEpisodePlaybackSession(apiItemId, episodeId)
+              : await api.startPlaybackSession(apiItemId);
 
-        if (sessionData != null) {
-          final sid = sessionData['id'] as String?;
-          if (sid != null) {
-            await api.syncPlaybackSession(
-              sid,
-              currentTime: currentTime,
-              duration: duration,
-              timeListened: seconds,
-            );
-            await api.closePlaybackSession(sid);
-            debugPrint('[Sync] Flushed ${seconds}s offline listening for $itemId');
+          if (sessionData != null) {
+            final sid = sessionData['id'] as String?;
+            if (sid != null) {
+              await api.syncPlaybackSession(
+                sid,
+                currentTime: currentTime,
+                duration: duration,
+                timeListened: seconds,
+              );
+              await api.closePlaybackSession(sid);
+              debugPrint('[Sync] Flushed ${seconds}s offline listening for $itemId');
+            }
+          }
+          // Subtract only what we actually synced. Any ticks added to the
+          // key during the flush (e.g. a +60s tick that fired while the
+          // server session was in flight) are preserved for the next run
+          // instead of being wiped by an outright remove.
+          final current = await ScopedPrefs.getInt(key) ?? 0;
+          final remaining = current - seconds;
+          if (remaining > 0) {
+            await ScopedPrefs.setInt(key, remaining);
+          } else {
+            await ScopedPrefs.remove(key);
+            flushed.add(itemId);
+          }
+        } catch (e) {
+          debugPrint('[Sync] Failed to flush offline listening for $itemId: $e');
+          final msg = e.toString();
+          if (msg.contains('SocketException') ||
+              msg.contains('TimeoutException') ||
+              msg.contains('timed out') ||
+              msg.contains('Connection refused') ||
+              msg.contains('Network is unreachable')) {
+            _consecutiveFailures++;
+            break;
           }
         }
-        // Only remove after successful sync
-        await ScopedPrefs.remove(key);
-        flushed.add(itemId);
-      } catch (e) {
-        debugPrint('[Sync] Failed to flush offline listening for $itemId: $e');
-        final msg = e.toString();
-        if (msg.contains('SocketException') ||
-            msg.contains('TimeoutException') ||
-            msg.contains('timed out') ||
-            msg.contains('Connection refused') ||
-            msg.contains('Network is unreachable')) {
-          _consecutiveFailures++;
-          break;
-        }
       }
-    }
 
-    // Only remove successfully flushed items from pending list
-    if (flushed.isNotEmpty) {
-      final remaining = List<String>.from(
-          await ScopedPrefs.getStringList('pending_offline_listening'));
-      remaining.removeWhere((id) => flushed.contains(id));
-      await ScopedPrefs.setStringList('pending_offline_listening', remaining);
+      // Only remove successfully flushed items from pending list
+      if (flushed.isNotEmpty) {
+        final remaining = List<String>.from(
+            await ScopedPrefs.getStringList('pending_offline_listening'));
+        remaining.removeWhere((id) => flushed.contains(id));
+        await ScopedPrefs.setStringList('pending_offline_listening', remaining);
+      }
+    } finally {
+      _isFlushingOfflineListening = false;
     }
   }
 

@@ -185,7 +185,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
   /// Return the index of the chapter containing the current playback position,
   /// or null if there are no chapters.  Used as queueIndex so Android Auto
-  /// highlights and scrolls to the active chapter in the queue view.
+  /// highlights the active chapter in the queue view.
   int? _safeCurrentChapterIndex() {
     try {
       if (_service == null) return null;
@@ -222,6 +222,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> play() async {
     debugPrint('[Handler] play() called - routing to service (state=${_player.processingState.name})');
+    debugPrint('[ClickDebug] play() entry: ${_clickDebugSnapshot()}');
+    _lastHandlerPlayAt = DateTime.now();
     if (_service != null) {
       await _service!.play();
     } else {
@@ -233,6 +235,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> pause() async {
     debugPrint('[Handler] pause() called - routing to service');
+    debugPrint('[ClickDebug] pause() entry: ${_clickDebugSnapshot()}');
+    _lastHandlerPauseAt = DateTime.now();
     // Android Auto disconnect can dispatch both a MediaButton click and a
     // pause() action simultaneously. The click's 400ms debounce timer would
     // then see playing=false and misinterpret it as "user wants to play",
@@ -328,10 +332,57 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   int _clickCount = 0;
   DateTime? _hardwareButtonTime; // cooldown after hardware next/prev
   DateTime? _noisyPauseAt; // suppress clicks for a window after BT disconnect
+  // [ClickDebug] — timestamp of the last Handler-level pause() call.
+  // Used to correlate phantom play/click commands with a preceding pause.
+  DateTime? _lastHandlerPauseAt;
+  // [ClickDebug] — timestamp of the last Handler-level play() call.
+  // Used to spot the variant-3 phantom-resume fingerprint: click-initiated
+  // play followed by a raw pause a few seconds later (AA disconnect tearing
+  // down after a spurious transport event).
+  DateTime? _lastHandlerPlayAt;
+
+  /// [ClickDebug] — one-line snapshot of state around a media-button event.
+  /// Helps diagnose phantom clicks after Android Auto disconnect.
+  String _clickDebugSnapshot() {
+    final now = DateTime.now();
+    int sincePrevPauseMs = -1;
+    if (_lastHandlerPauseAt != null) {
+      sincePrevPauseMs = now.difference(_lastHandlerPauseAt!).inMilliseconds;
+    }
+    int sincePrevPlayMs = -1;
+    if (_lastHandlerPlayAt != null) {
+      sincePrevPlayMs = now.difference(_lastHandlerPlayAt!).inMilliseconds;
+    }
+    int sinceForegroundMs = -1;
+    if (AudioPlayerService._lastForegroundAt != null) {
+      sinceForegroundMs = now.difference(AudioPlayerService._lastForegroundAt!).inMilliseconds;
+    }
+    int sinceNoisyPauseMs = -1;
+    if (_noisyPauseAt != null) {
+      sinceNoisyPauseMs = now.difference(_noisyPauseAt!).inMilliseconds;
+    }
+    final backgrounded = _service?.isBackgrounded;
+    // Variant-3 fingerprint: raw pause fires within 5s of a click-initiated
+    // play while still playing in background. Flag it so the pause log line
+    // is self-describing without having to cross-reference timestamps.
+    final phantomSuspect = sincePrevPlayMs >= 0
+        && sincePrevPlayMs < 5000
+        && _player.playing
+        && (backgrounded ?? false);
+    return 'bg=$backgrounded, sincePrevPauseMs=$sincePrevPauseMs, '
+        'sincePrevPlayMs=$sincePrevPlayMs, '
+        'sinceForegroundMs=$sinceForegroundMs, '
+        'sinceNoisyPauseMs=$sinceNoisyPauseMs, '
+        'playing=${_player.playing}, '
+        'processingState=${_player.processingState.name}, '
+        'noisyPause=${AudioPlayerService._noisyPause}, '
+        'phantomSuspect=$phantomSuspect';
+  }
 
   @override
   Future<void> click([MediaButton button = MediaButton.media]) async {
     debugPrint('[Handler] click(button=$button) count=${_clickCount + 1} playing=${_player.playing}');
+    debugPrint('[ClickDebug] click arrival (button=$button): ${_clickDebugSnapshot()}');
 
     if (button != MediaButton.media) {
       // Hardware next/prev button — set cooldown to ignore phantom media click
@@ -373,6 +424,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       final count = _clickCount;
       _clickCount = 0;
       debugPrint('[Handler] click resolved: count=$count playing=${_player.playing}');
+      debugPrint('[ClickDebug] click resolve (count=$count): ${_clickDebugSnapshot()}');
       switch (count) {
         case 1:
           if (_player.playing) {
@@ -663,8 +715,34 @@ class AudioPlayerService extends ChangeNotifier {
   /// Register via [setOnBookFinishedCallback]. Used by LibraryProvider to
   /// update local finished state immediately without waiting for a server refresh.
   static void Function(String itemId)? _onBookFinishedCallback;
+  // Buffers the most recent completion key when the callback fires before
+  // LibraryProvider is ready to handle it (e.g. Android Auto cold-start).
+  // LibraryProvider calls [drainPendingBookFinished] once its absorbing cache
+  // is loaded so auto-advance has the state it needs.
+  static String? _pendingBookFinishedKey;
   static void setOnBookFinishedCallback(void Function(String itemId)? cb) {
     _onBookFinishedCallback = cb;
+  }
+
+  static void drainPendingBookFinished() {
+    final cb = _onBookFinishedCallback;
+    final pending = _pendingBookFinishedKey;
+    if (cb == null || pending == null) return;
+    _pendingBookFinishedKey = null;
+
+    // If something is loaded in the player by the time the drain fires, the
+    // user already moved on (manually selected a new item in AA, or is paused
+    // mid-book). Replaying the completion here would auto-advance on top of
+    // their current state — the "phantom resume after pause" regression.
+    // Drop the stale completion instead.
+    final loaded = _instance._currentItemId;
+    if (loaded != null) {
+      debugPrint('[Player] Dropping stale book-finished drain (player has item=$loaded, buffered key=$pending)');
+      return;
+    }
+
+    debugPrint('[Player] Draining buffered book-finished key=$pending');
+    cb(pending);
   }
 
   /// Called when a new item starts playing. Used by LibraryProvider to trigger
@@ -755,7 +833,7 @@ class AudioPlayerService extends ChangeNotifier {
       _notifChapterMode = v;
       // Re-push MediaItem + PlaybackState so notification updates immediately
       if (_currentItemId != null) {
-        _pushMediaItem(_currentItemId!, _currentTitle ?? '', _currentAuthor ?? '',
+        _pushMediaItem(_mediaItemKey, _currentTitle ?? '', _currentAuthor ?? '',
             _currentCoverUrl, _totalDuration,
             chapter: _lastNotifiedChapterIndex >= 0 && _chapters.isNotEmpty
                 ? (_chapters[_lastNotifiedChapterIndex] as Map<String, dynamic>)['title'] as String?
@@ -1016,6 +1094,11 @@ class AudioPlayerService extends ChangeNotifier {
   static bool _noisyPause = false;
   // Whether BT audio was connected when the current interruption began.
   static bool _wasOnBluetooth = false;
+  // Last time the app entered the foreground. Used by [ClickDebug] to see
+  // whether a MediaSession click's 400ms debounce window overlapped with
+  // an app-foreground event — the fingerprint of an Android Auto disconnect
+  // handing control back to the phone.
+  static DateTime? _lastForegroundAt;
   static const _eqChannel = MethodChannel('com.absorb.equalizer');
 
   /// Check if BT audio (A2DP/SCO) is currently connected via native AudioManager.
@@ -1123,6 +1206,7 @@ class AudioPlayerService extends ChangeNotifier {
       try {
         final service = _instance;
         debugPrint('[AudioSession] Becoming noisy — pausing');
+        debugPrint('[ClickDebug] becoming-noisy fired: bg=${service._isBackgrounded}, playing=${service.isPlaying}');
         _noisyPause = true;
         service._wasPlayingBeforeInterrupt = false;
         // Cancel any pending media-button click from the BT disconnect so the
@@ -1146,11 +1230,31 @@ class AudioPlayerService extends ChangeNotifier {
   /// Re-activating the audio session and re-pushing handler state recovers it.
   static void onAppBackgrounded() {
     _instance._isBackgrounded = true;
+    debugPrint('[ClickDebug] App backgrounded');
   }
 
   static Future<void> onAppForegrounded() async {
     final service = _instance;
     service._isBackgrounded = false;
+    _lastForegroundAt = DateTime.now();
+    // Relative timing on foreground arrival is the second half of the
+    // AA-disconnect fingerprint (variant 3): raw pause, then foreground
+    // within ~2s. Log sincePrevPauseMs / sincePrevPlayMs so the disconnect
+    // pattern is obvious on one line.
+    final handler = _handler;
+    int sincePrevPauseMs = -1;
+    int sincePrevPlayMs = -1;
+    if (handler != null) {
+      if (handler._lastHandlerPauseAt != null) {
+        sincePrevPauseMs = _lastForegroundAt!.difference(handler._lastHandlerPauseAt!).inMilliseconds;
+      }
+      if (handler._lastHandlerPlayAt != null) {
+        sincePrevPlayMs = _lastForegroundAt!.difference(handler._lastHandlerPlayAt!).inMilliseconds;
+      }
+    }
+    final aaDisconnectSuspect = sincePrevPauseMs >= 0 && sincePrevPauseMs < 3000;
+    debugPrint('[ClickDebug] App foregrounded: sincePrevPauseMs=$sincePrevPauseMs, '
+        'sincePrevPlayMs=$sincePrevPlayMs, aaDisconnectSuspect=$aaDisconnectSuspect');
     service._positionSyncFailures = 0; // retry on foreground
     if (!service.hasBook) return;
     debugPrint('[MediaSession] Foregrounded - refreshing (playing=${service.isPlaying}, session=${service._playbackSessionId != null}, item=${service._currentItemId})');
@@ -1173,7 +1277,7 @@ class AudioPlayerService extends ChangeNotifier {
           ? (service._chapters[service._lastNotifiedChapterIndex] as Map<String, dynamic>)['title'] as String?
           : null;
       service._pushMediaItem(
-        service._currentItemId!,
+        service._mediaItemKey,
         service._currentTitle!,
         service._currentAuthor ?? '',
         service._currentCoverUrl,
@@ -1186,6 +1290,13 @@ class AudioPlayerService extends ChangeNotifier {
 
   String? _currentEpisodeId;
   String? get currentEpisodeId => _currentEpisodeId;
+
+  /// MediaSession / AA item id. Podcast episodes use the compound
+  /// `parentId-episodeId` key so AA doesn't treat them as a separate item
+  /// from the initial load. Books use the plain itemId.
+  String get _mediaItemKey => _currentEpisodeId != null
+      ? '${_currentItemId!}-$_currentEpisodeId'
+      : _currentItemId!;
 
   String? _currentEpisodeTitle;
   String? get currentEpisodeTitle => _currentEpisodeTitle;
@@ -1436,6 +1547,11 @@ class AudioPlayerService extends ChangeNotifier {
     bool forceStartTime = false,
   ]) async {
     debugPrint('[Player] Playing from local files: $title');
+    // Alpha [PodDur]: trace podcast-episode duration loading. Symptom:
+    // Android Auto progress bar missing for ~60s on cold-start podcast play
+    // because the first MediaItem push carries dur=0. We want to know what
+    // value arrived at this function, and what's available from nearby state.
+    debugPrint('[PodDur] _playFromLocal entry: itemId=$itemId ep=$_currentEpisodeId totalDurationArg=${totalDuration.toStringAsFixed(1)}s _totalDuration=${_totalDuration.toStringAsFixed(1)}s chapters=${chapters.length}');
     _isOfflineMode = false; // We still sync to server if possible
     _playbackSessionId = null;
 
@@ -1454,6 +1570,24 @@ class AudioPlayerService extends ChangeNotifier {
         if (sessionData != null) {
           _playbackSessionId = sessionData['id'] as String?;
           debugPrint('[Player] Got server session for local playback: $_playbackSessionId');
+
+          // Alpha [PodDur]: which duration fields did the session response carry?
+          // If the server ships a usable duration here and we ignore it, we
+          // know the fix is to pick it up. Dump all plausible keys.
+          final sdDuration = (sessionData['duration'] as num?)?.toDouble();
+          final sdMediaDuration = (sessionData['mediaDuration'] as num?)?.toDouble();
+          final sdMetaDur = (sessionData['mediaMetadata'] is Map<String, dynamic>)
+              ? ((sessionData['mediaMetadata'] as Map<String, dynamic>)['duration'] as num?)?.toDouble()
+              : null;
+          debugPrint('[PodDur] session response: duration=$sdDuration mediaDuration=$sdMediaDuration mediaMetadata.duration=$sdMetaDur keys=${sessionData.keys.toList()}');
+
+          // Fall back to session duration when the caller didn't have one.
+          // Without this, podcast cold-starts from Android Auto push a first
+          // MediaItem with dur=0, and AA never renders the progress bar.
+          if (totalDuration <= 0 && sdDuration != null && sdDuration > 0) {
+            totalDuration = sdDuration;
+            _totalDuration = sdDuration;
+          }
 
           // Pick up chapters from session (e.g. podcast episodes with embedded chapters)
           if (chapters.isEmpty) {
@@ -2183,6 +2317,11 @@ class AudioPlayerService extends ChangeNotifier {
 
   void _pushMediaItem(String itemId, String title, String author,
       String? coverUrl, double totalDuration, {String? chapter}) {
+    // Alpha [PodDur]: trace every push-site. We want to see which callers
+    // pass only the parent itemId (missing -episodeId suffix) and/or a zero
+    // duration, so we can pinpoint what to fix for the AA podcast progress
+    // bar. Includes the current _totalDuration so "stale 0" paths are visible.
+    debugPrint('[PodDur] _pushMediaItem: itemId=$itemId ep=$_currentEpisodeId argDur=${totalDuration.toStringAsFixed(1)}s _totalDuration=${_totalDuration.toStringAsFixed(1)}s');
     // Android: Always use content:// URI for Now Playing artwork - some OEMs
     // (e.g. Vivo) don't load HTTP URLs in MediaSession. The CoverContentProvider
     // handles both downloaded and streamed covers.
@@ -2208,6 +2347,11 @@ class AudioPlayerService extends ChangeNotifier {
     final displayDuration = speed > 0 && speed != 1.0
         ? rawDuration / speed
         : rawDuration;
+    // Alpha: confirms MediaItem metadata flowing to MediaSession for GH #172
+    // (BT car display stuck on prior chapter). If this fires with fresh
+    // artist/chapter text but the car still shows old, the issue is downstream
+    // of audio_service's MediaSession push.
+    debugPrint('[Handler] mediaItem.add: item=$itemId artist="$displayArtist" dur=${displayDuration.round()}s chapter=$chapter hasHandler=${_handler != null}');
     _handler!.mediaItem.add(MediaItem(
       id: itemId,
       title: title,
@@ -2659,6 +2803,11 @@ class AudioPlayerService extends ChangeNotifier {
   bool _isCompletingBook = false;
 
   Future<void> _onPlaybackComplete() async {
+    // Alpha: captures completion path choice for GH #186 (book restart bug).
+    // Re-entry attempts are logged too so we can see if completion fires
+    // multiple times from different signals (processingState, position-jump,
+    // fallback) and races with auto-advance.
+    debugPrint('[Complete] entry: pos=${_lastKnownPositionSec.toStringAsFixed(1)}s totalDur=${_totalDuration.toStringAsFixed(1)}s item=$_currentItemId ep=$_currentEpisodeId reentry=$_isCompletingBook');
     if (_isCompletingBook) return; // prevent re-entry
     _isCompletingBook = true;
 
@@ -2751,7 +2900,12 @@ class AudioPlayerService extends ChangeNotifier {
     // Notify LibraryProvider before clearing state so it can update isFinished locally.
     if (itemId != null) {
       final key = episodeId != null ? '$itemId-$episodeId' : itemId;
-      _onBookFinishedCallback?.call(key);
+      if (_onBookFinishedCallback != null) {
+        _onBookFinishedCallback!(key);
+      } else {
+        _pendingBookFinishedKey = key;
+        debugPrint('[Player] Book-finished callback not registered, buffering key=$key');
+      }
     }
 
     // Clear state (player already stopped at top of method)
@@ -2789,7 +2943,11 @@ class AudioPlayerService extends ChangeNotifier {
     final now = DateTime.now();
     final elapsed = now.difference(_lastServerSync).inSeconds.clamp(0, 300);
     _lastServerSync = now;
-    debugPrint('[Player] Sync session ${_playbackSessionId!.substring(0, 8)}... | currentTime=${ct.toStringAsFixed(1)}s, timeListened=${elapsed}s');
+    // Alpha: volume/sessionId piggybacked for GH #179 (volume falls off).
+    // We sample these on each sync tick so drift over time is visible.
+    final vol = _player?.volume;
+    final eqSid = _player?.androidAudioSessionId;
+    debugPrint('[Player] Sync session ${_playbackSessionId!.substring(0, 8)}... | currentTime=${ct.toStringAsFixed(1)}s, timeListened=${elapsed}s, volume=$vol, eqSession=$eqSid');
     final ok = await _api!.syncPlaybackSession(
       _playbackSessionId!,
       currentTime: ct,
@@ -3231,7 +3389,7 @@ class AudioPlayerService extends ChangeNotifier {
       // new speed (duration is divided by speed for speed-adjusted time).
       if (_handler != null) {
         final chTitle = currentChapter?['title'] as String?;
-        _pushMediaItem(_currentItemId!, _currentTitle ?? '', _currentAuthor ?? '',
+        _pushMediaItem(_mediaItemKey, _currentTitle ?? '', _currentAuthor ?? '',
             _currentCoverUrl, _totalDuration, chapter: chTitle);
       }
     }

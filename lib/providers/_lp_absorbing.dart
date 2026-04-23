@@ -441,7 +441,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
       PlayerSettings.getRollingDownloadDeleteFinished().then((delete) {
         if (!delete) return;
         DownloadService().deleteDownload(itemId, skipStopCheck: true);
-        _showRollingSnackBar('Deleted finished download');
+        _showRollingSnackBar(_l()?.lpDeletedFinishedDownload ?? 'Deleted finished download');
       });
     }
 
@@ -779,13 +779,27 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
 
   void _autoAdvanceOfflineBook(String finishedBookId) {
     PlayerSettings.getBookQueueMode().then((mode) {
-      if (mode != 'auto_next') return;
-      if (AudioPlayerService.wasNoisyPause) return;
+      // Alpha: bail-reason logs for GH #186 (book restart). Each silent return
+      // here was a suspect in the advance-didn't-fire hypothesis.
+      if (mode != 'auto_next') {
+        debugPrint('[AutoAdvance] Offline book bail: mode=$mode (not auto_next) finished=$finishedBookId');
+        return;
+      }
+      if (AudioPlayerService.wasNoisyPause) {
+        debugPrint('[AutoAdvance] Offline book bail: wasNoisyPause=true finished=$finishedBookId');
+        return;
+      }
 
       final finished = _itemDataWithSeries(finishedBookId);
-      if (finished == null) return;
+      if (finished == null) {
+        debugPrint('[AutoAdvance] Offline book bail: no series data for finished=$finishedBookId');
+        return;
+      }
       final (seriesId, currentSeq) = _StateMixin._extractSeries(finished);
-      if (seriesId == null || currentSeq == null) return;
+      if (seriesId == null || currentSeq == null) {
+        debugPrint('[AutoAdvance] Offline book bail: seriesId=$seriesId currentSeq=$currentSeq finished=$finishedBookId');
+        return;
+      }
 
       final dl = DownloadService();
       final candidates = <double, MapEntry<String, Map<String, dynamic>>>{};
@@ -801,7 +815,10 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
         if (sid != seriesId || seq == null || seq <= currentSeq) continue;
         candidates[seq] = MapEntry(id, data);
       }
-      if (candidates.isEmpty) return;
+      if (candidates.isEmpty) {
+        debugPrint('[AutoAdvance] Offline book bail: no downloaded next book in series=$seriesId after seq=$currentSeq');
+        return;
+      }
 
       final nextSeq = candidates.keys.toList()..sort();
       final next = candidates[nextSeq.first]!;

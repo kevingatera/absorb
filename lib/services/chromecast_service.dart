@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:flutter_chrome_cast/flutter_chrome_cast.dart';
 import 'api_service.dart';
@@ -69,6 +70,26 @@ class ChromecastService extends ChangeNotifier {
   final _progressSync = ProgressSyncService();
   bool _initialized = false;
   bool _isCompletingBook = false;
+  bool _foregroundServiceActive = false;
+
+  /// Method channel to the native Android CastForegroundService. The Cast SDK
+  /// notification lives in Google Play Services' process, so Absorb's process
+  /// has no foreground promotion during cast by default - Android Doze then
+  /// throttles the 15s sync timer to ~9-15 min intervals under screen-lock.
+  /// Fixes GH #184.
+  static const MethodChannel _castServiceChannel =
+      MethodChannel('com.absorb.cast_service');
+
+  Future<void> _setForegroundService(bool active) async {
+    if (!Platform.isAndroid) return;
+    if (active == _foregroundServiceActive) return;
+    _foregroundServiceActive = active;
+    try {
+      await _castServiceChannel.invokeMethod(active ? 'start' : 'stop');
+    } catch (e) {
+      debugPrint('[Cast] setForegroundService($active) error: $e');
+    }
+  }
 
   // Grace periods for transient cast hiccups. Idle/disconnect events during
   // active casting can be spurious (network blips, track transitions, stream
@@ -167,6 +188,7 @@ class ChromecastService extends ChangeNotifier {
   void _onDisconnected() {
     if (_castingItemId != null && _castPosition > Duration.zero) _saveProgressLocal();
 
+    unawaited(_setForegroundService(false));
     _connectionState = CastConnectionState.disconnected;
     _playbackState = CastPlaybackState.idle;
     _connectedDeviceName = null;
@@ -346,7 +368,18 @@ class ChromecastService extends ChangeNotifier {
     _syncTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (isCasting && _castingItemId != null) {
         _saveProgressLocal();
-        _syncProgressToServer();
+        // Only report listening time while actually playing. Wall-clock
+        // elapsed would otherwise inflate server stats during pauses.
+        // Explicit pause/play/stop paths still call _syncProgressToServer
+        // directly to flush pending listening time around state changes.
+        if (isPlaying) {
+          _syncProgressToServer();
+        } else {
+          // Advance the sync baseline so a direct sync later (disconnect,
+          // stop, remote resume) doesn't bill the paused seconds as
+          // timeListened.
+          _lastSyncTime = DateTime.now();
+        }
       }
     });
   }
@@ -384,6 +417,7 @@ class ChromecastService extends ChangeNotifier {
       try { await _api!.closePlaybackSession(_playbackSessionId!); } catch (_) {}
       _playbackSessionId = null;
     }
+    await _setForegroundService(false);
     try {
       await GoogleCastSessionManager.instance.endSessionAndStopCasting();
     } catch (e) { debugPrint('[Cast] Disconnect error: $e'); }
@@ -463,6 +497,9 @@ class ChromecastService extends ChangeNotifier {
 
       _playbackSessionId = sessionData['id'] as String?;
       _lastSyncTime = DateTime.now();
+      // Promote Absorb's process to foreground so Doze doesn't throttle the
+      // per-15s sync timer when the user locks their screen. See GH #184.
+      unawaited(_setForegroundService(true));
 
       // Load per-book speed (or global default)
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
@@ -489,9 +526,14 @@ class ChromecastService extends ChangeNotifier {
           debugPrint('[Cast] setPlaybackRate error: $e');
         }
       }
+      if (!loaded) {
+        // loadMedia failed - release the foreground promotion we took above.
+        await _setForegroundService(false);
+      }
       return loaded;
     } catch (e, st) {
       debugPrint('[Cast] castItem error: $e\n$st');
+      await _setForegroundService(false);
       _playbackState = CastPlaybackState.idle; notifyListeners(); return false;
     }
   }
@@ -715,7 +757,14 @@ class ChromecastService extends ChangeNotifier {
 
   // ── Controls ──
 
-  Future<void> play() async { if (isConnected) try { await GoogleCastRemoteMediaClient.instance.play(); } catch (_) {} }
+  Future<void> play() async {
+    if (!isConnected) return;
+    try { await GoogleCastRemoteMediaClient.instance.play(); } catch (_) {}
+    // Reset the sync clock so the first tick after resume only counts the
+    // seconds actually played since now, not the wall-clock elapsed since
+    // the last sync (which would include the entire pause).
+    _lastSyncTime = DateTime.now();
+  }
   Future<void> pause() async {
     if (!isConnected) return;
     try { await GoogleCastRemoteMediaClient.instance.pause(); } catch (_) {}
@@ -770,6 +819,7 @@ class ChromecastService extends ChangeNotifier {
       _playbackSessionId = null;
     }
 
+    await _setForegroundService(false);
     _playbackState = CastPlaybackState.idle;
     _castingItemId = _castingEpisodeId = _castingTitle = _castingAuthor = _castingCoverUrl = null;
     _castingDuration = 0; _castingChapters = [];
@@ -836,6 +886,7 @@ class ChromecastService extends ChangeNotifier {
 
     // Clear casting state but keep connection
     _syncTimer?.cancel();
+    await _setForegroundService(false);
     _castingItemId = _castingEpisodeId = _castingTitle = _castingAuthor = _castingCoverUrl = null;
     _castingDuration = 0;
     _castingChapters = [];
@@ -862,6 +913,7 @@ class ChromecastService extends ChangeNotifier {
       _lastSyncTime = now;
 
       if (_playbackSessionId != null) {
+        debugPrint('[CastSync] ct=${ct.toStringAsFixed(1)}s timeListened=${elapsed}s sid=${_playbackSessionId!.substring(0, 8)}...');
         // Sync via playback session so timeListened is tracked in stats
         await _api!.syncPlaybackSession(
           _playbackSessionId!,

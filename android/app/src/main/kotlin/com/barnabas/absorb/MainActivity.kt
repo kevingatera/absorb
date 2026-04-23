@@ -98,6 +98,21 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.absorb.cast_service")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "start" -> {
+                        CastForegroundService.start(this)
+                        result.success(true)
+                    }
+                    "stop" -> {
+                        CastForegroundService.stop(this)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     private fun handleInit(result: MethodChannel.Result) {
@@ -159,7 +174,8 @@ class MainActivity : AudioServiceActivity() {
                 Log.w(TAG, "LoudnessEnhancer not supported: ${e.message}"); null
             }
 
-            Log.d(TAG, "Effects attached to session $sessionId")
+            // Alpha: capture LoudnessEnhancer/eq state on attach for GH #179 (volume falls off).
+            Log.d(TAG, "Effects attached to session $sessionId: eqEnabled=$eqEnabled loudnessGainMb=$eqLoudnessGainMb loudnessEffectOk=${loudnessEnhancer != null}")
             result.success(true)
         } catch (e: Exception) {
             Log.e(TAG, "attachSession failed: ${e.message}")

@@ -119,7 +119,7 @@ class SleepTimerService extends ChangeNotifier {
   String _shakeMode = 'addTime'; // 'off', 'addTime', 'resetTimer'
   StreamSubscription? _accelSub;
   DateTime _lastShake = DateTime(2000);
-  static const _shakeThreshold = 20.0; // m/s² of linear acceleration (gravity excluded)
+  double _shakeThreshold = 18.0; // m/s² of linear acceleration (gravity excluded); loaded from settings
   static const _shakeCooldown = Duration(seconds: 3);
 
   // Wind-down warning & fade
@@ -437,9 +437,12 @@ class SleepTimerService extends ChangeNotifier {
   Future<void> _startShakeDetection() async {
     _shakeMode = await PlayerSettings.getShakeMode();
     if (_shakeMode == 'off') return;
-    
+
+    final sensitivity = await PlayerSettings.getShakeSensitivity();
+    _shakeThreshold = PlayerSettings.shakeThresholdFor(sensitivity);
+
     _accelSub?.cancel();
-    debugPrint('[Battery] Accelerometer stream STARTED (shakeMode=$_shakeMode)');
+    debugPrint('[Battery] Accelerometer stream STARTED (shakeMode=$_shakeMode, sensitivity=$sensitivity, threshold=$_shakeThreshold)');
     _accelSub = userAccelerometerEventStream(
       samplingPeriod: const Duration(milliseconds: 100),
     ).listen((event) {
@@ -614,6 +617,14 @@ class SleepTimerService extends ChangeNotifier {
         onToast?.call('+1 chapter added!');
       }
     }
+  }
+
+  /// Re-read shake settings and restart the accelerometer stream. Call when
+  /// the user changes shake mode or sensitivity from settings UI.
+  Future<void> restartShakeDetection() async {
+    _accelSub?.cancel();
+    _accelSub = null;
+    if (isActive) await _startShakeDetection();
   }
 
   /// Pause battery-intensive operations when app is backgrounded.

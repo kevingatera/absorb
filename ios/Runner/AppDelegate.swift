@@ -181,7 +181,8 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
         result(self?.isBluetoothAudioConnected() ?? false)
 
       case "init":
-        // Return fixed 5-band info (we define the bands since iOS has no system EQ)
+        // iOS has no system EQ, so we advertise a fixed 5-band layout that
+        // matches what AudioEQProcessor's biquad filters handle.
         result([
           "bands": 5,
           "frequencies": [60, 230, 910, 3600, 14000],
@@ -190,7 +191,8 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
         ] as [String: Any])
 
       case "attachSession":
-        // No-op on iOS - tap is already on all player items
+        // No-op on iOS - the processing tap is attached per player item in
+        // UriAudioSource.m, not via a session ID like Android's EQ APIs.
         result(true)
 
       case "setEnabled":
@@ -210,7 +212,7 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
         result(true)
 
       case "setVirtualizer":
-        // No iOS equivalent - no-op
+        // No iOS equivalent of Android's Virtualizer effect.
         result(true)
 
       case "setLoudness":

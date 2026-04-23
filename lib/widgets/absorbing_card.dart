@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../screens/app_shell.dart';
@@ -45,6 +46,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   bool _speedAdjustedTime = true;
   double _savedSpeed = 1.0; // per-book or default speed for inactive display
   final ValueNotifier<bool> _edgeBarExpanded = ValueNotifier(false);
+  String? _lastRenderLogSig;
 
   @override
   bool get wantKeepAlive => true;
@@ -52,7 +54,11 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   String get _itemId => widget.item['id'] as String? ?? '';
   Map<String, dynamic> get _media => widget.item['media'] as Map<String, dynamic>? ?? {};
   Map<String, dynamic> get _metadata => _media['metadata'] as Map<String, dynamic>? ?? {};
-  String get _title => _metadata['title'] as String? ?? 'Unknown';
+  String get _title {
+    final t = _metadata['title'] as String?;
+    if (t != null && t.isNotEmpty) return t;
+    return mounted ? AppLocalizations.of(context)!.unknown : 'Unknown';
+  }
   String get _author => _metadata['authorName'] as String? ?? '';
   double get _duration => (_media['duration'] as num?)?.toDouble() ?? 0;
   List<dynamic> get _chapters {
@@ -389,6 +395,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     final cs = _coverScheme ?? Theme.of(context).colorScheme;
     final accent = cs.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final l = AppLocalizations.of(context)!;
 
     final lib = context.watch<LibraryProvider>();
     final mediaHeaders = lib.mediaHeaders;
@@ -414,6 +421,18 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       }
     } else {
       bookProgress = progress;
+    }
+
+    // Alpha diagnostic: fires only when a state-shape transition happens
+    // (not on every position tick), to confirm why a card's progress bar
+    // would render empty after an AA cold-start.
+    final durBucket = widget.player.totalDuration > 0 ? 'pos' : 'zero';
+    final progBucket = progress <= 0.001 ? '0' : (progress >= 0.999 ? '1' : 'mid');
+    final bookBucket = bookProgress <= 0.001 ? '0' : (bookProgress >= 0.999 ? '1' : 'mid');
+    final sig = 'item=$_itemId ep=$_episodeId active=$_isActive hasBook=${widget.player.hasBook} dur=$durBucket prog=$progBucket bar=$bookBucket playerItem=${widget.player.currentItemId} playerEp=${widget.player.currentEpisodeId}';
+    if (sig != _lastRenderLogSig) {
+      _lastRenderLogSig = sig;
+      debugPrint('[Card] $sig');
     }
 
     // Invalidate blurred background when cover URL changes (e.g. after server update)
@@ -612,7 +631,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                     showSaved ? Icons.download_done_rounded : Icons.cell_tower_rounded,
                                     size: 11, color: showSaved ? savedColor : streamColor),
                                   const SizedBox(width: 3),
-                                  Text(showSaved ? 'Saved' : 'Streaming', style: TextStyle(
+                                  Text(showSaved ? l.saved : l.expandedCardStreaming, style: TextStyle(
                                     fontSize: 10, fontWeight: FontWeight.w500,
                                     color: showSaved ? savedColor : streamColor,
                                   )),
@@ -679,12 +698,12 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                       children: [
                                         Icon(Icons.cast_connected_rounded, size: 36, color: accent.withValues(alpha: 0.9)),
                                         const SizedBox(height: 8),
-                                        Text('Casting to', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.w500)),
+                                        Text(l.castingTo, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.w500)),
                                         const SizedBox(height: 2),
                                         Padding(
                                           padding: const EdgeInsets.symmetric(horizontal: 16),
                                           child: Text(
-                                            castService.connectedDeviceName ?? 'Device',
+                                            castService.connectedDeviceName ?? l.expandedCardDeviceFallback,
                                             style: TextStyle(color: accent, fontSize: 14, fontWeight: FontWeight.w700),
                                             textAlign: TextAlign.center,
                                             maxLines: 2,
@@ -803,12 +822,12 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                           ? [
                                               Icon(Icons.cast_connected_rounded, size: 18, color: accent),
                                               const SizedBox(width: 4),
-                                              Text('Casting', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: accent)),
+                                              Text(l.casting, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: accent)),
                                             ]
                                           : [
                                               Icon(Icons.more_horiz_rounded, size: 18, color: cs.onSurface.withValues(alpha: 0.54)),
                                               const SizedBox(width: 4),
-                                              Text('More', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: cs.onSurface.withValues(alpha: 0.54))),
+                                              Text(l.more, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: cs.onSurface.withValues(alpha: 0.54))),
                                             ],
                                     ),
                                   ),

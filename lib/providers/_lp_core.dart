@@ -1622,7 +1622,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final media = cached['media'] as Map<String, dynamic>? ?? {};
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
       final showTitle = metadata['title'] as String? ?? 'Podcast';
-      _showRollingSnackBar('$showTitle: $downloaded new episode${downloaded == 1 ? '' : 's'} downloading');
+      final l = _l();
+      _showRollingSnackBar(l?.lpSubscribedPodcastDownloading(showTitle, downloaded)
+          ?? '$showTitle: $downloaded new episode${downloaded == 1 ? '' : 's'} downloading');
     }
   }
 
@@ -1793,8 +1795,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
 
     if (newDownloads > 0) {
+      final l = _l();
       _showRollingSnackBar(
-          'Queue: downloading $newDownloads item${newDownloads == 1 ? '' : 's'}');
+          l?.lpQueueDownloadingItems(newDownloads)
+          ?? 'Queue: downloading $newDownloads item${newDownloads == 1 ? '' : 's'}');
     }
   }
 
@@ -1918,8 +1922,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
 
     if (newDownloads > 0) {
+      final l = _l();
       _showRollingSnackBar(
-          'Downloading $newDownloads book${newDownloads == 1 ? '' : 's'}');
+          l?.lpDownloadingBooks(newDownloads)
+          ?? 'Downloading $newDownloads book${newDownloads == 1 ? '' : 's'}');
     }
   }
 
@@ -1994,8 +2000,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
 
     if (newDownloads > 0) {
+      final l = _l();
       _showRollingSnackBar(
-          'Downloading $newDownloads episode${newDownloads == 1 ? '' : 's'}');
+          l?.lpDownloadingEpisodes(newDownloads)
+          ?? 'Downloading $newDownloads episode${newDownloads == 1 ? '' : 's'}');
     }
   }
 
