@@ -322,7 +322,6 @@ struct NowPlayingWidgetView: View {
 
 // MARK: - Widget
 
-@main
 struct AbsorbWidget: Widget {
     let kind = "NowPlayingWidget"
 
@@ -333,5 +332,119 @@ struct AbsorbWidget: Widget {
         .configurationDisplayName("Now Playing")
         .description("See and control your current audiobook.")
         .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+// MARK: - Stats Widget
+
+struct StatsEntry: TimelineEntry {
+    let date: Date
+    let todaySeconds: Int
+    let weekSeconds: Int
+    let streakDays: Int
+    let booksThisYear: Int
+}
+
+struct StatsProvider: TimelineProvider {
+    func placeholder(in context: Context) -> StatsEntry {
+        StatsEntry(date: .now, todaySeconds: 1800, weekSeconds: 14400, streakDays: 12, booksThisYear: 8)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (StatsEntry) -> Void) {
+        completion(readEntry())
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<StatsEntry>) -> Void) {
+        // Re-read from the app group every 15 minutes. Flutter also pushes a
+        // reloadTimelines via home_widget whenever it ticks the counters
+        // forward, so in practice the widget refreshes more often.
+        let refreshDate = Date().addingTimeInterval(900)
+        completion(Timeline(entries: [readEntry()], policy: .after(refreshDate)))
+    }
+
+    private func readEntry() -> StatsEntry {
+        let d = UserDefaults(suiteName: appGroup)
+        let today = d?.integer(forKey: "widget_stats_today") ?? 0
+        let week = d?.integer(forKey: "widget_stats_week") ?? 0
+        let streak = d?.integer(forKey: "widget_stats_streak") ?? 0
+        let books = d?.integer(forKey: "widget_stats_books_year") ?? 0
+        return StatsEntry(
+            date: .now,
+            todaySeconds: today,
+            weekSeconds: week,
+            streakDays: streak,
+            booksThisYear: books
+        )
+    }
+}
+
+private func formatListeningTime(_ seconds: Int) -> String {
+    if seconds <= 0 { return "0m" }
+    let hours = seconds / 3600
+    let minutes = (seconds % 3600) / 60
+    if hours > 0 {
+        return minutes == 0 ? "\(hours)h" : "\(hours)h \(minutes)m"
+    }
+    return "\(minutes)m"
+}
+
+struct StatTile: View {
+    let value: String
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.title3)
+                .fontWeight(.semibold)
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct StatsWidgetView: View {
+    let entry: StatsEntry
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 4) {
+                StatTile(value: formatListeningTime(entry.todaySeconds), label: "Today")
+                StatTile(value: formatListeningTime(entry.weekSeconds), label: "This week")
+            }
+            HStack(spacing: 4) {
+                StatTile(value: "\(entry.streakDays)", label: "Day streak")
+                StatTile(value: "\(entry.booksThisYear)", label: "Books this year")
+            }
+        }
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+}
+
+struct StatsWidget: Widget {
+    let kind = "StatsWidget"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: StatsProvider()) { entry in
+            StatsWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Listening Stats")
+        .description("Today, this week, streak, and books finished this year.")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+// MARK: - Bundle
+
+@main
+struct AbsorbWidgetBundle: WidgetBundle {
+    var body: some Widget {
+        AbsorbWidget()
+        StatsWidget()
     }
 }
