@@ -321,10 +321,17 @@ class HomeWidgetService {
       debugPrint('[StatsWidget] Fetching listening-stats and /me');
       final stats = await api.getListeningStats();
       final me = await api.getMe();
-      _lastStatsFetch = DateTime.now();
 
       if (stats == null) debugPrint('[StatsWidget] listening-stats returned null');
       if (me == null) debugPrint('[StatsWidget] /me returned null');
+
+      // Both calls failed - the server is unreachable. Don't blow away the
+      // widget with zeros; leave whatever it was showing in place.
+      if (stats == null && me == null) {
+        debugPrint('[StatsWidget] Both fetches failed - keeping last values');
+        return;
+      }
+      _lastStatsFetch = DateTime.now();
 
       final dailyMap = _extractDailyMap(stats);
       final today = _todaySeconds(dailyMap).round();
@@ -373,9 +380,9 @@ class HomeWidgetService {
 
   Future<ApiService?> _buildApiService() async {
     final prefs = await SharedPreferences.getInstance();
-    final serverUrl = prefs.getString('server_url');
+    final remoteUrl = prefs.getString('server_url');
     final token = prefs.getString('token');
-    if (serverUrl == null || token == null) return null;
+    if (remoteUrl == null || token == null) return null;
     final refreshToken = prefs.getString('refresh_token');
 
     Map<String, String>? customHeaders;
@@ -386,13 +393,26 @@ class HomeWidgetService {
             Map<String, String>.from(jsonDecode(headersJson) as Map);
       } catch (_) {}
     }
+    final headers = customHeaders ?? const <String, String>{};
+
+    // Prefer the local server if the user has it enabled and it's reachable -
+    // when the device is on home WiFi, the remote URL (reverse proxy) may not
+    // route, so always-using-remote would write zeros to the widget.
+    String baseUrl = remoteUrl;
+    final localEnabled = await PlayerSettings.getLocalServerEnabled();
+    final localUrl = await PlayerSettings.getLocalServerUrl();
+    if (localEnabled && localUrl.isNotEmpty) {
+      final localReachable = await ApiService.pingServer(localUrl, customHeaders: headers)
+          .timeout(const Duration(seconds: 3), onTimeout: () => false);
+      if (localReachable) baseUrl = localUrl;
+    }
 
     return ApiService(
-      baseUrl: serverUrl,
+      baseUrl: baseUrl,
       token: token,
       refreshToken: refreshToken,
       isLegacyToken: refreshToken == null,
-      customHeaders: customHeaders ?? const {},
+      customHeaders: headers,
     );
   }
 
