@@ -86,6 +86,7 @@ mixin _StateMixin on ChangeNotifier {
   StreamSubscription? _connectivitySub;
   bool _listeningToDownloads = false;
   String? _lastAuthKey;
+  bool? _lastUseLocalServer;
 
   final Map<String, Set<String>> _knownEpisodeIds = {};
 
