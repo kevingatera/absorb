@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:palette_generator/palette_generator.dart';
+import '../widgets/absorbing_shared.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
-import '../widgets/absorbing_shared.dart';
 import '../widgets/home_section.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/shimmer.dart';
@@ -738,21 +738,34 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       child: Icon(Icons.headphones_rounded, size: 32, color: cs.onSurfaceVariant),
     );
     if (coverUrl == null) return fallback;
-    if (coverUrl.startsWith('/')) {
-      return Image.file(
-        File(coverUrl),
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => fallback,
+
+    final isLocal = coverUrl.startsWith('/');
+    Widget image({required BoxFit fit}) {
+      if (isLocal) {
+        return Image.file(File(coverUrl), fit: fit,
+            errorBuilder: (_, __, ___) => fallback);
+      }
+      return CachedNetworkImage(
+        imageUrl: coverUrl,
+        fit: fit,
+        httpHeaders: headers,
+        fadeInDuration: Duration.zero,
+        fadeOutDuration: Duration.zero,
+        placeholder: (_, __) => fallback,
+        errorWidget: (_, __, ___) => fallback,
       );
     }
-    return CachedNetworkImage(
-      imageUrl: coverUrl,
-      fit: BoxFit.cover,
-      httpHeaders: headers,
-      fadeInDuration: Duration.zero,
-      fadeOutDuration: Duration.zero,
-      placeholder: (_, __) => fallback,
-      errorWidget: (_, __, ___) => fallback,
+
+    // Rectangle mode: tile aspect (2:3) matches most book covers, so fill it.
+    if (widget.rectangleCovers) return image(fit: BoxFit.cover);
+
+    // Square mode: tile is 1:1. Most audiobook covers are square and fill it,
+    // but rectangular covers would letterbox - fill the gaps with a blurred
+    // copy of the cover (matches the absorbing card aesthetic). Both image()
+    // calls share the same cached bytes by URL.
+    return BlurPaddedCover(
+      child: image(fit: BoxFit.contain),
+      blurChild: image(fit: BoxFit.cover),
     );
   }
 
