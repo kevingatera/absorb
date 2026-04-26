@@ -23,9 +23,9 @@ workflows:
         script: flutter build apk --release --flavor github --dart-define=GITHUB_BUILD=true
       - name: Rename APK with version
         script: |
-          VERSION=$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //' | cut -d'+' -f1)
+          RAW=$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //')
           APK_SRC=$(ls build/app/outputs/apk/github/release/*.apk | head -1)
-          mv "$APK_SRC" "build/app/outputs/apk/github/release/absorb-${VERSION}.apk"
+          mv "$APK_SRC" "build/app/outputs/apk/github/release/absorb-${RAW}.apk"
       - name: Publish to GitHub Draft Release
         script: |
           VERSION="v$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //' | cut -d'+' -f1)"
@@ -70,11 +70,11 @@ workflows:
         script: flutter build appbundle --release --flavor playstore --dart-define=PLAYSTORE_BUILD=true
       - name: Rename APK and AAB with version
         script: |
-          VERSION=$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //' | cut -d'+' -f1)
+          RAW=$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //')
           APK_SRC=$(ls build/app/outputs/apk/github/release/*.apk | head -1)
-          mv "$APK_SRC" "build/app/outputs/apk/github/release/absorb-${VERSION}.apk"
+          mv "$APK_SRC" "build/app/outputs/apk/github/release/absorb-${RAW}.apk"
           AAB_SRC=$(ls build/app/outputs/bundle/playstoreRelease/*.aab | head -1)
-          mv "$AAB_SRC" "build/app/outputs/bundle/playstoreRelease/absorb-${VERSION}.aab"
+          mv "$AAB_SRC" "build/app/outputs/bundle/playstoreRelease/absorb-${RAW}.aab"
       - name: Publish to GitHub Draft Release
         script: |
           VERSION="v$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //' | cut -d'+' -f1)"
@@ -117,9 +117,9 @@ workflows:
         script: flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
       - name: Rename IPA with version
         script: |
-          VERSION=$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //' | cut -d'+' -f1)
+          RAW=$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //')
           IPA_SRC=$(ls build/ios/ipa/*.ipa | head -1)
-          mv "$IPA_SRC" "build/ios/ipa/absorb-${VERSION}.ipa"
+          mv "$IPA_SRC" "build/ios/ipa/absorb-${RAW}.ipa"
       - name: Publish IPA to GitHub Draft Release
         script: |
           VERSION="v$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //' | cut -d'+' -f1)"
@@ -178,13 +178,13 @@ workflows:
         script: flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
       - name: Rename APK, AAB and IPA with version
         script: |
-          VERSION=$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //' | cut -d'+' -f1)
+          RAW=$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //')
           APK_SRC=$(ls build/app/outputs/apk/github/release/*.apk | head -1)
-          mv "$APK_SRC" "build/app/outputs/apk/github/release/absorb-${VERSION}.apk"
+          mv "$APK_SRC" "build/app/outputs/apk/github/release/absorb-${RAW}.apk"
           AAB_SRC=$(ls build/app/outputs/bundle/playstoreRelease/*.aab | head -1)
-          mv "$AAB_SRC" "build/app/outputs/bundle/playstoreRelease/absorb-${VERSION}.aab"
+          mv "$AAB_SRC" "build/app/outputs/bundle/playstoreRelease/absorb-${RAW}.aab"
           IPA_SRC=$(ls build/ios/ipa/*.ipa | head -1)
-          mv "$IPA_SRC" "build/ios/ipa/absorb-${VERSION}.ipa"
+          mv "$IPA_SRC" "build/ios/ipa/absorb-${RAW}.ipa"
       - name: Publish all to GitHub Draft Release
         script: |
           VERSION="v$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //' | cut -d'+' -f1)"
