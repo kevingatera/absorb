@@ -10,6 +10,7 @@ import '../services/scoped_prefs.dart';
 import '../widgets/absorb_page_header.dart';
 import '../main.dart' show oledNotifier;
 import '../widgets/absorbing_card.dart';
+import '../widgets/offline_status_icon.dart';
 import '../l10n/app_localizations.dart';
 
 class AbsorbingScreen extends StatefulWidget {
@@ -522,26 +523,19 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             AbsorbPageHeader(
               title: l.absorbingTitle,
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-              trailing: GestureDetector(
-                onTap: () {
-                  final newVal = !lib.isManualOffline;
-                  lib.setManualOffline(newVal);
-                  if (newVal) {
-                    final dl = DownloadService();
-                    final itemId = _player.currentItemId;
-                    final epId = _player.currentEpisodeId;
-                    final dlKey = epId != null && itemId != null
-                        ? '$itemId-$epId'
-                        : itemId;
-                    if (dlKey == null || !dl.isDownloaded(dlKey)) {
-                      _stopAndRefresh(lib);
-                    }
+              trailing: OfflineStatusIcon(
+                onTapWhenOnline: () {
+                  lib.setManualOffline(true);
+                  final dl = DownloadService();
+                  final itemId = _player.currentItemId;
+                  final epId = _player.currentEpisodeId;
+                  final dlKey = epId != null && itemId != null
+                      ? '$itemId-$epId'
+                      : itemId;
+                  if (dlKey == null || !dl.isDownloaded(dlKey)) {
+                    _stopAndRefresh(lib);
                   }
                 },
-                child: Icon(
-                  effectiveOffline ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
-                  size: 20, color: effectiveOffline ? Colors.orange : Colors.green,
-                ),
               ),
               actions: [
                 // Stop button (visible when playing)

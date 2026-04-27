@@ -20,6 +20,7 @@ import '../widgets/playlist_detail_sheet.dart';
 import '../widgets/collection_detail_sheet.dart';
 import '../widgets/section_detail_sheet.dart';
 import '../widgets/feature_hint.dart';
+import '../widgets/offline_status_icon.dart';
 import 'app_shell.dart';
 import '../l10n/app_localizations.dart';
 
@@ -375,27 +376,20 @@ class HomeScreenState extends State<HomeScreen> {
                 SliverToBoxAdapter(
                   child: AbsorbPageHeader(
                     title: l.homeTitle,
-                    trailing: GestureDetector(
-                      onTap: () {
-                        final newVal = !lib.isManualOffline;
-                        lib.setManualOffline(newVal);
-                        if (newVal) {
-                          final dl = DownloadService();
-                          final player = AudioPlayerService();
-                          final itemId = player.currentItemId;
-                          final epId = player.currentEpisodeId;
-                          final dlKey = epId != null && itemId != null
-                              ? '$itemId-$epId'
-                              : itemId;
-                          if (dlKey == null || !dl.isDownloaded(dlKey)) {
-                            player.stop();
-                          }
+                    trailing: OfflineStatusIcon(
+                      onTapWhenOnline: () {
+                        lib.setManualOffline(true);
+                        final dl = DownloadService();
+                        final player = AudioPlayerService();
+                        final itemId = player.currentItemId;
+                        final epId = player.currentEpisodeId;
+                        final dlKey = epId != null && itemId != null
+                            ? '$itemId-$epId'
+                            : itemId;
+                        if (dlKey == null || !dl.isDownloaded(dlKey)) {
+                          player.stop();
                         }
                       },
-                      child: Icon(
-                        lib.isOffline ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
-                        size: 20, color: lib.isOffline ? Colors.orange : Colors.green,
-                      ),
                     ),
                     actions: [
                       if (allLibraries.length > 1)

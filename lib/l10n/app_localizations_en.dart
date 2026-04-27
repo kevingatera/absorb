@@ -18,6 +18,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get offline => 'Offline';
 
   @override
+  String get stillOffline => 'Still offline. Tap to try again.';
+
+  @override
   String get retry => 'Retry';
 
   @override

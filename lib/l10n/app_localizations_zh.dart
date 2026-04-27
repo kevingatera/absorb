@@ -18,6 +18,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get offline => '离线';
 
   @override
+  String get stillOffline => '仍处于离线状态。点击重试。';
+
+  @override
   String get retry => '重试';
 
   @override

@@ -20,6 +20,7 @@ import '../widgets/library_authors_tab.dart';
 import 'admin_podcasts_screen.dart';
 import 'upcoming_releases_screen.dart';
 import '../widgets/audible_series_sheet.dart' show showAudibleRegionPicker;
+import '../widgets/offline_status_icon.dart';
 import '../l10n/app_localizations.dart';
 
 /// Responsive grid column count based on available width.
@@ -1246,27 +1247,20 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
                 AbsorbPageHeader(
                   title: l.libraryTitle,
-                  trailing: GestureDetector(
-                    onTap: () {
-                      final newVal = !lib.isManualOffline;
-                      lib.setManualOffline(newVal);
-                      if (newVal) {
-                        final dl = DownloadService();
-                        final player = AudioPlayerService();
-                        final itemId = player.currentItemId;
-                        final epId = player.currentEpisodeId;
-                        final dlKey = epId != null && itemId != null
-                            ? '$itemId-$epId'
-                            : itemId;
-                        if (dlKey == null || !dl.isDownloaded(dlKey)) {
-                          player.stop();
-                        }
+                  trailing: OfflineStatusIcon(
+                    onTapWhenOnline: () {
+                      lib.setManualOffline(true);
+                      final dl = DownloadService();
+                      final player = AudioPlayerService();
+                      final itemId = player.currentItemId;
+                      final epId = player.currentEpisodeId;
+                      final dlKey = epId != null && itemId != null
+                          ? '$itemId-$epId'
+                          : itemId;
+                      if (dlKey == null || !dl.isDownloaded(dlKey)) {
+                        player.stop();
                       }
                     },
-                    child: Icon(
-                      lib.isOffline ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
-                      size: 20, color: lib.isOffline ? Colors.orange : Colors.green,
-                    ),
                   ),
                   actions: hasMultipleLibraries ? [
                     GestureDetector(

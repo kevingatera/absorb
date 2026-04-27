@@ -134,6 +134,60 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     _manualOffline = prefs.getBool('manual_offline_mode') ?? false;
   }
 
+  /// User-triggered reconnect attempt for the offline cloud icon. If currently
+  /// offline (manual or network), pings the server (local first when enabled)
+  /// and flips back online on success. Returns true if online when the call
+  /// completes. Sets [isReconnecting] for the duration so the UI can spin.
+  Future<bool> tryReconnect() async {
+    if (!isOffline) return true;
+    if (_isReconnecting) return !isOffline;
+    debugPrint('[Library] tryReconnect: manual=$_manualOffline network=$_networkOffline');
+    _isReconnecting = true;
+    notifyListeners();
+    try {
+      if (_manualOffline) {
+        await setManualOffline(false);
+        return !isOffline;
+      }
+      final auth = _auth;
+      if (auth == null) return false;
+      if (auth.localServerEnabled && auth.localServerUrl.isNotEmpty) {
+        final localReachable = await ApiService.pingServer(
+          auth.localServerUrl,
+          customHeaders: auth.customHeaders,
+        ).timeout(const Duration(seconds: 5), onTimeout: () => false);
+        if (localReachable) {
+          debugPrint('[Library] tryReconnect: local server reachable');
+          await auth.checkLocalServer();
+          _stopServerPingTimer();
+          setNetworkOffline(false);
+          return true;
+        }
+        if (auth.useLocalServer) {
+          debugPrint('[Library] tryReconnect: local unreachable, clearing override');
+          auth.clearLocalOverride();
+        }
+      }
+      final serverUrl = auth.serverUrl;
+      if (serverUrl == null || serverUrl.isEmpty) return false;
+      final reachable = await ApiService.pingServer(
+        serverUrl,
+        customHeaders: auth.customHeaders,
+      ).timeout(const Duration(seconds: 5), onTimeout: () => false);
+      if (reachable) {
+        debugPrint('[Library] tryReconnect: remote server reachable');
+        _stopServerPingTimer();
+        setNetworkOffline(false);
+        return true;
+      }
+      debugPrint('[Library] tryReconnect: still unreachable');
+      return false;
+    } finally {
+      _isReconnecting = false;
+      notifyListeners();
+    }
+  }
+
   void setNetworkOffline(bool offline) {
     final wasOffline = _networkOffline;
     _networkOffline = offline;

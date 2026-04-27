@@ -61,6 +61,7 @@ mixin _StateMixin on ChangeNotifier {
   bool _manualOffline = false;
   bool _networkOffline = false;
   bool _deviceHasConnectivity = true;
+  bool _isReconnecting = false;
   Timer? _serverPingTimer;
   Timer? _healthCheckTimer;
   Timer? _localProbeTimer;
@@ -105,6 +106,7 @@ mixin _StateMixin on ChangeNotifier {
   Set<String> get hiddenSectionIds => _hiddenSectionIds;
   bool get isOffline => _manualOffline || _networkOffline;
   bool get isManualOffline => _manualOffline;
+  bool get isReconnecting => _isReconnecting;
   Set<String> get manualAbsorbAdds => _manualAbsorbAdds;
   Set<String> get manualAbsorbRemoves => _manualAbsorbRemoves;
   List<String> get absorbingBookIds => _absorbingBookIds;

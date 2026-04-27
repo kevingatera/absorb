@@ -5,6 +5,7 @@
 
   "online": "在线",
   "offline": "离线",
+  "stillOffline": "仍处于离线状态。点击重试。",
   "retry": "重试",
   "cancel": "取消",
   "delete": "删除",

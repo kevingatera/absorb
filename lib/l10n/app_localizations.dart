@@ -116,6 +116,12 @@ abstract class AppLocalizations {
   /// **'Offline'**
   String get offline;
 
+  /// No description provided for @stillOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Still offline. Tap to try again.'**
+  String get stillOffline;
+
   /// No description provided for @retry.
   ///
   /// In en, this message translates to:

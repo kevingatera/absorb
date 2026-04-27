@@ -5,6 +5,7 @@
 
   "online": "Online",
   "offline": "Offline",
+  "stillOffline": "Still offline. Tap to try again.",
   "retry": "Retry",
   "cancel": "Cancel",
   "delete": "Delete",
