@@ -244,7 +244,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     _wasCasting = _cast.isCasting;
     _cast.addListener(_onCastChanged);
     // Try immediately; _onLibraryChanged picks it up once data loads.
-    _deriveCoverScheme();
+    // Deferred to post-frame so Theme.of(context) inside _deriveCoverScheme
+    // doesn't establish an inherited-widget dependency during initState.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _deriveCoverScheme();
+    });
     context.read<LibraryProvider>().addListener(_onLibraryChanged);
     WelcomeSheet.showIfNeeded(context);
     _checkForUpdate();
