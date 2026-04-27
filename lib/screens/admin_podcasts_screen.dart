@@ -279,7 +279,24 @@ class _PodcastSearchSheetState extends State<_PodcastSearchSheet> {
         final data = jsonDecode(response.body);
         final results = data['results'] as List?;
         if (results != null && results.isNotEmpty) {
-          final pod = results[0] as Map<String, dynamic>;
+          final raw = results[0] as Map<String, dynamic>;
+          // iTunes lookup uses different keys than ABS search. Normalize so
+          // ApiService.createPodcast (which reads title/cover/id/etc) works.
+          final explicitness = raw['trackExplicitness'] ?? raw['collectionExplicitness'];
+          final pod = <String, dynamic>{
+            'title': raw['trackName'] ?? raw['collectionName'] ?? '',
+            'artistName': raw['artistName'] ?? '',
+            'description': '',
+            'releaseDate': raw['releaseDate'] ?? '',
+            'genres': raw['genres'] ?? [],
+            'cover': raw['artworkUrl600'] ?? raw['artworkUrl100'] ?? '',
+            'feedUrl': raw['feedUrl'] ?? '',
+            'pageUrl': raw['collectionViewUrl'] ?? raw['trackViewUrl'] ?? '',
+            'id': raw['collectionId']?.toString() ?? raw['trackId']?.toString() ?? '',
+            'artistId': raw['artistId']?.toString() ?? '',
+            'explicit': explicitness == 'explicit',
+            'language': null,
+          };
           _openPreview(pod);
           return;
         }
