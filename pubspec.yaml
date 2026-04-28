@@ -36,7 +36,8 @@ dependencies:
   just_audio:
     path: packages/just_audio
     
-  audio_service: ^0.18.13
+  audio_service:
+    path: packages/audio_service
 
   # CarPlay
   flutter_carplay: ^1.2.11
