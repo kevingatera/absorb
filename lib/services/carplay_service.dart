@@ -147,7 +147,7 @@ class CarPlayService {
     final items = entries.map((e) => _playableListItem(e, api)).toList();
     return CPListTemplate(
       sections: [CPListSection(items: items)],
-      title: 'Recently Added',
+      title: 'New',
       systemIcon: 'sparkles',
     );
   }

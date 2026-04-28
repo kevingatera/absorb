@@ -410,22 +410,41 @@ class AndroidAutoService {
       }).where((l) => l.id.isNotEmpty && (l.isBook || l.isPodcast)).toList();
 
       // ── Personalized shelves merged from all libraries ──
+      // Book libraries: continue-listening / continue-series for the Continue
+      // tab, recently-added for the New tab.
+      // Podcast libraries: continue-listening for the Continue tab. New
+      // episodes come from a separate /recent-episodes call below since the
+      // personalized endpoint's `episodes-recently-added` shelf gets stripped
+      // when a `shelves` filter is passed.
       final clFutures = _libraries.map((lib) => api.getPersonalizedView(
             lib.id,
             include: const ['numEpisodesIncomplete'],
-            shelves: const ['continue-listening', 'continue-series', 'recently-added'],
+            shelves: lib.isPodcast
+                ? const ['continue-listening']
+                : const ['continue-listening', 'continue-series', 'recently-added'],
             limit: 10,
           ));
+
+      // Newly added podcast episodes per podcast library (empty for book libs).
+      final episodeFutures = _libraries
+          .map((lib) => lib.isPodcast
+              ? api.getRecentEpisodes(lib.id, limit: 10)
+              : Future.value(const <dynamic>[]))
+          .toList();
+
       final allSections = await Future.wait(clFutures);
+      final allRecentEpisodes = await Future.wait(episodeFutures);
 
       // Continue Listening: collect, dedupe, sort by lastUpdate desc
       final continueSeenIds = <String>{};
       final continueEntities = <Map<String, dynamic>>[];
-      // Recently Added: collect, dedupe, sort by addedAt desc
-      final recentSeenIds = <String>{};
-      final recentEntities = <Map<String, dynamic>>[];
+      // Recently Added: ranked entries with their addedAt for cross-library sort.
+      final recentSeenKeys = <String>{};
+      final recentRanked = <(double, AutoBookEntry)>[];
 
-      for (final sections in allSections) {
+      for (var i = 0; i < _libraries.length; i++) {
+        final lib = _libraries[i];
+        final sections = allSections[i];
         for (final section in sections) {
           final sectionId = section['id'] as String? ?? '';
           final entities = section['entities'] as List<dynamic>? ?? [];
@@ -440,15 +459,31 @@ class AndroidAutoService {
                 }
               }
             }
-          } else if (sectionId == 'recently-added') {
+          } else if (sectionId == 'recently-added' && lib.isBook) {
             for (final entity in entities) {
-              if (entity is Map<String, dynamic>) {
-                final id = entity['id'] as String? ?? '';
-                if (id.isNotEmpty && recentSeenIds.add(id)) {
-                  recentEntities.add(entity);
-                }
-              }
+              if (entity is! Map<String, dynamic>) continue;
+              final id = entity['id'] as String? ?? '';
+              if (id.isEmpty || !recentSeenKeys.add(id)) continue;
+              final entry = _entityToEntry(entity, api);
+              if (entry == null) continue;
+              final addedAt = (entity['addedAt'] as num?)?.toDouble() ?? 0;
+              recentRanked.add((addedAt, entry));
             }
+          }
+        }
+
+        // Newly added podcast episodes for this library.
+        if (lib.isPodcast) {
+          final episodes = allRecentEpisodes[i];
+          for (final ep in episodes) {
+            if (ep is! Map<String, dynamic>) continue;
+            final entry = _recentEpisodeToEntry(ep, lib.id);
+            if (entry == null) continue;
+            if (!recentSeenKeys.add(entry.id)) continue;
+            final addedAt = (ep['addedAt'] as num?)?.toDouble()
+                ?? (ep['publishedAt'] as num?)?.toDouble()
+                ?? 0;
+            recentRanked.add((addedAt, entry));
           }
         }
       }
@@ -463,15 +498,8 @@ class AndroidAutoService {
           .whereType<AutoBookEntry>()
           .toList();
 
-      recentEntities.sort((a, b) {
-        final aTime = (a['addedAt'] as num?)?.toDouble() ?? 0;
-        final bTime = (b['addedAt'] as num?)?.toDouble() ?? 0;
-        return bTime.compareTo(aTime);
-      });
-      _recentlyAdded = recentEntities
-          .map((e) => _entityToEntry(e, api))
-          .whereType<AutoBookEntry>()
-          .toList();
+      recentRanked.sort((a, b) => b.$1.compareTo(a.$1));
+      _recentlyAdded = recentRanked.map((e) => e.$2).toList();
     } catch (e) {
       // Server unreachable — clear stale tabs so only Downloads shows offline
       _continueListening = [];
@@ -548,6 +576,50 @@ class AndroidAutoService {
     );
   }
 
+  /// Convert an episode object from /api/libraries/:id/recent-episodes into
+  /// an AutoBookEntry. Each episode includes the parent show's metadata under
+  /// either `podcast.media.metadata` (full library item shape) or
+  /// `podcast.metadata` (compact shape).
+  AutoBookEntry? _recentEpisodeToEntry(Map<String, dynamic> ep, String libraryId) {
+    final episodeId = ep['id'] as String?;
+    if (episodeId == null || episodeId.isEmpty) return null;
+
+    final showId = (ep['libraryItemId'] as String?)
+        ?? (ep['podcastId'] as String?)
+        ?? ((ep['podcast'] as Map<String, dynamic>?)?['id'] as String?);
+    if (showId == null || showId.isEmpty) return null;
+
+    final episodeTitle = ep['title'] as String? ?? 'Episode';
+
+    String? showTitle;
+    final podcast = ep['podcast'] as Map<String, dynamic>?;
+    if (podcast != null) {
+      final mediaMeta =
+          (podcast['media'] as Map<String, dynamic>?)?['metadata'] as Map<String, dynamic>?;
+      showTitle = mediaMeta?['title'] as String?
+          ?? (podcast['metadata'] as Map<String, dynamic>?)?['title'] as String?;
+    }
+    showTitle ??= ep['podcastTitle'] as String? ?? '';
+
+    final duration = (ep['duration'] as num?)?.toDouble()
+        ?? ((ep['audioFile'] as Map<String, dynamic>?)?['duration'] as num?)?.toDouble()
+        ?? 0;
+    final chapters = ep['chapters'] as List<dynamic>? ?? const [];
+
+    return AutoBookEntry(
+      id: '$showId-$episodeId',
+      title: episodeTitle,
+      author: showTitle,
+      duration: duration,
+      coverUrl: localCoverUri(showId),
+      chapters: chapters,
+      episodeId: episodeId,
+      showId: showId,
+      mediaType: 'podcast',
+      libraryId: libraryId,
+    );
+  }
+
   AutoBookEntry? _libraryItemToEntry(
       Map<String, dynamic> item, ApiService api) {
     final id = item['id'] as String?;
@@ -590,7 +662,7 @@ class AndroidAutoService {
       ),
       MediaItem(
         id: AutoMediaIds.recentlyAdded,
-        title: 'Recently Added',
+        title: 'New',
         playable: false,
       ),
       MediaItem(
