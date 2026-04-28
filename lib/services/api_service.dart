@@ -650,6 +650,17 @@ class ApiService {
   /// Build a full audio track URL from a contentUrl returned by the play session.
   String buildTrackUrl(String contentUrl) {
     if (contentUrl.startsWith('http')) return contentUrl;
+    // ABS servers with ROUTER_BASE_PATH set return contentUrls that already
+    // include the base path (e.g. "/abs/public/session/.../track/0"). If the
+    // user's server URL also includes that base path, blindly concatenating
+    // would double it ("/abs/abs/..."). Detect and use origin only.
+    final baseUri = Uri.parse(_cleanBaseUrl);
+    final basePath = baseUri.path;
+    if (basePath.isNotEmpty && contentUrl.startsWith('$basePath/')) {
+      final url = '${baseUri.origin}$contentUrl?token=$token';
+      debugPrint('[ABS] Track URL: $url');
+      return url;
+    }
     final url = '$_cleanBaseUrl$contentUrl?token=$token';
     debugPrint('[ABS] Track URL: $url');
     return url;
