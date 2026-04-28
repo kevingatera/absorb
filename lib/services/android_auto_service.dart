@@ -240,7 +240,20 @@ class AndroidAutoService {
     final token = prefs.getString('token');
     final refreshToken = prefs.getString('refresh_token');
     if (url == null || token == null) return null;
-    return ApiService(baseUrl: url, token: token, refreshToken: refreshToken, isLegacyToken: refreshToken == null);
+    Map<String, String> customHeaders = const {};
+    final headersJson = prefs.getString('custom_headers');
+    if (headersJson != null && headersJson.isNotEmpty) {
+      try {
+        customHeaders = Map<String, String>.from(jsonDecode(headersJson) as Map);
+      } catch (_) {}
+    }
+    return ApiService(
+      baseUrl: url,
+      token: token,
+      refreshToken: refreshToken,
+      isLegacyToken: refreshToken == null,
+      customHeaders: customHeaders,
+    );
   }
 
   Future<String?> getDefaultLibraryId() async {
