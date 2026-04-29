@@ -51,9 +51,15 @@ struct SkipBackIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Skip Back"
     static var description = IntentDescription("Skip backward in the current audiobook.")
 
+    @Dependency
+    private var core: AbsorbPlayerCoreProtocol
+
     func perform() async throws -> some IntentResult {
-        NSLog("[WidgetDebug] SkipBackIntent.perform fired")
+        core.log("[NativeCore] SkipBackIntent.perform fired (host process)")
         activateAudioSession()
+        let seconds = UserDefaults(suiteName: appGroup)?
+            .integer(forKey: "widget_skip_back")
+        core.skipBackward(seconds: (seconds ?? 0) > 0 ? seconds! : 10)
         postDarwinNotification("com.barnabas.absorb.widget.skipBack")
         return .result()
     }
@@ -97,9 +103,15 @@ struct SkipForwardIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Skip Forward"
     static var description = IntentDescription("Skip forward in the current audiobook.")
 
+    @Dependency
+    private var core: AbsorbPlayerCoreProtocol
+
     func perform() async throws -> some IntentResult {
-        NSLog("[WidgetDebug] SkipForwardIntent.perform fired")
+        core.log("[NativeCore] SkipForwardIntent.perform fired (host process)")
         activateAudioSession()
+        let seconds = UserDefaults(suiteName: appGroup)?
+            .integer(forKey: "widget_skip_forward")
+        core.skipForward(seconds: (seconds ?? 0) > 0 ? seconds! : 30)
         postDarwinNotification("com.barnabas.absorb.widget.skipForward")
         return .result()
     }
