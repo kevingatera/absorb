@@ -753,14 +753,18 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
       return;
     }
 
-    _absorbingIdsAdd(nextKey, afterKey: finishedBookId);
+    final mode = await PlayerSettings.getBookQueueMode();
+    if (mode == 'auto_next') {
+      _absorbingIdsAdd(nextKey, afterKey: finishedBookId);
+    } else {
+      _absorbingIdsAdd(nextKey, atFront: false);
+    }
     _absorbingItemCache[nextKey] = next.value;
     _manualAbsorbAdds.add(nextKey);
     _saveManualAbsorbing();
     notifyListeners();
     debugPrint('[Absorbing] Auto-added next series book: $nextKey (seq ${nextSeq.first})');
 
-    final mode = await PlayerSettings.getBookQueueMode();
     if (mode != 'auto_next') return;
     if (AudioPlayerService.wasNoisyPause) return;
     if (AudioPlayerService().isPlaying) return;
