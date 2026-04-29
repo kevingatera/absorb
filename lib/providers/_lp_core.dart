@@ -816,6 +816,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
     _startLocalProbeTimer();
     _restartIdleTimer();
+    if (!isOffline && !_manualOffline) {
+      (this as LibraryProvider).checkSubscribedPodcasts();
+    }
   }
 
   void _restartIdleTimer() {
