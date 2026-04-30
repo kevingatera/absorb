@@ -138,23 +138,21 @@ workflows:
       - name: Publish to TestFlight
         script: |
           # Replaces the auto `publishing.app_store_connect.submit_to_testflight`
-          # so we can attach optional TestFlight "What to Test" notes from the
-          # BETA_TEST_NOTES env var. Caller (scripts/codemagic-ios.sh) sets the
-          # var when triggering; if unset, the build is uploaded without notes.
+          # so we can attach optional TestFlight "What to Test" notes
+          # (BETA_TEST_NOTES) and assign the build to a beta group
+          # (BETA_GROUP). Caller (scripts/codemagic-ios.sh) sets the env vars
+          # when triggering; if unset, the build is uploaded without them.
           IPA_PATH=$(ls build/ios/ipa/*.ipa | head -1)
+          ARGS=(--path "$IPA_PATH" --testflight)
           if [ -n "$BETA_TEST_NOTES" ]; then
-            echo "Publishing with TestFlight notes ($(printf '%s' "$BETA_TEST_NOTES" | wc -c) chars)"
-            app-store-connect publish \
-              --path "$IPA_PATH" \
-              --testflight \
-              --whats-new "$BETA_TEST_NOTES" \
-              --locale en-US
-          else
-            echo "Publishing without TestFlight notes (BETA_TEST_NOTES unset)"
-            app-store-connect publish \
-              --path "$IPA_PATH" \
-              --testflight
+            echo "  + TestFlight notes ($(printf '%s' "$BETA_TEST_NOTES" | wc -c) chars)"
+            ARGS+=(--whats-new "$BETA_TEST_NOTES" --locale en-US)
           fi
+          if [ -n "$BETA_GROUP" ]; then
+            echo "  + Beta group: $BETA_GROUP"
+            ARGS+=(--beta-group "$BETA_GROUP")
+          fi
+          app-store-connect publish "${ARGS[@]}"
     artifacts:
       - build/ios/ipa/*.ipa
 
