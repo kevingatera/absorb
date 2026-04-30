@@ -116,15 +116,34 @@ static inline float processBiquad(BiquadCoeffs *c, BiquadDelay *d, float x) {
 
 static void rebuildCoefficients(TapContext *ctx) {
     float Fs = ctx->sampleRate;
+    // Clamp band frequencies below Nyquist with 5% headroom. Computing a
+    // peaking biquad at f0 >= Fs/2 puts the filter poles outside the unit
+    // circle, the filter blows up, samples turn into NaN, and the output
+    // goes silent. This was the root cause of "Red Rising plays but no
+    // sound" reports - low-bitrate AAC m4b decodes to 22050Hz so the
+    // 14kHz band tripped the instability.
+    float maxBandHz = (Fs * 0.5f) * 0.95f;
     for (int i = 0; i < EQ_NUM_BANDS; i++) {
         float dBGain = (float)atomic_load_explicit(&sParams.bandLevels[i], memory_order_relaxed) / 100.0f;
-        ctx->coeffs[i] = peakingEQ(kBandFrequencies[i], dBGain, kDefaultQ, Fs);
+        float bandHz = kBandFrequencies[i];
+        if (bandHz >= maxBandHz) {
+            // Above Nyquist - use unity (passthrough) so the filter is stable.
+            BiquadCoeffs unity = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+            ctx->coeffs[i] = unity;
+        } else {
+            ctx->coeffs[i] = peakingEQ(bandHz, dBGain, kDefaultQ, Fs);
+        }
     }
 
     // Bass boost: low shelf at 120 Hz, gain 0-12 dB mapped from strength 0-1000
     int bassStrength = atomic_load_explicit(&sParams.bassBoostStrength, memory_order_relaxed);
     float bassdB = (float)bassStrength / 1000.0f * 12.0f;
-    ctx->bassCoeffs = lowShelf(120.0f, bassdB, Fs);
+    if (120.0f >= maxBandHz) {
+        BiquadCoeffs unity = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+        ctx->bassCoeffs = unity;
+    } else {
+        ctx->bassCoeffs = lowShelf(120.0f, bassdB, Fs);
+    }
 
     ctx->lastCoeffVersion = atomic_load_explicit(&sParams.coeffVersion, memory_order_relaxed);
 }
