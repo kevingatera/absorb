@@ -1,3 +1,5 @@
+import AbsorbPlayerCore
+import AppIntents
 import Flutter
 import UIKit
 import AVFoundation
@@ -38,8 +40,45 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
     // work without opening the app.
     registerWidgetNotifications()
 
-    // Register platform channels on the shared engine
+    // Register platform channels on the shared engine. Must come before the
+    // logSink wiring below so widgetChannel exists when we hand it off.
     registerPlatformChannels()
+
+    // Route native player core log output into the Flutter widget channel's
+    // "log" method, which surfaces lines as `[WidgetDebug] [NativeCore] ...`
+    // in absorb's in-app log viewer. No Mac/Xcode needed to verify behavior.
+    AbsorbPlayerCore.logSink = { [weak self] line in
+      DispatchQueue.main.async {
+        self?.widgetChannel?.invokeMethod("log", arguments: ["msg": line])
+      }
+    }
+
+    // Same routing for the EQ tap's format diagnostics, so when a user
+    // reports "EQ on, this book has no sound" we can see the post-decode
+    // PCM format the tap actually received (low-bitrate AAC m4b often
+    // shows up here as mono / unusual sample rate).
+    AudioEQProcessor.setFormatLogger { [weak self] line in
+      DispatchQueue.main.async {
+        self?.widgetChannel?.invokeMethod("log", arguments: ["msg": line])
+      }
+    }
+
+    // Register the native player core as an AppIntent dependency. The widget
+    // intent declares `@Dependency var core: AbsorbPlayerCoreProtocol` - that
+    // signals to iOS to launch this host app process to run the intent's
+    // perform(), and the dependency manager hands back this concrete instance
+    // so the intent can drive audio in-process. Without this, the widget
+    // intent runs in the widget extension's sandbox and can't reach our audio
+    // engine.
+    //
+    // AppIntents (and AppDependencyManager) are iOS 16+. Runner ships back
+    // to iOS 15 so we have to guard the call. iOS 15 users won't have the
+    // widget anyway (widget extension's deployment target is iOS 17).
+    if #available(iOS 16.0, *) {
+      let core: AbsorbPlayerCoreProtocol = AbsorbPlayerCore.shared
+      AppDependencyManager.shared.add(dependency: core)
+      AbsorbPlayerCore.logSink?("[NativeCore] Registered as AppIntent dependency")
+    }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -150,6 +189,23 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
           NSLog("[WidgetDebug] getGroupContainerPath: containerURL returned nil - app group entitlement missing or misconfigured")
           result(nil)
         }
+      case "excludeFromBackup":
+        // Stops iCloud from backing up downloaded audio files. Audiobooks
+        // are large and re-downloadable, no point eating user's iCloud
+        // quota. Called by DownloadService for each file post-download or
+        // post-migration.
+        let args = call.arguments as? [String: Any]
+        guard let path = args?["path"] as? String else { result(false); return }
+        var url = URL(fileURLWithPath: path)
+        do {
+          var values = URLResourceValues()
+          values.isExcludedFromBackup = true
+          try url.setResourceValues(values)
+          result(true)
+        } catch {
+          NSLog("[WidgetDebug] excludeFromBackup failed for %@: %@", path, error.localizedDescription)
+          result(false)
+        }
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -162,6 +218,40 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
       switch call.method {
       case "isBluetoothAudioConnected":
         result(self?.isBluetoothAudioConnected() ?? false)
+
+      case "getAudioDiagnostics":
+        // Snapshot of AVAudioSession state for the "tap play, no sound"
+        // diagnosis. Returns category, mode, options, output volume,
+        // current route ports, and the session-active hint that iOS
+        // exposes. Dart side logs all of it via [AudioDiag] markers.
+        let session = AVAudioSession.sharedInstance()
+        let route = session.currentRoute
+        let outputs = route.outputs.map { port -> [String: String] in
+          [
+            "name": port.portName,
+            "type": port.portType.rawValue,
+            "uid": port.uid,
+          ]
+        }
+        let inputs = route.inputs.map { port -> [String: String] in
+          [
+            "name": port.portName,
+            "type": port.portType.rawValue,
+          ]
+        }
+        let info: [String: Any] = [
+          "category": session.category.rawValue,
+          "mode": session.mode.rawValue,
+          "categoryOptions": session.categoryOptions.rawValue,
+          "outputVolume": session.outputVolume,
+          "isOtherAudioPlaying": session.isOtherAudioPlaying,
+          "secondaryAudioShouldBeSilencedHint": session.secondaryAudioShouldBeSilencedHint,
+          "outputs": outputs,
+          "inputs": inputs,
+          "sampleRate": session.sampleRate,
+          "ioBufferDuration": session.ioBufferDuration,
+        ]
+        result(info)
 
       case "init":
         // iOS has no system EQ, so we advertise a fixed 5-band layout that

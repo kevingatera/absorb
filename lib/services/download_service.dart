@@ -167,9 +167,18 @@ class DownloadService extends ChangeNotifier {
   String? get customDownloadPath => _customDownloadPath;
 
   /// Get the effective download base directory.
+  ///
+  /// On iOS, audio files live in the app group container so the widget
+  /// extension and the native player core can read them. We fall back to
+  /// Documents/ if the app group lookup fails (entitlement not yet rolled
+  /// out, etc.) so existing users don't lose their downloads.
   Future<String> get downloadBasePath async {
     if (_customDownloadPath != null && _customDownloadPath!.isNotEmpty) {
       return _customDownloadPath!;
+    }
+    if (Platform.isIOS) {
+      final groupPath = await _iosAppGroupAudioBase();
+      if (groupPath != null) return groupPath;
     }
     final appDir = await getApplicationDocumentsDirectory();
     return '${appDir.path}/downloads';
@@ -252,6 +261,57 @@ class DownloadService extends ChangeNotifier {
   }
 
   static const _storageChannel = MethodChannel('com.absorb.storage');
+  static const _widgetChannel = MethodChannel('com.absorb.widget');
+
+  /// Cached iOS app group container path. Populated lazily by
+  /// [_iosAppGroupAudioBase] and cleared if the lookup fails so we retry
+  /// (the app group entitlement may roll in mid-session).
+  String? _iosAppGroupContainerPath;
+
+  /// Stops iCloud from backing up an audio file. Audiobooks are large and
+  /// re-downloadable from the user's ABS server, so eating their iCloud
+  /// quota would only cause problems (system backup breaks once quota is
+  /// hit). iOS-only no-op elsewhere.
+  Future<void> _excludeFromBackup(String path) async {
+    if (!Platform.isIOS) return;
+    try {
+      await _widgetChannel.invokeMethod<bool>(
+        'excludeFromBackup',
+        {'path': path},
+      );
+    } catch (e) {
+      debugPrint('[Download] excludeFromBackup failed for $path: $e');
+    }
+  }
+
+  /// Returns the iOS app group's audio directory (`<group>/audio/downloads`),
+  /// or null on Android / when the app group entitlement isn't available.
+  /// Audio downloads live here so the native player core can read them
+  /// from the widget extension (the widget can't reach Documents/).
+  Future<String?> _iosAppGroupAudioBase() async {
+    if (!Platform.isIOS) return null;
+    var groupPath = _iosAppGroupContainerPath;
+    if (groupPath == null) {
+      try {
+        groupPath = await _widgetChannel.invokeMethod<String>('getGroupContainerPath');
+      } catch (e) {
+        debugPrint('[Download] getGroupContainerPath failed: $e');
+        return null;
+      }
+      if (groupPath == null || groupPath.isEmpty) return null;
+      _iosAppGroupContainerPath = groupPath;
+    }
+    final dir = Directory('$groupPath/audio/downloads');
+    if (!dir.existsSync()) {
+      try {
+        dir.createSync(recursive: true);
+      } catch (e) {
+        debugPrint('[Download] create app group audio dir failed: $e');
+        return null;
+      }
+    }
+    return dir.path;
+  }
 
   /// Get device storage info: {totalBytes, availableBytes}. Returns null on failure.
   static Future<Map<String, int>?> getDeviceStorage() async {
@@ -324,6 +384,14 @@ class DownloadService extends ChangeNotifier {
     // On iOS, remap paths when the app container UUID changes after updates
     await _migrateIOSPaths();
 
+    // On iOS, move existing audio downloads from Documents/ into the app
+    // group container so the widget / native player core can read them.
+    // Runs in background so it doesn't block init() if the user has many
+    // gigabytes of downloaded books to relocate.
+    if (Platform.isIOS) {
+      unawaited(_migrateIOSAudioToAppGroup());
+    }
+
     // Re-save to persist any metadata extracted from sessionData
     if (_downloads.isNotEmpty) await _save();
     notifyListeners();
@@ -389,8 +457,102 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
+  /// Move existing audio files from Documents/ to the iOS app group container
+  /// so the widget extension / native player core can read them. Files that
+  /// fail to move stay in Documents/ where they continue to play through
+  /// Flutter; we'll retry on the next launch. Atomic per-file via
+  /// `File.rename()` (works because both directories are on APFS).
+  Future<void> _migrateIOSAudioToAppGroup() async {
+    if (!Platform.isIOS || _downloads.isEmpty) return;
+
+    final groupBase = await _iosAppGroupAudioBase();
+    if (groupBase == null) {
+      debugPrint('[Download] App group not available, skipping audio migration');
+      return;
+    }
+    final appDir = await getApplicationDocumentsDirectory();
+    final docsBase = '${appDir.path}/downloads';
+
+    int moved = 0;
+    int failed = 0;
+    bool changed = false;
+    final entries = Map<String, DownloadInfo>.from(_downloads);
+
+    for (final entry in entries.entries) {
+      final info = entry.value;
+      if (info.status != DownloadStatus.downloaded) continue;
+
+      final newPaths = <String>[];
+      bool needsUpdate = false;
+      for (final oldPath in info.localPaths) {
+        // Already in app group? Keep as-is.
+        if (oldPath.startsWith(groupBase)) {
+          newPaths.add(oldPath);
+          continue;
+        }
+        // Not under Documents/downloads/? Leave alone (custom path or odd).
+        if (!oldPath.startsWith(docsBase)) {
+          newPaths.add(oldPath);
+          continue;
+        }
+        // Build the parallel path under the app group.
+        final relative = oldPath.substring(docsBase.length);
+        final newPath = '$groupBase$relative';
+        try {
+          final oldFile = File(oldPath);
+          if (!oldFile.existsSync()) {
+            // Old file gone; leave the path untouched and let the validator
+            // mark it broken later.
+            newPaths.add(oldPath);
+            continue;
+          }
+          // Make sure parent dirs exist on the destination side.
+          final parent = Directory(newPath.substring(0, newPath.lastIndexOf('/')));
+          if (!parent.existsSync()) parent.createSync(recursive: true);
+          // If dest exists already (partial prior run), remove it first.
+          final newFile = File(newPath);
+          if (newFile.existsSync()) {
+            try { newFile.deleteSync(); } catch (_) {}
+          }
+          await oldFile.rename(newPath);
+          await _excludeFromBackup(newPath);
+          newPaths.add(newPath);
+          needsUpdate = true;
+          moved++;
+        } catch (e) {
+          debugPrint('[Download] Audio migration failed for $oldPath: $e');
+          newPaths.add(oldPath);
+          failed++;
+        }
+      }
+
+      if (needsUpdate) {
+        _downloads[entry.key] = DownloadInfo(
+          itemId: info.itemId,
+          status: info.status,
+          progress: info.progress,
+          localPaths: newPaths,
+          sessionData: info.sessionData,
+          title: info.title,
+          author: info.author,
+          coverUrl: info.coverUrl,
+          localCoverPath: info.localCoverPath,
+          localDirPath: info.localDirPath,
+          libraryId: info.libraryId,
+        );
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      debugPrint('[Download] App group audio migration: moved=$moved failed=$failed');
+      await _save();
+      notifyListeners();
+    }
+  }
+
   /// Replace a stale iOS container prefix with the current one.
-  /// Paths contain `.../Documents/...` — we split on `/Documents/` and
+  /// Paths contain `.../Documents/...` and we split on `/Documents/` then
   /// rejoin with the current prefix.
   String _remapIOSPath(String path, String currentPrefix) {
     if (path.startsWith(currentPrefix)) return path;
@@ -873,6 +1035,7 @@ class DownloadService extends ChangeNotifier {
           await sink.close();
         }
         localPaths[i] = filePath;
+        await _excludeFromBackup(filePath);
       }
 
       // Download tracks in parallel batches of 3

@@ -28,6 +28,7 @@ class HomeWidgetService {
 
   Timer? _progressTimer;
   Timer? _statsTimer;
+  Timer? _heartbeatTimer;
   Timer? _pendingUpdate;
   String? _lastCoverItemId;
   DateTime? _lastUpdate;
@@ -114,11 +115,59 @@ class HomeWidgetService {
     // the user to open the app. 15-min cadence matches the refresh throttle.
     _statsTimer?.cancel();
     _statsTimer = Timer.periodic(_statsThrottle, (_) => refreshStats());
+
+    // Phase 1.4 hand-off heartbeat. The iOS native player core checks this
+    // before driving audio: a recent timestamp means Flutter is alive and
+    // owns playback, so the native side bails. Stale or missing means
+    // Flutter is dead and the widget can take over.
+    if (Platform.isIOS) {
+      _writeOwnerHeartbeat();
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = Timer.periodic(
+        const Duration(seconds: 10),
+        (_) => _writeOwnerHeartbeat(),
+      );
+    }
+  }
+
+  Future<void> _writeOwnerHeartbeat() async {
+    try {
+      await HomeWidget.saveWidgetData<int>(
+        'audio_owner_alive_at',
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (e) {
+      debugPrint('[WidgetDebug] heartbeat write failed: $e');
+    }
+  }
+
+  /// Phase 1.6: read the native player core's last position for an item, so
+  /// when Flutter wakes up after a widget-driven session it can pick up
+  /// where native left off. Returns null if the stashed `np_item_id` doesn't
+  /// match (the app group has data for some other item) or if reads fail.
+  ///
+  /// iOS only - Android doesn't have the native core path.
+  Future<double?> getNativeNowPlayingPosition(
+      String itemId, String? episodeId) async {
+    if (!Platform.isIOS) return null;
+    try {
+      final stashedItem = await HomeWidget.getWidgetData<String>('np_item_id');
+      if (stashedItem != itemId) return null;
+      final stashedEpisode =
+          await HomeWidget.getWidgetData<String>('np_episode_id');
+      if (stashedEpisode != episodeId) return null;
+      final pos = await HomeWidget.getWidgetData<double>('np_position_s');
+      return pos;
+    } catch (e) {
+      debugPrint('[WidgetDebug] getNativeNowPlayingPosition failed: $e');
+      return null;
+    }
   }
 
   void dispose() {
     _progressTimer?.cancel();
     _statsTimer?.cancel();
+    _heartbeatTimer?.cancel();
     _pendingUpdate?.cancel();
     _clickSub?.cancel();
     AudioPlayerService().removeListener(_onPlayerChanged);
@@ -344,7 +393,13 @@ class HomeWidgetService {
         await prefs.remove('widget_episode_id');
       }
 
-      // Cover art — fire-and-forget so it doesn't block the update.
+      // Phase 1.1: stash the playback state the iOS native player core needs
+      // to resume audio without going through Flutter. AbsorbPlayerCore reads
+      // these from the app group on widget tap. Keys are `np_*` (Now Playing)
+      // to keep them separate from `widget_*` UI fields.
+      await _stashPlaybackStateForNativeCore(player);
+
+      // Cover art - fire-and-forget so it doesn't block the update.
       _updateCoverArt(player.currentItemId!);
 
       if (player.isPlaying) {
@@ -360,6 +415,84 @@ class HomeWidgetService {
     }
 
     await _updateAllWidgets();
+  }
+
+  /// Phase 1.1: write everything the iOS native player core needs to resume
+  /// playback without Flutter being alive. Lives in the same app group so
+  /// `AbsorbPlayerCore` (Swift) can read it via `UserDefaults(suiteName:)`.
+  ///
+  /// Streaming case (Phase 2) will need the server URL + auth token too;
+  /// for now we only stash the file paths so Phase 1.3 (downloaded books)
+  /// can play.
+  Future<void> _stashPlaybackStateForNativeCore(AudioPlayerService player) async {
+    final itemId = player.currentItemId;
+    if (itemId == null) return;
+    await HomeWidget.saveWidgetData<String>('np_item_id', itemId);
+    await HomeWidget.saveWidgetData<String?>('np_episode_id', player.currentEpisodeId);
+
+    final posSec = player.position.inMilliseconds / 1000.0;
+    await HomeWidget.saveWidgetData<double>('np_position_s', posSec);
+    await HomeWidget.saveWidgetData<double>('np_total_s', player.totalDuration);
+    await HomeWidget.saveWidgetData<double>('np_speed', player.speed);
+
+    // Chapters serialize as a JSON array of {start, end, title} maps. The
+    // native side decodes lazily; if decoding fails we fall back to no
+    // chapter info and play the file straight through.
+    try {
+      await HomeWidget.saveWidgetData<String>(
+          'np_chapters_json', jsonEncode(player.chapters));
+    } catch (e) {
+      debugPrint('[WidgetDebug] chapter encode failed: $e');
+      await HomeWidget.saveWidgetData<String>('np_chapters_json', '[]');
+    }
+
+    // Downloaded audio file paths (one per track for multi-file books).
+    final download = DownloadService().getInfo(itemId);
+    final paths = download.localPaths;
+    await HomeWidget.saveWidgetData<String>(
+        'np_audio_paths_json', jsonEncode(paths));
+    await HomeWidget.saveWidgetData<bool>('np_is_downloaded', paths.isNotEmpty);
+
+    // Streaming endpoints (token already in URL, plus any reverse-proxy
+    // headers like Cloudflare Access). Native picks these up when
+    // np_is_downloaded is false.
+    await HomeWidget.saveWidgetData<String>(
+        'np_stream_urls_json', jsonEncode(player.activeStreamUrls));
+    await HomeWidget.saveWidgetData<String>(
+        'np_stream_headers_json', jsonEncode(player.activeStreamHeaders));
+
+    // Multi-track support: cumulative track start offsets so the native
+    // core can figure out which track contains a given absolute position
+    // (e.g. saved-position 4500s in a 3-file book might fall in track 2).
+    await HomeWidget.saveWidgetData<String>(
+        'np_track_offsets_json', jsonEncode(player.trackStartOffsets));
+
+    // Server URL + API token so the native core can push progress updates
+    // directly to ABS while Flutter is dead. Lets users listen for hours
+    // via the widget without their server progress falling behind.
+    final api = player.currentApi;
+    if (api != null) {
+      await HomeWidget.saveWidgetData<String>('np_server_url', api.baseUrl);
+      await HomeWidget.saveWidgetData<String>('np_api_token', api.token);
+    }
+
+    // Cover path piggybacks on the existing widget_cover_path entry, but
+    // expose it under the np_ namespace too for clarity on the native side.
+    final coverPath = await HomeWidget.getWidgetData<String>('widget_cover_path');
+    if (coverPath != null) {
+      await HomeWidget.saveWidgetData<String>('np_cover_path', coverPath);
+    }
+    await HomeWidget.saveWidgetData<String>(
+        'np_title', player.currentTitle ?? '');
+    await HomeWidget.saveWidgetData<String>(
+        'np_author', player.currentAuthor ?? '');
+
+    debugPrint('[WidgetDebug] [NativeCore] Stashed: item=$itemId ep=${player.currentEpisodeId} '
+        'pos=${posSec.toStringAsFixed(1)}s tot=${player.totalDuration.toStringAsFixed(0)}s '
+        'speed=${player.speed} dl=${paths.isNotEmpty} '
+        'streams=${player.activeStreamUrls.length} '
+        'tracks=${player.trackStartOffsets.length} '
+        'server=${api?.baseUrl ?? "none"}');
   }
 
   Future<void> _updateAllWidgets() async {

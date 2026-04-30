@@ -1,3 +1,4 @@
+import AbsorbPlayerCore
 import AppIntents
 import WidgetKit
 import SwiftUI
@@ -11,86 +12,12 @@ private let appGroup = "group.com.barnabas.absorb"
 // home_widget Flutter plugin intercepts the URL on launch.
 private let playPauseURL = URL(string: "audiobookshelf://widget/play_pause?homeWidget")!
 
-// MARK: - Darwin Notification Helper
-
-/// Posts a Darwin notification visible to the main app process.
-private func postDarwinNotification(_ name: String) {
-    NSLog("[WidgetDebug] postDarwinNotification: %@", name)
-    let center = CFNotificationCenterGetDarwinNotifyCenter()
-    CFNotificationCenterPostNotification(center, CFNotificationName(name as CFString), nil, nil, true)
-}
-
-/// Activate the system audio session from inside an AudioPlaybackIntent's
-/// perform(). AVAudioSession is system-wide, so flipping it on here keeps it
-/// active by the time the host app's audio engine runs play() a few hundred
-/// ms later. Without this, the iOS-granted "audio playback" privilege from
-/// AudioPlaybackIntent expires before the Darwin notification reaches Flutter
-/// and the host app's setActive(true) silently fails — engine state flips to
-/// playing=true but no sound comes out.
-private func activateAudioSession() {
-    let session = AVAudioSession.sharedInstance()
-    do {
-        try session.setCategory(.playback, mode: .spokenAudio, options: [])
-        try session.setActive(true)
-        NSLog("[WidgetDebug] AVAudioSession activated in widget perform()")
-    } catch {
-        NSLog("[WidgetDebug] AVAudioSession activate error: %@", error.localizedDescription)
-    }
-}
-
-// MARK: - App Intents (background-capable widget buttons)
-
-// AudioPlaybackIntent (iOS 17+) tells the system this intent controls audio
-// playback. The system grants perform() the audio-session privilege; we
-// exercise it by activating AVAudioSession before posting the Darwin
-// notification so the host app's player can start audio without iOS
-// re-checking permissions.
-
-struct SkipBackIntent: AudioPlaybackIntent {
-    static var title: LocalizedStringResource = "Skip Back"
-    static var description = IntentDescription("Skip backward in the current audiobook.")
-
-    func perform() async throws -> some IntentResult {
-        NSLog("[WidgetDebug] SkipBackIntent.perform fired")
-        activateAudioSession()
-        postDarwinNotification("com.barnabas.absorb.widget.skipBack")
-        return .result()
-    }
-}
-
-struct PlayPauseIntent: AudioPlaybackIntent {
-    static var title: LocalizedStringResource = "Play or Pause"
-    static var description = IntentDescription("Toggle audiobook playback.")
-
-    func perform() async throws -> some IntentResult {
-        NSLog("[WidgetDebug] PlayPauseIntent.perform fired")
-        // Optimistic UI: flip the stored state so the widget redraws immediately.
-        let defaults = UserDefaults(suiteName: appGroup)
-        let wasPlaying = defaults?.bool(forKey: "widget_is_playing") ?? false
-        defaults?.set(!wasPlaying, forKey: "widget_is_playing")
-        NSLog("[WidgetDebug]   wasPlaying=%@ -> %@ (defaults=%@)",
-              wasPlaying ? "true" : "false",
-              !wasPlaying ? "true" : "false",
-              defaults == nil ? "nil" : "ok")
-
-        activateAudioSession()
-        postDarwinNotification("com.barnabas.absorb.widget.playPause")
-        WidgetCenter.shared.reloadTimelines(ofKind: "NowPlayingWidget")
-        return .result()
-    }
-}
-
-struct SkipForwardIntent: AudioPlaybackIntent {
-    static var title: LocalizedStringResource = "Skip Forward"
-    static var description = IntentDescription("Skip forward in the current audiobook.")
-
-    func perform() async throws -> some IntentResult {
-        NSLog("[WidgetDebug] SkipForwardIntent.perform fired")
-        activateAudioSession()
-        postDarwinNotification("com.barnabas.absorb.widget.skipForward")
-        return .result()
-    }
-}
+// Intents (AbsorbPlayPauseIntent / AbsorbSkipBackIntent /
+// AbsorbSkipForwardIntent) live in the AbsorbPlayerCore Swift package so
+// both Runner and this extension see the same Swift type. Without that,
+// AppDependencyManager registrations made in Runner's AppDelegate can't
+// resolve in widget-process intent invocations, the @Dependency throws,
+// and only the optimistic UI flip in perform() takes effect.
 
 // MARK: - Entry
 
@@ -222,14 +149,14 @@ struct SmallWidgetView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 18) {
-                Button(intent: SkipBackIntent()) {
+                Button(intent: AbsorbSkipBackIntent()) {
                     Image(systemName: "backward.fill")
                         .font(.title3)
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
                 if entry.hasBook {
-                    Button(intent: PlayPauseIntent()) {
+                    Button(intent: AbsorbPlayPauseIntent()) {
                         Image(systemName: entry.isPlaying ? "pause.fill" : "play.fill")
                             .font(.title2)
                             .frame(width: 32, height: 32)
@@ -246,7 +173,7 @@ struct SmallWidgetView: View {
                             .contentShape(Rectangle())
                     }
                 }
-                Button(intent: SkipForwardIntent()) {
+                Button(intent: AbsorbSkipForwardIntent()) {
                     Image(systemName: "forward.fill")
                         .font(.title3)
                         .frame(width: 28, height: 28)
@@ -286,7 +213,7 @@ struct MediumWidgetView: View {
                 Spacer(minLength: 0)
 
                 HStack(spacing: 28) {
-                    Button(intent: SkipBackIntent()) {
+                    Button(intent: AbsorbSkipBackIntent()) {
                         Image(systemName: "backward.fill")
                             .font(.title3)
                             .frame(width: 36, height: 36)
@@ -294,7 +221,7 @@ struct MediumWidgetView: View {
                     }
 
                     if entry.hasBook {
-                        Button(intent: PlayPauseIntent()) {
+                        Button(intent: AbsorbPlayPauseIntent()) {
                             Image(systemName: entry.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.title2)
                                 .frame(width: 40, height: 40)
@@ -309,7 +236,7 @@ struct MediumWidgetView: View {
                         }
                     }
 
-                    Button(intent: SkipForwardIntent()) {
+                    Button(intent: AbsorbSkipForwardIntent()) {
                         Image(systemName: "forward.fill")
                             .font(.title3)
                             .frame(width: 36, height: 36)

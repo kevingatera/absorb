@@ -786,6 +786,14 @@ class AudioPlayerService extends ChangeNotifier {
   ApiService? _api;
   ApiService? get currentApi => _api;
   String? _playbackSessionId;
+  /// Phase 1.7: latest streaming URLs (with auth token already in the
+  /// query string) and custom HTTP headers needed by reverse proxies like
+  /// Cloudflare Access. Stashed to the iOS app group on each player update
+  /// so the native widget core can keep playing if Flutter dies.
+  List<String> _activeStreamUrls = const [];
+  Map<String, String> _activeStreamHeaders = const {};
+  List<String> get activeStreamUrls => _activeStreamUrls;
+  Map<String, String> get activeStreamHeaders => _activeStreamHeaders;
   bool _isOfflineMode = false;
   bool _isBackgrounded = false;
   bool get isBackgrounded => _isBackgrounded;
@@ -813,6 +821,7 @@ class AudioPlayerService extends ChangeNotifier {
   // For ConcatenatingAudioSource, _player.position is track-relative.
   // We store cumulative start offsets so we can compute absolute book position.
   List<double> _trackStartOffsets = []; // [0, dur0, dur0+dur1, ...]
+  List<double> get trackStartOffsets => _trackStartOffsets;
   int _currentTrackIndex = 0;
   int _lastNotifiedChapterIndex = -1;
   int _lastChapterCheckSec = -1;
@@ -928,6 +937,73 @@ class AudioPlayerService extends ChangeNotifier {
   double get volume => _player?.volume ?? 1.0;
   Future<void> setVolume(double v) async => _player?.setVolume(v);
 
+  static const _eqChannelForDiag = MethodChannel('com.absorb.equalizer');
+
+  /// Diagnostic snapshot for the "tap play, no sound" issue. Logs both
+  /// just_audio player state AND iOS AVAudioSession route/volume info so
+  /// we can tell apart "player thinks it's playing but no audio reaches
+  /// speakers" from "player is buffering forever" from "wrong output
+  /// route" etc.
+  Future<void> _logAudioDiagnostics(String stage) async {
+    try {
+      final p = _player;
+      final pos = p?.position;
+      final dur = p?.duration;
+      final buffered = p?.bufferedPosition;
+      final pieces = <String>[
+        'stage=$stage',
+        'playing=${p?.playing}',
+        'state=${p?.processingState.name}',
+        'volume=${p?.volume?.toStringAsFixed(2)}',
+        'speed=${p?.speed?.toStringAsFixed(2)}',
+        'pos=${pos != null ? "${(pos.inMilliseconds / 1000.0).toStringAsFixed(1)}s" : "null"}',
+        'dur=${dur != null ? "${(dur.inMilliseconds / 1000.0).toStringAsFixed(1)}s" : "null"}',
+        'buf=${buffered != null ? "${(buffered.inMilliseconds / 1000.0).toStringAsFixed(1)}s" : "null"}',
+        'item=$_currentItemId',
+        'ep=$_currentEpisodeId',
+      ];
+
+      if (Platform.isIOS) {
+        try {
+          final info = await _eqChannelForDiag
+              .invokeMethod<Map<dynamic, dynamic>>('getAudioDiagnostics');
+          if (info != null) {
+            final outputs = (info['outputs'] as List?)
+                    ?.map((o) =>
+                        '${(o as Map)["type"]}:${o["name"]}')
+                    .join(',') ??
+                '?';
+            pieces.addAll([
+              'ios.cat=${info["category"]}',
+              'ios.mode=${info["mode"]}',
+              'ios.outVol=${info["outputVolume"]}',
+              'ios.otherAudio=${info["isOtherAudioPlaying"]}',
+              'ios.silenceHint=${info["secondaryAudioShouldBeSilencedHint"]}',
+              'ios.route=[$outputs]',
+              'ios.sampleRate=${info["sampleRate"]}',
+            ]);
+          }
+        } catch (e) {
+          pieces.add('ios.err=$e');
+        }
+      }
+
+      debugPrint('[AudioDiag] ${pieces.join(' ')}');
+    } catch (e) {
+      debugPrint('[AudioDiag] log failed: $e');
+    }
+  }
+
+  /// Schedule a sequence of diagnostic snapshots after starting playback so
+  /// we can see whether state advanced as expected ("playing then
+  /// position-stuck-at-0" is a classic no-sound fingerprint).
+  void _scheduleAudioDiagnostics(String startStage) {
+    _logAudioDiagnostics('$startStage:t0');
+    Future.delayed(const Duration(seconds: 1), () => _logAudioDiagnostics('$startStage:t1s'));
+    Future.delayed(const Duration(seconds: 3), () => _logAudioDiagnostics('$startStage:t3s'));
+    Future.delayed(const Duration(seconds: 10), () => _logAudioDiagnostics('$startStage:t10s'));
+  }
+
   Stream<Duration> get positionStream =>
       _player?.positionStream ?? const Stream.empty();
   Stream<Duration?> get durationStream =>
@@ -981,6 +1057,22 @@ class AudioPlayerService extends ChangeNotifier {
       _trackStartOffsets.add(acc);
     }
     debugPrint('[Player] Track offsets: $_trackStartOffsets');
+  }
+
+  /// Phase 1.7: snapshot the URLs and HTTP headers used to build the
+  /// streaming AudioSource so the iOS native widget core can hit the same
+  /// endpoints if Flutter dies. Token is already in the URL; custom headers
+  /// (Cloudflare Access etc.) ride along for reverse-proxy auth.
+  void _captureStreamUrls(List<dynamic> audioTracks, ApiService api) {
+    final urls = <String>[];
+    for (final t in audioTracks) {
+      final track = t as Map<String, dynamic>;
+      final contentUrl = track['contentUrl'] as String? ?? '';
+      if (contentUrl.isEmpty) continue;
+      urls.add(api.buildTrackUrl(contentUrl));
+    }
+    _activeStreamUrls = urls;
+    _activeStreamHeaders = Map<String, String>.from(api.mediaHeaders);
   }
 
   /// Subscribe to track index changes for multi-file playback.
@@ -1365,6 +1457,18 @@ class AudioPlayerService extends ChangeNotifier {
       }
     }
 
+    // Phase 1.6: if the iOS native player core was driving while Flutter was
+    // dead, it stamped a fresher `np_position_s` to the app group. Pick that
+    // up so opening absorb after a widget-tap session shows the right spot.
+    if (Platform.isIOS && !forceStartTime) {
+      final nativePos = await HomeWidgetService()
+          .getNativeNowPlayingPosition(itemId, episodeId);
+      if (nativePos != null && nativePos > startTime + 1.0) {
+        debugPrint('[Player] Resuming from native widget position: ${nativePos}s (was ${startTime}s)');
+        startTime = nativePos;
+      }
+    }
+
     // Set seek target early so the UI doesn't flash chapter 1 while loading
     if (startTime > 0) {
       _lastSeekTargetSeconds = startTime;
@@ -1727,6 +1831,7 @@ class AudioPlayerService extends ChangeNotifier {
       // lock screen / Control Center / AirPod controls never appear.
       try { (await AudioSession.instance).setActive(true); } catch (_) {}
       _player!.play();
+      _scheduleAudioDiagnostics('local');
       notifyListeners();
       _setupSync();
       // Ensure iOS lock screen / Control Center controls appear by pushing
@@ -1797,6 +1902,7 @@ class AudioPlayerService extends ChangeNotifier {
       _currentTrackIndex = 0;
       final audioHeaders = api.mediaHeaders;
       _buildTrackOffsets(audioTracks);
+      _captureStreamUrls(audioTracks, api);
       AudioSource source;
       if (audioTracks.length == 1) {
         final track = audioTracks.first as Map<String, dynamic>;
@@ -1832,6 +1938,7 @@ class AudioPlayerService extends ChangeNotifier {
       debugPrint('[Player] Starting cached session playback at ${speed}x');
       try { (await AudioSession.instance).setActive(true); } catch (_) {}
       _player!.play();
+      _scheduleAudioDiagnostics('cached-session');
       notifyListeners();
       _setupSync();
       Future.delayed(const Duration(milliseconds: 500), () {
@@ -2030,8 +2137,9 @@ class AudioPlayerService extends ChangeNotifier {
       _currentTrackIndex = 0;
       final audioHeaders = api.mediaHeaders;
 
-      // Build audio source — one source per track file
+      // Build audio source - one source per track file
       _buildTrackOffsets(audioTracks);
+      _captureStreamUrls(audioTracks, api);
       AudioSource source;
       if (audioTracks.length == 1) {
         final track = audioTracks.first as Map<String, dynamic>;
@@ -2069,6 +2177,7 @@ class AudioPlayerService extends ChangeNotifier {
       // Re-activate audio session before play (see local playback comment above)
       try { (await AudioSession.instance).setActive(true); } catch (_) {}
       _player!.play();
+      _scheduleAudioDiagnostics('stream');
       notifyListeners();
       _setupSync();
       // Ensure iOS lock screen / Control Center controls appear (see local playback comment)
@@ -2165,6 +2274,7 @@ class AudioPlayerService extends ChangeNotifier {
               debugPrint('[Player] Transcoded playback starting at ${speed}x');
               try { (await AudioSession.instance).setActive(true); } catch (_) {}
               _player!.play();
+              _scheduleAudioDiagnostics('transcoded-retry');
               notifyListeners();
               _setupSync();
               Future.delayed(const Duration(milliseconds: 500), () {
@@ -2263,6 +2373,7 @@ class AudioPlayerService extends ChangeNotifier {
       debugPrint('[Player] Transcoded playback starting at ${speed}x');
       try { (await AudioSession.instance).setActive(true); } catch (_) {}
       _player!.play();
+      _scheduleAudioDiagnostics('transcoded');
       notifyListeners();
       _setupSync();
       Future.delayed(const Duration(milliseconds: 500), () {
@@ -3129,6 +3240,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
     // Start playback immediately — don't wait for server calls
     _player?.play();
+    _scheduleAudioDiagnostics('resume');
     _logEvent(PlaybackEventType.play);
     _onPlaybackStateChangedCallback?.call(true);
     // Re-create server session and check progress in the background

@@ -116,15 +116,34 @@ static inline float processBiquad(BiquadCoeffs *c, BiquadDelay *d, float x) {
 
 static void rebuildCoefficients(TapContext *ctx) {
     float Fs = ctx->sampleRate;
+    // Clamp band frequencies below Nyquist with 5% headroom. Computing a
+    // peaking biquad at f0 >= Fs/2 puts the filter poles outside the unit
+    // circle, the filter blows up, samples turn into NaN, and the output
+    // goes silent. This was the root cause of "Red Rising plays but no
+    // sound" reports - low-bitrate AAC m4b decodes to 22050Hz so the
+    // 14kHz band tripped the instability.
+    float maxBandHz = (Fs * 0.5f) * 0.95f;
     for (int i = 0; i < EQ_NUM_BANDS; i++) {
         float dBGain = (float)atomic_load_explicit(&sParams.bandLevels[i], memory_order_relaxed) / 100.0f;
-        ctx->coeffs[i] = peakingEQ(kBandFrequencies[i], dBGain, kDefaultQ, Fs);
+        float bandHz = kBandFrequencies[i];
+        if (bandHz >= maxBandHz) {
+            // Above Nyquist - use unity (passthrough) so the filter is stable.
+            BiquadCoeffs unity = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+            ctx->coeffs[i] = unity;
+        } else {
+            ctx->coeffs[i] = peakingEQ(bandHz, dBGain, kDefaultQ, Fs);
+        }
     }
 
     // Bass boost: low shelf at 120 Hz, gain 0-12 dB mapped from strength 0-1000
     int bassStrength = atomic_load_explicit(&sParams.bassBoostStrength, memory_order_relaxed);
     float bassdB = (float)bassStrength / 1000.0f * 12.0f;
-    ctx->bassCoeffs = lowShelf(120.0f, bassdB, Fs);
+    if (120.0f >= maxBandHz) {
+        BiquadCoeffs unity = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+        ctx->bassCoeffs = unity;
+    } else {
+        ctx->bassCoeffs = lowShelf(120.0f, bassdB, Fs);
+    }
 
     ctx->lastCoeffVersion = atomic_load_explicit(&sParams.coeffVersion, memory_order_relaxed);
 }
@@ -142,6 +161,11 @@ static void tapFinalize(MTAudioProcessingTapRef tap) {
     if (ctx) free(ctx);
 }
 
+// Diagnostics callback set by AppDelegate so format info from tapPrepare
+// can land in absorb's in-app log via the Flutter widget channel. NSLog
+// alone only shows in Xcode/Console.app on a Mac.
+static void (^sFormatLogger)(NSString *) = NULL;
+
 static void tapPrepare(MTAudioProcessingTapRef tap,
                        CMItemCount maxFrames,
                        const AudioStreamBasicDescription *processingFormat) {
@@ -150,7 +174,11 @@ static void tapPrepare(MTAudioProcessingTapRef tap,
 
     ctx->sampleRate = (float)processingFormat->mSampleRate;
     ctx->numChannels = (int)processingFormat->mChannelsPerFrame;
-    if (ctx->numChannels > MAX_CHANNELS) ctx->numChannels = MAX_CHANNELS;
+    int truncated = 0;
+    if (ctx->numChannels > MAX_CHANNELS) {
+        truncated = ctx->numChannels;
+        ctx->numChannels = MAX_CHANNELS;
+    }
 
     // Zero delay lines
     memset(ctx->delays, 0, sizeof(ctx->delays));
@@ -158,6 +186,43 @@ static void tapPrepare(MTAudioProcessingTapRef tap,
 
     // Build initial coefficients
     rebuildCoefficients(ctx);
+
+    // Diagnostics: dump the audio format so we can correlate "tap enabled
+    // produces silence" reports to specific format fingerprints (e.g. low
+    // bitrate AAC at 22050Hz mono). Format is the post-decode PCM the tap
+    // actually receives, not the source file's compressed format.
+    int enabled = atomic_load_explicit(&sParams.enabled, memory_order_relaxed);
+    UInt32 fmtID = processingFormat->mFormatID;
+    char fmtIDChars[5] = {
+        (char)((fmtID >> 24) & 0xff),
+        (char)((fmtID >> 16) & 0xff),
+        (char)((fmtID >> 8) & 0xff),
+        (char)(fmtID & 0xff),
+        0
+    };
+    UInt32 flags = processingFormat->mFormatFlags;
+    NSString *line = [NSString stringWithFormat:
+        @"[EQDiag] tapPrepare enabled=%d sampleRate=%.1f channels=%u (truncated_from=%d) "
+        @"formatID='%s' flags=0x%x [%s%s%s%s%s%s] bitsPerChannel=%u "
+        @"bytesPerFrame=%u framesPerPacket=%u maxFrames=%lld",
+        enabled,
+        processingFormat->mSampleRate,
+        (unsigned)processingFormat->mChannelsPerFrame,
+        truncated,
+        fmtIDChars,
+        (unsigned)flags,
+        (flags & 0x1) ? "Float " : "",
+        (flags & 0x2) ? "BigEndian " : "",
+        (flags & 0x4) ? "SignedInt " : "",
+        (flags & 0x8) ? "Packed " : "",
+        (flags & 0x10) ? "AlignedHigh " : "",
+        (flags & 0x20) ? "NonInterleaved" : "Interleaved",
+        (unsigned)processingFormat->mBitsPerChannel,
+        (unsigned)processingFormat->mBytesPerFrame,
+        (unsigned)processingFormat->mFramesPerPacket,
+        (long long)maxFrames];
+    NSLog(@"%@", line);
+    if (sFormatLogger) sFormatLogger(line);
 }
 
 static void tapUnprepare(MTAudioProcessingTapRef tap) {
@@ -291,6 +356,10 @@ static void tapProcess(MTAudioProcessingTapRef tap,
         instance = [[AudioEQProcessor alloc] init];
     });
     return instance;
+}
+
++ (void)setFormatLogger:(void (^)(NSString *))logger {
+    sFormatLogger = [logger copy];
 }
 
 - (instancetype)init {
