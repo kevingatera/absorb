@@ -238,11 +238,23 @@ workflows:
               --title "$VERSION" \
               --repo "$CM_REPO_SLUG"
           fi
+      - name: Publish to TestFlight
+        script: |
+          # Mirrors the ios-release workflow's explicit publish so this
+          # all-platforms workflow also picks up BETA_TEST_NOTES and
+          # BETA_GROUP env vars when set by scripts/codemagic-ios.sh.
+          IPA_PATH=$(ls build/ios/ipa/*.ipa | head -1)
+          ARGS=(--path "$IPA_PATH" --testflight)
+          if [ -n "$BETA_TEST_NOTES" ]; then
+            echo "  + TestFlight notes ($(printf '%s' "$BETA_TEST_NOTES" | wc -c) chars)"
+            ARGS+=(--whats-new "$BETA_TEST_NOTES" --locale en-US)
+          fi
+          if [ -n "$BETA_GROUP" ]; then
+            echo "  + Beta group: $BETA_GROUP"
+            ARGS+=(--beta-group "$BETA_GROUP")
+          fi
+          app-store-connect publish "${ARGS[@]}"
     artifacts:
       - build/app/outputs/apk/github/release/*.apk
       - build/app/outputs/bundle/playstoreRelease/*.aab
       - build/ios/ipa/*.ipa
-    publishing:
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: true
