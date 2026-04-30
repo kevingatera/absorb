@@ -800,8 +800,11 @@ class AudioPlayerService extends ChangeNotifier {
   /// AuthProvider mirrors `serverReachable` here on each ping result so we
   /// can short-circuit pre-play server calls (e.g. session creation) for
   /// instant offline playback - no need to wait for a network timeout to
-  /// discover what the auth layer already knows.
+  /// discover what the auth layer already knows. Other services
+  /// (AndroidAuto/CarPlay browse) read it via [knownOffline] to skip
+  /// their own server fetches.
   bool _knownOffline = false;
+  bool get knownOffline => _knownOffline;
   void setKnownOffline(bool offline) {
     _knownOffline = offline;
   }

@@ -99,10 +99,17 @@ class CarPlayService {
   // ─── Root template ──────────────────────────────────────────────────
 
   Future<List<CPListTemplate>> _buildTabs() async {
+    final downloadsTab = await _buildDownloadsTab();
+    // When the server is unreachable, Continue / New / Library are empty
+    // anyway (we skip the server fetch). Drop them so CarPlay opens
+    // straight into the user's downloads instead of showing three empty
+    // tabs they have to swipe past.
+    if (AudioPlayerService().knownOffline) {
+      return [downloadsTab];
+    }
     final continueTab = await _buildContinueTab();
     final recentlyAddedTab = await _buildRecentlyAddedTab();
     final libraryTab = await _buildLibraryTab();
-    final downloadsTab = await _buildDownloadsTab();
     return [continueTab, recentlyAddedTab, libraryTab, downloadsTab];
   }
 

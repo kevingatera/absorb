@@ -6,6 +6,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
+import 'audio_player_service.dart';
 import 'download_service.dart';
 import 'progress_sync_service.dart';
 import 'scoped_prefs.dart';
@@ -399,7 +400,11 @@ class AndroidAutoService {
 
     final prefs = await SharedPreferences.getInstance();
     final manualOffline = prefs.getBool('manual_offline_mode') ?? false;
-    if (manualOffline) {
+    // Skip the server fetch if we know we're offline. Without this,
+    // CarPlay / AndroidAuto sit on a 15s getLibraries timeout every time
+    // the user opens the app or connects to the head unit while their
+    // server is unreachable.
+    if (manualOffline || AudioPlayerService().knownOffline) {
       _continueListening = [];
       _recentlyAdded = [];
       _libraries = [];
