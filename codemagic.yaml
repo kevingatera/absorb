@@ -135,12 +135,28 @@ workflows:
               --title "$VERSION" \
               --repo "$CM_REPO_SLUG"
           fi
+      - name: Publish to TestFlight
+        script: |
+          # Replaces the auto `publishing.app_store_connect.submit_to_testflight`
+          # so we can attach optional TestFlight "What to Test" notes from the
+          # BETA_TEST_NOTES env var. Caller (scripts/codemagic-ios.sh) sets the
+          # var when triggering; if unset, the build is uploaded without notes.
+          IPA_PATH=$(ls build/ios/ipa/*.ipa | head -1)
+          if [ -n "$BETA_TEST_NOTES" ]; then
+            echo "Publishing with TestFlight notes ($(printf '%s' "$BETA_TEST_NOTES" | wc -c) chars)"
+            app-store-connect publish \
+              --path "$IPA_PATH" \
+              --testflight \
+              --whats-new "$BETA_TEST_NOTES" \
+              --locale en-US
+          else
+            echo "Publishing without TestFlight notes (BETA_TEST_NOTES unset)"
+            app-store-connect publish \
+              --path "$IPA_PATH" \
+              --testflight
+          fi
     artifacts:
       - build/ios/ipa/*.ipa
-    publishing:
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: true
 
   ios-altstore:
     name: iOS AltStore Build
