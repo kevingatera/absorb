@@ -169,7 +169,12 @@ class AuthProvider extends ChangeNotifier {
         }
         if (!reachable) {
           debugPrint('[Auth] pinging remote server... (${sw.elapsedMilliseconds}ms)');
-          reachable = await ApiService.pingServer(savedUrl, customHeaders: _customHeaders);
+          // Cap at 5s so a silently-dropping reverse proxy or dead network
+          // path doesn't hold up app launch. The health-check timer will
+          // re-probe every 60s once we're past startup, so a transient
+          // false-offline self-corrects quickly.
+          reachable = await ApiService.pingServer(savedUrl, customHeaders: _customHeaders)
+              .timeout(const Duration(seconds: 5), onTimeout: () => false);
           debugPrint('[Auth] remote ping result: reachable=$reachable (${sw.elapsedMilliseconds}ms)');
         }
         _serverReachable = reachable;
