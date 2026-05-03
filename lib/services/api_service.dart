@@ -1233,6 +1233,42 @@ class ApiService {
     return null;
   }
 
+  /// Read a previously-fetched Audible rating from local cache, keyed by
+  /// library item id. Used so the rating shows immediately on book detail
+  /// open even when Audnexus is slow or unreachable, and so a transient
+  /// network failure doesn't make a known rating disappear.
+  static Future<Map<String, dynamic>?> getCachedAudibleRating(String itemId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('audible_rating_$itemId');
+      if (raw == null) return null;
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      final rating = (data['rating'] as num?)?.toDouble();
+      if (rating == null || rating <= 0) return null;
+      return {
+        'rating': rating,
+        'asin': data['asin'] as String?,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Persist a fresh Audible rating so subsequent book detail opens render
+  /// the stars instantly without waiting on Audnexus.
+  static Future<void> setCachedAudibleRating(
+      String itemId, double rating, String? asin) async {
+    if (rating <= 0) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('audible_rating_$itemId', jsonEncode({
+        'rating': rating,
+        'asin': asin,
+        'fetchedAt': DateTime.now().millisecondsSinceEpoch,
+      }));
+    } catch (_) {}
+  }
+
   /// Search Audible via the audiobookshelf server for an ASIN by title+author,
   /// then fetch the rating from Audnexus. Used as a fallback when the book's
   /// stored ASIN returns no rating.

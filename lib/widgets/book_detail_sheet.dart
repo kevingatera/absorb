@@ -126,6 +126,17 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           final title = metadata['title'] as String? ?? '';
           final author = metadata['authorName'] as String?;
 
+          // Show any cached rating immediately so the stars don't blink in
+          // and out between detail opens. The fresh fetch below replaces it
+          // if Audnexus answers; if it doesn't, the cached value stays.
+          final cached = await ApiService.getCachedAudibleRating(widget.itemId);
+          if (cached != null && mounted) {
+            setState(() {
+              _rating = cached;
+              _asin = cached['asin'] as String? ?? asin;
+            });
+          }
+
           Map<String, dynamic>? rating;
           if (asin != null && asin.isNotEmpty) {
             rating = await ApiService.getAudibleRating(asin);
@@ -138,10 +149,14 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             }
           }
           if (rating != null && mounted) {
+            final freshRating = (rating['rating'] as num).toDouble();
+            final freshAsin = rating['asin'] as String? ?? asin;
             setState(() {
               _rating = rating;
-              _asin = rating?['asin'] as String? ?? asin;
+              _asin = freshAsin;
             });
+            await ApiService.setCachedAudibleRating(
+                widget.itemId, freshRating, freshAsin);
           }
           return;
         }
