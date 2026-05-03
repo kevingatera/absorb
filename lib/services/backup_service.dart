@@ -29,8 +29,12 @@ class BackupService {
       'backSkip': await PlayerSettings.getBackSkip(),
       'shakeMode': await PlayerSettings.getShakeMode(),
       'shakeAddMinutes': await PlayerSettings.getShakeAddMinutes(),
+      'shakeSensitivity': await PlayerSettings.getShakeSensitivity(),
       'resetSleepOnPause': await PlayerSettings.getResetSleepOnPause(),
       'sleepFadeOut': await PlayerSettings.getSleepFadeOut(),
+      'sleepFadeDuration': await PlayerSettings.getSleepFadeDuration(),
+      'sleepChime': await PlayerSettings.getSleepChime(),
+      'sleepChimeVolume': await PlayerSettings.getSleepChimeVolume(),
       'hideEbookOnly': await PlayerSettings.getHideEbookOnly(),
       'collapseSeries': await PlayerSettings.getCollapseSeries(),
       'librarySort': await PlayerSettings.getLibrarySort(),
@@ -61,14 +65,22 @@ class BackupService {
       'seriesSortAsc': await PlayerSettings.getSeriesSortAsc(),
       'authorSort': await PlayerSettings.getAuthorSort(),
       'authorSortAsc': await PlayerSettings.getAuthorSortAsc(),
-      'disableAudioFocus': await PlayerSettings.getDisableAudioFocus(),
       'trustAllCerts': await PlayerSettings.getTrustAllCerts(),
       'localServerEnabled': await PlayerSettings.getLocalServerEnabled(),
       'localServerUrl': await PlayerSettings.getLocalServerUrl(),
       'startScreen': await PlayerSettings.getStartScreen(),
-      'cardButtonLayout': await PlayerSettings.getCardButtonLayout(),
+      'cardButtonVisibleCount': await PlayerSettings.getCardButtonVisibleCount(),
+      'cardIconsOnly': await PlayerSettings.getCardIconsOnly(),
+      'cardSingleRow': await PlayerSettings.getCardSingleRow(),
+      'cardMoreInline': await PlayerSettings.getCardMoreInline(),
       'rectangleCovers': await PlayerSettings.getRectangleCovers(),
       'coverPlayButton': await PlayerSettings.getCoverPlayButton(),
+      'whenFinished': await PlayerSettings.getWhenFinished(),
+      'sleepRewindSeconds': await PlayerSettings.getSleepRewindSeconds(),
+      'sleepTimerTab': await PlayerSettings.getSleepTimerTab(),
+      'sheetGridView': await PlayerSettings.getSheetGridView(),
+      'sheetCollapseSeries': await PlayerSettings.getSheetCollapseSeries(),
+      'skipChapterBarrier': await PlayerSettings.getSkipChapterBarrier(),
     };
 
     // AutoRewind (scoped)
@@ -79,6 +91,7 @@ class BackupService {
       'max': rewind.maxRewind,
       'delay': rewind.activationDelay,
       'chapterBarrier': rewind.chapterBarrier,
+      'sessionStartRewind': rewind.sessionStartRewind,
     };
 
     // AutoSleep (scoped)
@@ -183,6 +196,22 @@ class BackupService {
   static Future<void> importSettings(Map<String, dynamic> data) async {
     final prefs = await SharedPreferences.getInstance();
 
+    // Restore accounts FIRST so ScopedPrefs has the right scope
+    // when we write settings below. saveAccount() sets the active scope key.
+    final accounts = data['accounts'] as List<dynamic>?;
+    if (accounts != null) {
+      for (final a in accounts) {
+        final map = a as Map<String, dynamic>;
+        await UserAccountService().saveAccount(SavedAccount.fromJson(map));
+      }
+    }
+
+    // Custom headers (restore early, before any API calls)
+    final customHeaders = data['customHeaders'] as Map<String, dynamic>?;
+    if (customHeaders != null) {
+      await prefs.setString('custom_headers', jsonEncode(customHeaders));
+    }
+
     // PlayerSettings (all go through scoped setters now)
     final s = data['settings'] as Map<String, dynamic>? ?? {};
     if (s['defaultSpeed'] != null) PlayerSettings.setDefaultSpeed((s['defaultSpeed'] as num).toDouble());
@@ -208,8 +237,12 @@ class BackupService {
       PlayerSettings.setShakeMode(s['shakeToResetSleep'] as bool ? 'addTime' : 'off');
     }
     if (s['shakeAddMinutes'] != null) PlayerSettings.setShakeAddMinutes(s['shakeAddMinutes'] as int);
+    if (s['shakeSensitivity'] != null) PlayerSettings.setShakeSensitivity(s['shakeSensitivity'] as String);
     if (s['resetSleepOnPause'] != null) PlayerSettings.setResetSleepOnPause(s['resetSleepOnPause'] as bool);
     if (s['sleepFadeOut'] != null) PlayerSettings.setSleepFadeOut(s['sleepFadeOut'] as bool);
+    if (s['sleepFadeDuration'] != null) PlayerSettings.setSleepFadeDuration(s['sleepFadeDuration'] as int);
+    if (s['sleepChime'] != null) PlayerSettings.setSleepChime(s['sleepChime'] as bool);
+    if (s['sleepChimeVolume'] != null) PlayerSettings.setSleepChimeVolume((s['sleepChimeVolume'] as num).toDouble());
     if (s['hideEbookOnly'] != null) PlayerSettings.setHideEbookOnly(s['hideEbookOnly'] as bool);
     if (s['collapseSeries'] != null) PlayerSettings.setCollapseSeries(s['collapseSeries'] as bool);
     if (s['librarySort'] != null) PlayerSettings.setLibrarySort(s['librarySort'] as String);
@@ -244,14 +277,21 @@ class BackupService {
     if (s['seriesSortAsc'] != null) PlayerSettings.setSeriesSortAsc(s['seriesSortAsc'] as bool);
     if (s['authorSort'] != null) PlayerSettings.setAuthorSort(s['authorSort'] as String);
     if (s['authorSortAsc'] != null) PlayerSettings.setAuthorSortAsc(s['authorSortAsc'] as bool);
-    if (s['disableAudioFocus'] != null) PlayerSettings.setDisableAudioFocus(s['disableAudioFocus'] as bool);
     if (s['trustAllCerts'] != null) PlayerSettings.setTrustAllCerts(s['trustAllCerts'] as bool);
     if (s['localServerEnabled'] != null) PlayerSettings.setLocalServerEnabled(s['localServerEnabled'] as bool);
     if (s['localServerUrl'] != null) PlayerSettings.setLocalServerUrl(s['localServerUrl'] as String);
     if (s['startScreen'] != null) PlayerSettings.setStartScreen(s['startScreen'] as int);
-    if (s['cardButtonLayout'] != null) PlayerSettings.setCardButtonLayout(s['cardButtonLayout'] as String);
+    if (s['cardButtonVisibleCount'] != null) PlayerSettings.setCardButtonVisibleCount(s['cardButtonVisibleCount'] as int);
+    if (s['cardIconsOnly'] != null) PlayerSettings.setCardIconsOnly(s['cardIconsOnly'] as bool);
+    if (s['cardSingleRow'] != null) PlayerSettings.setCardSingleRow(s['cardSingleRow'] as bool);
+    if (s['cardMoreInline'] != null) PlayerSettings.setCardMoreInline(s['cardMoreInline'] as bool);
     if (s['rectangleCovers'] != null) PlayerSettings.setRectangleCovers(s['rectangleCovers'] as bool);
     if (s['coverPlayButton'] != null) PlayerSettings.setCoverPlayButton(s['coverPlayButton'] as bool);
+    if (s['sleepRewindSeconds'] != null) PlayerSettings.setSleepRewindSeconds(s['sleepRewindSeconds'] as int);
+    if (s['sleepTimerTab'] != null) PlayerSettings.setSleepTimerTab(s['sleepTimerTab'] as int);
+    if (s['sheetGridView'] != null) PlayerSettings.setSheetGridView(s['sheetGridView'] as bool);
+    if (s['sheetCollapseSeries'] != null) PlayerSettings.setSheetCollapseSeries(s['sheetCollapseSeries'] as bool);
+    if (s['skipChapterBarrier'] != null) PlayerSettings.setSkipChapterBarrier(s['skipChapterBarrier'] as bool);
 
     // AutoRewind (scoped via save())
     final r = data['autoRewind'] as Map<String, dynamic>?;
@@ -262,6 +302,7 @@ class BackupService {
         maxRewind: (r['max'] as num?)?.toDouble() ?? 30.0,
         activationDelay: (r['delay'] as num?)?.toDouble() ?? 0.0,
         chapterBarrier: r['chapterBarrier'] as bool? ?? false,
+        sessionStartRewind: r['sessionStartRewind'] as bool? ?? false,
       ).save();
     }
 
@@ -336,19 +377,5 @@ class BackupService {
       );
     }
 
-    // Accounts
-    final accounts = data['accounts'] as List<dynamic>?;
-    if (accounts != null) {
-      for (final a in accounts) {
-        final map = a as Map<String, dynamic>;
-        await UserAccountService().saveAccount(SavedAccount.fromJson(map));
-      }
-    }
-
-    // Custom headers
-    final customHeaders = data['customHeaders'] as Map<String, dynamic>?;
-    if (customHeaders != null) {
-      await prefs.setString('custom_headers', jsonEncode(customHeaders));
-    }
   }
 }

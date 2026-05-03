@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../services/audio_player_service.dart';
 import '../services/chromecast_service.dart';
 
@@ -36,10 +37,11 @@ class CardEdgeProgressBar extends StatefulWidget {
 }
 
 class _CardEdgeProgressBarState extends State<CardEdgeProgressBar>
-    with TickerProviderStateMixin, WidgetsBindingObserver {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
 
   // ── Smooth position tracking (same pattern as CardDualProgressBar) ──
-  late AnimationController _smoothTicker;
+  Timer? _smoothTicker;
+  final _tickNotifier = ChangeNotifier(); // drives ListenableBuilder rebuilds
   double _lastKnownPos = 0;
   DateTime _lastPosTime = DateTime.now();
   double _currentSpeed = 1.0;
@@ -51,6 +53,9 @@ class _CardEdgeProgressBarState extends State<CardEdgeProgressBar>
   // ── Expand/collapse animation ──
   late AnimationController _expandController;
   double? _dragValue;
+  double _dragStartDy = 0;
+  double _lastLongPressDx = 0;
+  double _edgeScrubSpeed = 1.0;
   bool _showBookSlider = false;
 
   static const _thinHeight = 3.5;
@@ -61,7 +66,6 @@ class _CardEdgeProgressBarState extends State<CardEdgeProgressBar>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _smoothTicker = AnimationController(vsync: this, duration: const Duration(days: 999));
     _expandController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 250),
@@ -93,9 +97,19 @@ class _CardEdgeProgressBarState extends State<CardEdgeProgressBar>
     if (wasCast != isCast) _subscribePosition();
   }
 
+  bool _backgrounded = false;
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _loadSettings();
+    if (state == AppLifecycleState.resumed) {
+      _backgrounded = false;
+      _loadSettings();
+      _syncTicker();
+    } else if (state == AppLifecycleState.paused) {
+      _backgrounded = true;
+      _smoothTicker?.cancel();
+      _smoothTicker = null;
+    }
   }
 
   @override
@@ -105,10 +119,15 @@ class _CardEdgeProgressBarState extends State<CardEdgeProgressBar>
   }
 
   void _syncTicker() {
-    if (_isPlaying && (widget.isActive || _isCastMode)) {
-      if (!_smoothTicker.isAnimating) _smoothTicker.repeat();
-    } else {
-      if (_smoothTicker.isAnimating) _smoothTicker.stop();
+    final shouldRun = _isPlaying && (widget.isActive || _isCastMode) && !_backgrounded;
+    if (shouldRun && _smoothTicker == null) {
+      _smoothTicker = Timer.periodic(const Duration(milliseconds: 100), (_) {
+        // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+        _tickNotifier.notifyListeners();
+      });
+    } else if (!shouldRun && _smoothTicker != null) {
+      _smoothTicker!.cancel();
+      _smoothTicker = null;
     }
   }
 
@@ -123,9 +142,10 @@ class _CardEdgeProgressBarState extends State<CardEdgeProgressBar>
       _currentSpeed = cast.castSpeed;
       _isPlaying = cast.isPlaying;
       _syncTicker();
-      _posSub = cast.castPositionStream?.listen((dur) {
-        final posSeconds = dur.inMilliseconds / 1000.0;
-        _lastKnownPos = posSeconds;
+      _posSub = cast.castPositionStream?.listen((_) {
+        // Read from cast.castPosition (not the raw stream value) so we get the
+        // book-level position after multi-track fallback offset translation.
+        _lastKnownPos = cast.castPosition.inMilliseconds / 1000.0;
         _lastPosTime = DateTime.now();
         _currentSpeed = cast.castSpeed;
         _isPlaying = cast.isPlaying;
@@ -190,13 +210,27 @@ class _CardEdgeProgressBarState extends State<CardEdgeProgressBar>
     }
   }
 
+  static double _scrubScale(double vertDist) {
+    if (vertDist < 50) return 1.0;
+    if (vertDist < 100) return 0.5;
+    if (vertDist < 175) return 0.25;
+    return 0.1;
+  }
+
+  static String _scrubSpeedLabel(AppLocalizations l, double scale) {
+    if (scale <= 0.1) return l.cardEdgeProgressFineScrubbing;
+    if (scale <= 0.25) return l.cardEdgeProgressQuarterSpeed;
+    return l.cardEdgeProgressHalfSpeed;
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     PlayerSettings.settingsChanged.removeListener(_loadSettings);
     ChromecastService().removeListener(_onCastChanged);
     _posSub?.cancel();
-    _smoothTicker.dispose();
+    _smoothTicker?.cancel();
+    _tickNotifier.dispose();
     _expandController.dispose();
     super.dispose();
   }
@@ -214,12 +248,13 @@ class _CardEdgeProgressBarState extends State<CardEdgeProgressBar>
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cast = ChromecastService();
     final active = widget.isActive || _isCastMode;
 
     return ListenableBuilder(
-      listenable: Listenable.merge([_smoothTicker, _expandController]),
+      listenable: Listenable.merge([_tickNotifier, _expandController]),
       builder: (context, _) {
         final staticPos = widget.staticProgress * widget.staticDuration;
         final posS = active ? _smoothPos : staticPos;
@@ -249,12 +284,15 @@ class _CardEdgeProgressBarState extends State<CardEdgeProgressBar>
             if (!_expandController.isAnimating && _expandController.value < 1.0) {
               _expandController.forward();
             }
+            _dragStartDy = d.localPosition.dy;
+            _edgeScrubSpeed = 1.0;
             final box = context.findRenderObject() as RenderBox;
             setState(() => _dragValue = (d.localPosition.dx / box.size.width).clamp(0.0, 1.0));
           } : null,
           onHorizontalDragUpdate: interactive ? (d) {
             final box = context.findRenderObject() as RenderBox;
-            setState(() => _dragValue = (d.localPosition.dx / box.size.width).clamp(0.0, 1.0));
+            _edgeScrubSpeed = _scrubScale((d.localPosition.dy - _dragStartDy).abs());
+            setState(() => _dragValue = ((_dragValue ?? bookProgress) + d.delta.dx / box.size.width * _edgeScrubSpeed).clamp(0.0, 1.0));
           } : null,
           onHorizontalDragEnd: interactive ? (_) {
             if (_dragValue != null) {
@@ -266,12 +304,18 @@ class _CardEdgeProgressBarState extends State<CardEdgeProgressBar>
           } : null,
           onLongPressStart: interactive ? (d) {
             _expandController.forward();
+            _dragStartDy = d.localPosition.dy;
+            _lastLongPressDx = d.localPosition.dx;
+            _edgeScrubSpeed = 1.0;
             final box = context.findRenderObject() as RenderBox;
             setState(() => _dragValue = (d.localPosition.dx / box.size.width).clamp(0.0, 1.0));
           } : null,
           onLongPressMoveUpdate: interactive ? (d) {
             final box = context.findRenderObject() as RenderBox;
-            setState(() => _dragValue = (d.localPosition.dx / box.size.width).clamp(0.0, 1.0));
+            _edgeScrubSpeed = _scrubScale((d.localPosition.dy - _dragStartDy).abs());
+            final delta = d.localPosition.dx - _lastLongPressDx;
+            _lastLongPressDx = d.localPosition.dx;
+            setState(() => _dragValue = ((_dragValue ?? bookProgress) + delta / box.size.width * _edgeScrubSpeed).clamp(0.0, 1.0));
           } : null,
           onLongPressEnd: interactive ? (_) {
             if (_dragValue != null) {
@@ -329,6 +373,7 @@ class _CardEdgeProgressBarState extends State<CardEdgeProgressBar>
                               )],
                             ),
                           ),
+                          if (_dragValue != null && _edgeScrubSpeed < 1.0) Text(_scrubSpeedLabel(l, _edgeScrubSpeed), style: tt.labelSmall?.copyWith(color: widget.accent, fontSize: 11, fontWeight: FontWeight.w500)),
                           Text(
                             '-${_fmt(_dragValue != null ? (1.0 - _dragValue!) * totalDur / speedDiv : bookRemaining)}',
                             style: tt.labelSmall?.copyWith(

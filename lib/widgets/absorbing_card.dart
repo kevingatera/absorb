@@ -4,26 +4,19 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../screens/app_shell.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
-import '../services/playback_history_service.dart';
-import 'book_detail_sheet.dart';
-import 'episode_list_sheet.dart';
-import 'equalizer_sheet.dart';
+import 'absorbing_shared.dart';
 import 'card_edge_progress_bar.dart';
 import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
 import 'card_buttons.dart';
-import 'cover_art_viewer.dart';
-import 'sleep_timer_sheet.dart';
-import 'chromecast_button.dart';
 import '../services/chromecast_service.dart';
 import 'expanded_card.dart';
-import '../screens/car_mode_screen.dart';
-import 'notes_sheet.dart';
 
 class AbsorbingCard extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -45,11 +38,15 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   ui.Image? _blurredCover; // Precached blurred background
   String? _blurredCoverUrl; // URL the blur was built from
   List<String> _buttonOrder = PlayerSettings.defaultButtonOrder;
-  String _buttonLayout = PlayerSettings.defaultButtonLayout;
+  int _buttonVisibleCount = PlayerSettings.defaultButtonVisibleCount;
+  bool _iconsOnly = false;
+  bool _moreInline = false;
   bool _rectangleCovers = false;
   bool _coverPlayButton = false;
   bool _speedAdjustedTime = true;
+  double _savedSpeed = 1.0; // per-book or default speed for inactive display
   final ValueNotifier<bool> _edgeBarExpanded = ValueNotifier(false);
+  String? _lastRenderLogSig;
 
   @override
   bool get wantKeepAlive => true;
@@ -57,14 +54,21 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   String get _itemId => widget.item['id'] as String? ?? '';
   Map<String, dynamic> get _media => widget.item['media'] as Map<String, dynamic>? ?? {};
   Map<String, dynamic> get _metadata => _media['metadata'] as Map<String, dynamic>? ?? {};
-  String get _title => _metadata['title'] as String? ?? 'Unknown';
+  String get _title {
+    final t = _metadata['title'] as String?;
+    if (t != null && t.isNotEmpty) return t;
+    return mounted ? AppLocalizations.of(context)!.unknown : 'Unknown';
+  }
   String get _author => _metadata['authorName'] as String? ?? '';
   double get _duration => (_media['duration'] as num?)?.toDouble() ?? 0;
   List<dynamic> get _chapters {
-    // Prefer fetched chapters (from full item), fall back to inline data
+    // Prefer fetched chapters (from full item or episode), fall back to inline data
     if (_fetchedChapters != null && _fetchedChapters!.isNotEmpty) return _fetchedChapters!;
     final inline = _media['chapters'] as List<dynamic>? ?? [];
     if (inline.isNotEmpty) return inline;
+    // For podcast episodes, chapters live on the episode object
+    final epChapters = _recentEpisode?['chapters'] as List<dynamic>? ?? [];
+    if (epChapters.isNotEmpty) return epChapters;
     // For active podcast episodes, chapters come from the playback session
     if (_isActive && widget.player.chapters.isNotEmpty) return widget.player.chapters;
     return [];
@@ -86,6 +90,8 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
 
   // For inactive podcast show cards: recentEpisode is embedded in the continue-listening entity
   Map<String, dynamic>? get _recentEpisode => widget.item['recentEpisode'] as Map<String, dynamic>?;
+
+  /// Resolve full episode data for the current episode.
   // Episode ID: prefer recentEpisode, fall back to compound absorbing key
   String? get _episodeId {
     final re = _recentEpisode;
@@ -113,11 +119,6 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     return lib.getCoverUrl(_itemId, width: 800);
   }
 
-  String? get _viewerCoverUrl {
-    final lib = context.read<LibraryProvider>();
-    return lib.getCoverUrl(_itemId, width: 2400);
-  }
-
   bool get _isLocalCover => _coverUrl != null && _coverUrl!.startsWith('/');
 
   @override
@@ -131,12 +132,37 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     _reloadButtonOrder();
   }
 
+  void _onSpeedMaybeChanged() => _loadSavedSpeed();
+
+  Future<void> _loadSavedSpeed() async {
+    final bookSpeed = await PlayerSettings.getBookSpeed(_itemId);
+    final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
+    if (mounted && speed != _savedSpeed) setState(() => _savedSpeed = speed);
+  }
+
   void _reloadButtonOrder() {
     PlayerSettings.getCardButtonOrder().then((o) {
       if (mounted && o.join(',') != _buttonOrder.join(',')) setState(() => _buttonOrder = o);
     });
-    PlayerSettings.getCardButtonLayout().then((l) {
-      if (mounted && l != _buttonLayout) setState(() => _buttonLayout = l);
+    PlayerSettings.getCardButtonVisibleCount().then((c) {
+      if (mounted && c != _buttonVisibleCount) setState(() => _buttonVisibleCount = c);
+    });
+    PlayerSettings.getCardIconsOnly().then((v) {
+      if (mounted && v != _iconsOnly) setState(() => _iconsOnly = v);
+    });
+    PlayerSettings.getCardMoreInline().then((v) {
+      if (mounted && v != _moreInline) {
+        setState(() {
+          _moreInline = v;
+          if (v && !_buttonOrder.contains('_more')) {
+            final insertAt = (_buttonVisibleCount >= 9 ? 8 : _buttonVisibleCount).clamp(0, _buttonOrder.length);
+            _buttonOrder.insert(insertAt, '_more');
+            _buttonVisibleCount = (_buttonVisibleCount < 9 ? _buttonVisibleCount + 1 : 9);
+            PlayerSettings.setCardButtonOrder(_buttonOrder);
+            PlayerSettings.setCardButtonVisibleCount(_buttonVisibleCount);
+          }
+        });
+      }
     });
     PlayerSettings.getRectangleCovers().then((v) {
       if (mounted && v != _rectangleCovers) setState(() => _rectangleCovers = v);
@@ -147,6 +173,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     PlayerSettings.getSpeedAdjustedTime().then((v) {
       if (mounted && v != _speedAdjustedTime) setState(() => _speedAdjustedTime = v);
     });
+    _loadSavedSpeed();
   }
 
   void _onDownloadChanged() { if (mounted) setState(() {}); }
@@ -157,9 +184,8 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   }
 
   Future<void> _fetchChaptersIfNeeded() async {
-    // If chapters are already in the item data, skip
-    final inline = _media['chapters'] as List<dynamic>? ?? [];
-    if (inline.isNotEmpty) return;
+    // If chapters are already available, skip
+    if (_chapters.isNotEmpty) return;
     // Fetch full item to get chapters
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
@@ -168,10 +194,21 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       final fullItem = await api.getLibraryItem(_itemId);
       if (fullItem != null && mounted) {
         final media = fullItem['media'] as Map<String, dynamic>? ?? {};
-        final chapters = media['chapters'] as List<dynamic>? ?? [];
+        // Books: chapters at media level
+        var chapters = media['chapters'] as List<dynamic>? ?? [];
+        // Podcasts: chapters on the specific episode
+        if (chapters.isEmpty && _episodeId != null) {
+          final episodes = media['episodes'] as List<dynamic>? ?? [];
+          for (final ep in episodes) {
+            if (ep is Map<String, dynamic> && ep['id'] == _episodeId) {
+              chapters = ep['chapters'] as List<dynamic>? ?? [];
+              break;
+            }
+          }
+        }
         if (chapters.isNotEmpty) {
           setState(() => _fetchedChapters = chapters);
-          // If this is the active book and player has no chapters, update them
+          // If this is the active item and player has no chapters, update them
           if (_isActive && widget.player.chapters.isEmpty) {
             widget.player.updateChapters(chapters);
           }
@@ -186,12 +223,15 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     if (_isCastingThis) {
       final stream = ChromecastService().castPositionStream;
       if (stream == null) return;
-      _chapterTrackSub = stream.listen((pos) {
+      _chapterTrackSub = stream.listen((_) {
         if (!_isCastingThis) return;
-        final posS = pos.inMilliseconds / 1000.0;
-        final chapters = ChromecastService().castingChapters;
+        // Use translated book-level position from ChromecastService, not the raw
+        // stream value (which is track-local in multi-track fallback mode).
+        final cast = ChromecastService();
+        final posS = cast.castPosition.inMilliseconds / 1000.0;
+        final chapters = cast.castingChapters;
         if (chapters.isEmpty) {
-          final sec = pos.inSeconds;
+          final sec = cast.castPosition.inSeconds;
           if (sec != _lastChapterIdx) {
             _lastChapterIdx = sec;
             if (mounted) setState(() {});
@@ -269,6 +309,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     PlayerSettings.settingsChanged.removeListener(_reloadButtonOrder);
     ChromecastService().removeListener(_onCastChanged);
     DownloadService().removeListener(_onDownloadChanged);
+    widget.player.removeListener(_onSpeedMaybeChanged);
     _chapterTrackSub?.cancel();
     _blurredCover?.dispose();
     _edgeBarExpanded.dispose();
@@ -354,6 +395,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     final cs = _coverScheme ?? Theme.of(context).colorScheme;
     final accent = cs.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final l = AppLocalizations.of(context)!;
 
     final lib = context.watch<LibraryProvider>();
     final mediaHeaders = lib.mediaHeaders;
@@ -379,6 +421,18 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       }
     } else {
       bookProgress = progress;
+    }
+
+    // Alpha diagnostic: fires only when a state-shape transition happens
+    // (not on every position tick), to confirm why a card's progress bar
+    // would render empty after an AA cold-start.
+    final durBucket = widget.player.totalDuration > 0 ? 'pos' : 'zero';
+    final progBucket = progress <= 0.001 ? '0' : (progress >= 0.999 ? '1' : 'mid');
+    final bookBucket = bookProgress <= 0.001 ? '0' : (bookProgress >= 0.999 ? '1' : 'mid');
+    final sig = 'item=$_itemId ep=$_episodeId active=$_isActive hasBook=${widget.player.hasBook} dur=$durBucket prog=$progBucket bar=$bookBucket playerItem=${widget.player.currentItemId} playerEp=${widget.player.currentEpisodeId}';
+    if (sig != _lastRenderLogSig) {
+      _lastRenderLogSig = sig;
+      debugPrint('[Card] $sig');
     }
 
     // Invalidate blurred background when cover URL changes (e.g. after server update)
@@ -481,16 +535,34 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(24, compact ? 6 : 10, 24, 0),
                   child: StreamBuilder<Duration>(
-                    stream: widget.player.absolutePositionStream,
+                    stream: _isCastingThis
+                        ? cast.castPositionStream
+                        : widget.player.absolutePositionStream,
                     builder: (_, snap) {
-                      final pos = _isActive
-                          ? (snap.data?.inMilliseconds ?? 0) / 1000.0
-                          : bookProgress * _effectiveDuration;
-                      final speed = _speedAdjustedTime && _isActive ? widget.player.speed : 1.0;
+                      final double pos;
+                      final double dur;
+                      if (_isCastingThis) {
+                        pos = cast.castPosition.inMilliseconds / 1000.0;
+                        dur = cast.castingDuration;
+                      } else if (_isActive) {
+                        pos = (snap.data?.inMilliseconds ?? 0) / 1000.0;
+                        dur = _effectiveDuration;
+                      } else {
+                        // Use exact currentTime from server progress if available,
+                        // otherwise fall back to progress ratio * duration.
+                        final pd = _episodeId != null
+                            ? lib.getEpisodeProgressData(_itemId, _episodeId!)
+                            : lib.getProgressData(_itemId);
+                        final ct = (pd?['currentTime'] as num?)?.toDouble();
+                        pos = (ct != null && ct > 0) ? ct : bookProgress * _effectiveDuration;
+                        dur = _effectiveDuration;
+                      }
+                      final speed = _speedAdjustedTime ? (_isActive ? widget.player.speed : _savedSpeed) : 1.0;
+                      final liveBookProgress = dur > 0 ? (pos / dur).clamp(0.0, 1.0) : bookProgress;
                       final elapsed = pos / speed;
-                      final remaining = (_effectiveDuration - pos) / speed;
+                      final remaining = (dur - pos) / speed;
                       final timeStyle = tt.labelSmall?.copyWith(
-                        color: isDark ? Colors.white.withValues(alpha: 0.55) : Colors.black.withValues(alpha: 0.45),
+                        color: isDark ? Colors.white.withValues(alpha: 0.55) : cs.onSurface,
                         fontWeight: FontWeight.w500, fontSize: compact ? 10 : 11,
                         fontFeatures: const [FontFeature.tabularFigures()],
                         shadows: [Shadow(color: isDark ? Colors.black.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.6), blurRadius: 4)],
@@ -500,14 +572,14 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                         children: [
                           Row(
                             children: [
-                              if (_effectiveDuration > 0)
-                                Text(_fmtTime(elapsed), style: timeStyle),
+                              if (_effectiveDuration > 0 && showBookBar)
+                                Text(fmtTime(elapsed), style: timeStyle),
                               const Spacer(),
-                              if (_effectiveDuration > 0)
-                                Text('-${_fmtTime(remaining)}', style: timeStyle),
+                              if (_effectiveDuration > 0 && showBookBar)
+                                Text('-${fmtTime(remaining)}', style: timeStyle),
                             ],
                           ),
-                          Text('${(bookProgress * 100).clamp(0, 100).toStringAsFixed(1)}%',
+                          Text('${(liveBookProgress * 100).clamp(0, 100).toStringAsFixed(1)}%',
                             style: timeStyle),
                         ],
                       );
@@ -515,7 +587,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                   ),
                 ),
               ),
-                // ── Cover with title/author/chapter overlaid + download badge ──
+                // ── Cover with title/author/chapter overlaid ──
                 Expanded(child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: ListenableBuilder(
@@ -523,7 +595,8 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                     builder: (context, _) => LayoutBuilder(
                     builder: (context, constraints) {
                       final maxW = constraints.maxWidth * 0.75;
-                      final maxH = constraints.maxHeight.isFinite ? constraints.maxHeight : maxW;
+                      final rawH = constraints.maxHeight.isFinite ? constraints.maxHeight : maxW;
+                      final maxH = rawH - 24;
                       double coverW, coverH;
                       if (_rectangleCovers) {
                         coverW = maxW;
@@ -540,8 +613,33 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                       final isCastingThis = castService.isCasting && castService.castingItemId == _itemId;
                       final coverPlaying = isCastingThis ? castService.isPlaying : (_isActive && widget.player.isPlaying);
                       final coverLoading = _isStarting || (_isActive && widget.player.isLoadingOrBuffering && !widget.player.isPlaying);
-                      return Center(child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
+                      return Center(child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: () {
+                              final showStreaming = !isDownloaded && _isActive;
+                              final showSaved = isDownloaded;
+                              final visible = showSaved || showStreaming;
+                              final streamColor = isDark ? Colors.white.withValues(alpha: 0.5) : cs.onSurface.withValues(alpha: 0.6);
+                              final savedColor = isDark ? Colors.greenAccent.withValues(alpha: 0.7) : Colors.green.shade700.withValues(alpha: 0.7);
+                              return Opacity(
+                                opacity: visible ? 1.0 : 0.0,
+                                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                  Icon(
+                                    showSaved ? Icons.download_done_rounded : Icons.cell_tower_rounded,
+                                    size: 11, color: showSaved ? savedColor : streamColor),
+                                  const SizedBox(width: 3),
+                                  Text(showSaved ? l.saved : l.expandedCardStreaming, style: TextStyle(
+                                    fontSize: 10, fontWeight: FontWeight.w500,
+                                    color: showSaved ? savedColor : streamColor,
+                                  )),
+                                ]),
+                              );
+                            }(),
+                          ),
+                          GestureDetector(
                         onTap: _coverPlayButton ? () {
                           if (isCastingThis) {
                             castService.togglePlayPause();
@@ -551,13 +649,6 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                             _startPlayback();
                           }
                         } : null,
-                        onLongPress: () => showCoverArtViewer(
-                          context,
-                          title: _title,
-                          coverUrl: _coverUrl,
-                          hiResCoverUrl: _viewerCoverUrl,
-                          httpHeaders: mediaHeaders,
-                        ),
                         child: Container(
                           width: coverW,
                           height: coverH,
@@ -577,34 +668,21 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                 // Cover image
                                 _coverUrl != null
                                     ? _isLocalCover
-                                        ? Image.file(File(_coverUrl!), fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) => _coverPlaceholder())
-                                        : CachedNetworkImage(imageUrl: _coverUrl!, fit: BoxFit.cover,
+                                        ? BlurPaddedCover(child: Image.file(File(_coverUrl!), fit: _rectangleCovers ? BoxFit.cover : BoxFit.contain,
+                                            errorBuilder: (_, __, ___) => CoverPlaceholder(title: _title, author: _author)),
+                                            blurChild: Image.file(File(_coverUrl!), fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+                                            enabled: !_rectangleCovers)
+                                        : BlurPaddedCover(child: CachedNetworkImage(imageUrl: _coverUrl!, fit: _rectangleCovers ? BoxFit.cover : BoxFit.contain,
                                               httpHeaders: mediaHeaders,
-                                              placeholder: (_, __) => _coverPlaceholder(),
-                                              errorWidget: (_, __, ___) => _coverPlaceholder())
-                                    : _coverPlaceholder(),
-                                // Downloaded badge (top-right)
-                                if (isDownloaded)
-                                  Positioned(
-                                    top: 8, right: 8,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withValues(alpha: 0.6),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(Icons.download_done_rounded, size: 13, color: accent.withValues(alpha: 0.9)),
-                                          const SizedBox(width: 4),
-                                          Text('Downloaded', style: TextStyle(color: accent.withValues(alpha: 0.9), fontSize: 10, fontWeight: FontWeight.w600)),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                // Casting overlay
+                                              placeholder: (_, __) => CoverPlaceholder(title: _title, author: _author),
+                                              errorWidget: (_, __, ___) => CoverPlaceholder(title: _title, author: _author)),
+                                            blurChild: CachedNetworkImage(imageUrl: _coverUrl!, fit: BoxFit.cover,
+                                              httpHeaders: mediaHeaders,
+                                              errorWidget: (_, __, ___) => const SizedBox.shrink()),
+                                            enabled: !_rectangleCovers)
+                                    : CoverPlaceholder(title: _title, author: _author),
+                                                // Casting overlay
                                 if (isCastingThis) ...[
                                   Positioned.fill(
                                     child: Container(
@@ -620,12 +698,12 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                       children: [
                                         Icon(Icons.cast_connected_rounded, size: 36, color: accent.withValues(alpha: 0.9)),
                                         const SizedBox(height: 8),
-                                        Text('Casting to', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.w500)),
+                                        Text(l.castingTo, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.w500)),
                                         const SizedBox(height: 2),
                                         Padding(
                                           padding: const EdgeInsets.symmetric(horizontal: 16),
                                           child: Text(
-                                            castService.connectedDeviceName ?? 'Device',
+                                            castService.connectedDeviceName ?? l.expandedCardDeviceFallback,
                                             style: TextStyle(color: accent, fontSize: 14, fontWeight: FontWeight.w700),
                                             textAlign: TextAlign.center,
                                             maxLines: 2,
@@ -646,7 +724,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                     child: Center(
                                       child: coverLoading
                                           ? Container(
-                                              width: 56, height: 56,
+                                              width: 65, height: 65,
                                               decoration: BoxDecoration(
                                                 shape: BoxShape.circle,
                                                 color: Colors.black.withValues(alpha: 0.5),
@@ -660,14 +738,14 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                               opacity: coverPlaying ? 0.2 : 0.9,
                                               duration: const Duration(milliseconds: 200),
                                               child: Container(
-                                                width: 64, height: 64,
+                                                width: 72, height: 72,
                                                 decoration: BoxDecoration(
                                                   shape: BoxShape.circle,
                                                   color: Colors.black.withValues(alpha: 0.45),
                                                 ),
                                                 child: Icon(
                                                   coverPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                                  size: 38, color: accent,
+                                                  size: 42, color: accent,
                                                 ),
                                               ),
                                             ),
@@ -679,7 +757,8 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                           ),
                         ),
                       ),
-                      ));
+                      ),
+                      ]));
                     },
                   ),
                   ),
@@ -721,13 +800,14 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           ..._buildButtonGrid(accent, tt),
+                          if (!_moreInline) ...[
                           const SizedBox(height: 6),
                           Center(
                             child: ListenableBuilder(
                               listenable: ChromecastService(),
                               builder: (context, _) {
                                 final castActive = ChromecastService().isCasting && !_buttonOrder.take(_visibleButtonCount).contains('cast');
-                                return GestureDetector(
+                                return Pressable(
                                   behavior: HitTestBehavior.opaque,
                                   onTap: () => _showMoreMenu(context, accent, tt),
                                   child: Container(
@@ -742,12 +822,12 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                           ? [
                                               Icon(Icons.cast_connected_rounded, size: 18, color: accent),
                                               const SizedBox(width: 4),
-                                              Text('Casting', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: accent)),
+                                              Text(l.casting, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: accent)),
                                             ]
                                           : [
                                               Icon(Icons.more_horiz_rounded, size: 18, color: cs.onSurface.withValues(alpha: 0.54)),
                                               const SizedBox(width: 4),
-                                              Text('More', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: cs.onSurface.withValues(alpha: 0.54))),
+                                              Text(l.more, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: cs.onSurface.withValues(alpha: 0.54))),
                                             ],
                                     ),
                                   ),
@@ -755,6 +835,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                               },
                             ),
                           ),
+                          ],
                           SizedBox(height: compact ? 4 : 8),
                         ],
                       ),
@@ -837,21 +918,6 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     return null;
   }
 
-  String _fmtTime(double s) {
-    if (s < 0) s = 0;
-    final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor(); final sec = (s % 60).floor();
-    if (h > 0) return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
-    return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
-  }
-
-  Widget _coverPlaceholder() {
-    final cs2 = Theme.of(context).colorScheme;
-    return Container(
-      color: cs2.onSurface.withValues(alpha: 0.05),
-      child: Center(child: Icon(Icons.headphones_rounded, size: 48, color: cs2.onSurface.withValues(alpha: 0.15))),
-    );
-  }
-
   void expandCard(BuildContext context) {
     AppShell.setExpandedOpen(true);
     Navigator.of(context, rootNavigator: true).push(
@@ -901,549 +967,44 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     }
   }
 
-  // ── Dynamic button builders ─────────────────────────────────
+  // ── Dynamic button builders (delegated) ─────────────────────
 
-  int get _visibleButtonCount => PlayerSettings.buttonCountForLayout(_buttonLayout);
+  CardActionDelegate _makeActions() => CardActionDelegate(
+    context: context,
+    player: widget.player,
+    item: widget.item,
+    itemId: _itemId,
+    episodeId: _episodeId,
+    isPodcastEpisode: _isPodcastEpisode,
+    title: _title,
+    author: _author,
+    coverUrl: _coverUrl,
+    duration: _duration,
+    effectiveDuration: _effectiveDuration,
+    chapters: _chapters,
+    recentEpisode: _recentEpisode,
+    isActive: _isActive,
+    isPlaybackActive: _isPlaybackActive,
+    isCastingThis: _isCastingThis,
+    speedAdjustedTime: _speedAdjustedTime,
+    savedSpeed: _savedSpeed,
+    visibleCount: _buttonVisibleCount,
+    iconsOnly: _iconsOnly,
+    moreInline: _moreInline,
+    buttonOrder: _buttonOrder,
+    removeFromAbsorbing: _removeFromAbsorbing,
+    onReorder: (newOrder, newCount) {
+      setState(() { _buttonOrder = newOrder; _buttonVisibleCount = newCount; });
+      PlayerSettings.setCardButtonOrder(newOrder);
+      PlayerSettings.setCardButtonVisibleCount(newCount);
+    },
+  );
 
-  List<Widget> _buildButtonGrid(Color accent, TextTheme tt) {
-    final count = _visibleButtonCount;
-    final ids = _buttonOrder.take(count).toList();
+  int get _visibleButtonCount => _buttonVisibleCount;
 
-    // Determine columns per row based on layout
-    int cols;
-    switch (_buttonLayout) {
-      case 'compact': cols = 3; break;
-      case 'row': cols = 5; break;
-      case 'expanded': cols = 3; break;
-      case 'full': cols = 3; break;
-      default: cols = 2; break; // standard
-    }
+  List<Widget> _buildButtonGrid(Color accent, TextTheme tt) => _makeActions().buildButtonGrid(accent, tt);
 
-    final compact = cols >= 5;
-    final short = cols >= 3;
-    final singleRow = count == ids.length && ids.length <= cols;
-    final rows = <Widget>[];
-    if (singleRow) rows.add(const SizedBox(height: 8));
-    for (int r = 0; r < ids.length; r += cols) {
-      if (r > 0) rows.add(const SizedBox(height: 6));
-      final end = (r + cols).clamp(0, ids.length);
-      final rowIds = ids.sublist(r, end);
-      rows.add(Row(children: [
-        for (int c = 0; c < rowIds.length; c++) ...[
-          if (c > 0) const SizedBox(width: 8),
-          Expanded(child: _buildCardButton(rowIds[c], accent, tt, compact: compact, short: short)),
-        ],
-      ]));
-    }
-    if (singleRow) rows.add(const SizedBox(height: 6));
-    return rows;
-  }
+  void _showMoreMenu(BuildContext context, Color accent, TextTheme tt) => _makeActions().showMoreMenu(accent, tt);
 
-  Widget _buildCardButton(String id, Color accent, TextTheme tt, {bool large = false, bool compact = false, bool short = false}) {
-    switch (id) {
-      case 'chapters':
-        return CardWideButton(
-          icon: Icons.list_rounded, label: 'Chapters',
-          accent: accent, isActive: _isPlaybackActive, large: large, compact: compact,
-          onTap: () => _showChapters(context, accent, tt),
-        );
-      case 'speed':
-        return CardWideButton(
-          icon: Icons.speed_rounded, label: 'Speed',
-          accent: accent, isActive: _isPlaybackActive, large: large, compact: compact,
-          child: CardSpeedButtonInline(player: widget.player, accent: accent, isActive: _isActive, large: large, compact: compact, itemId: _itemId),
-        );
-      case 'sleep':
-        return CardWideButton(
-          icon: Icons.bedtime_outlined, label: short ? 'Sleep' : 'Sleep Timer',
-          accent: accent, isActive: _isPlaybackActive, large: large, compact: compact,
-          child: CardSleepButtonInline(accent: accent, isActive: _isPlaybackActive, large: large, compact: compact),
-        );
-      case 'bookmarks':
-        return CardWideButton(
-          icon: Icons.bookmark_outline_rounded, label: 'Bookmarks',
-          accent: accent, isActive: _isPlaybackActive, large: large, compact: compact,
-          child: CardBookmarkButtonInline(
-            player: widget.player, accent: accent,
-            isActive: _isActive, itemId: _itemId, large: large, compact: compact, short: short,
-          ),
-        );
-      case 'details':
-        return CardWideButton(
-          icon: (_episodeId != null || _isPodcastEpisode) ? Icons.podcasts_rounded : Icons.info_outline_rounded,
-          label: short ? 'Details' : ((_episodeId != null || _isPodcastEpisode) ? 'Episode Details' : 'Book Details'),
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
-          onTap: () {
-            if (_episodeId != null || _isPodcastEpisode) {
-              final episode = _recentEpisode ?? {
-                'id': widget.player.currentEpisodeId,
-                'title': widget.player.currentEpisodeTitle,
-                'duration': widget.player.totalDuration,
-              };
-              EpisodeDetailSheet.show(context, widget.item, episode);
-            } else {
-              showBookDetailSheet(context, _itemId);
-            }
-          },
-        );
-      case 'equalizer':
-        return CardWideButton(
-          icon: Icons.equalizer_rounded, label: compact ? 'EQ' : 'Equalizer',
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
-          onTap: () => showEqualizerSheet(context, accent),
-        );
-      case 'cast':
-        return ListenableBuilder(
-          listenable: ChromecastService(),
-          builder: (_, __) {
-            final cast = ChromecastService();
-            final String castLabel;
-            if (compact || short) {
-              castLabel = cast.isConnected ? 'Casting' : 'Cast';
-            } else if (cast.isCasting && cast.castingItemId == _itemId) {
-              castLabel = 'Casting to ${cast.connectedDeviceName ?? "device"}';
-            } else if (cast.isConnected) {
-              castLabel = 'Cast to ${cast.connectedDeviceName ?? "device"}';
-            } else {
-              castLabel = 'Cast to Device';
-            }
-            return CardWideButton(
-              icon: cast.isConnected ? Icons.cast_connected_rounded : Icons.cast_rounded,
-              label: castLabel, accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
-              onTap: () => _handleCastTap(context, accent),
-            );
-          },
-        );
-      case 'history':
-        return CardWideButton(
-          icon: Icons.history_rounded, label: (compact || short) ? 'History' : 'Playback History',
-          accent: accent, isActive: _isActive, large: large, compact: compact,
-          onTap: () => _showHistory(context, accent, tt),
-        );
-      case 'remove':
-        return CardWideButton(
-          icon: Icons.remove_circle_outline_rounded, label: (compact || short) ? 'Remove' : 'Remove from Absorbing',
-          accent: Colors.red.shade300, isActive: true, alwaysEnabled: true, large: large, compact: compact,
-          onTap: _removeFromAbsorbing,
-        );
-      case 'car':
-        return CardWideButton(
-          icon: Icons.directions_car_rounded, label: 'Car Mode',
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
-          onTap: () => _openCarMode(context),
-        );
-      case 'notes':
-        return CardWideButton(
-          icon: Icons.note_rounded, label: 'Notes',
-          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact,
-          onTap: () => _showNotes(context, accent),
-        );
-      default:
-        return const SizedBox.shrink();
-    }
-  }
-
-  Widget _buildMoreMenuItem(String id, Color accent, TextTheme tt, BuildContext ctx) {
-    switch (id) {
-      case 'chapters':
-        return MoreMenuItem(
-          icon: Icons.list_rounded, label: 'Chapters', accent: accent,
-          enabled: _isPlaybackActive,
-          onTap: () { Navigator.pop(ctx); _showChapters(context, accent, tt); },
-        );
-      case 'speed':
-        return MoreMenuItem(
-          icon: Icons.speed_rounded, label: 'Speed', accent: accent,
-          enabled: _isPlaybackActive,
-          onTap: () {
-            Navigator.pop(ctx);
-            showModalBottomSheet(context: context, backgroundColor: Colors.transparent, useSafeArea: true,
-              builder: (_) => CardSpeedSheet(player: widget.player, accent: accent, itemId: _itemId));
-          },
-        );
-      case 'sleep':
-        return MoreMenuItem(
-          icon: Icons.bedtime_outlined, label: 'Sleep Timer', accent: accent,
-          enabled: _isPlaybackActive,
-          onTap: () {
-            Navigator.pop(ctx);
-            showSleepTimerSheet(context, accent);
-          },
-        );
-      case 'bookmarks':
-        return MoreMenuItem(
-          icon: Icons.bookmark_outline_rounded, label: 'Bookmarks', accent: accent,
-          enabled: _isPlaybackActive,
-          onTap: () {
-            Navigator.pop(ctx);
-            showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, useSafeArea: true,
-              builder: (_) => DraggableScrollableSheet(
-                initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.9, expand: false,
-                builder: (_, sc) => SimpleBookmarkSheet(itemId: _itemId, player: widget.player, accent: accent, scrollController: sc, onChanged: () {}),
-              ),
-            );
-          },
-        );
-      case 'details':
-        return MoreMenuItem(
-          icon: (_episodeId != null || _isPodcastEpisode) ? Icons.podcasts_rounded : Icons.info_outline_rounded,
-          label: (_episodeId != null || _isPodcastEpisode) ? 'Episode Details' : 'Book Details',
-          accent: accent,
-          onTap: () {
-            Navigator.pop(ctx);
-            if (_episodeId != null || _isPodcastEpisode) {
-              final episode = _recentEpisode ?? {
-                'id': widget.player.currentEpisodeId,
-                'title': widget.player.currentEpisodeTitle,
-                'duration': widget.player.totalDuration,
-              };
-              EpisodeDetailSheet.show(context, widget.item, episode);
-            } else {
-              showBookDetailSheet(context, _itemId);
-            }
-          },
-        );
-      case 'equalizer':
-        return MoreMenuItem(
-          icon: Icons.equalizer_rounded, label: 'Equalizer', accent: accent,
-          onTap: () { Navigator.pop(ctx); showEqualizerSheet(context, accent); },
-        );
-      case 'cast':
-        return ListenableBuilder(
-          listenable: ChromecastService(),
-          builder: (_, __) {
-            final cast = ChromecastService();
-            final String castLabel;
-            if (cast.isCasting && cast.castingItemId == _itemId) {
-              castLabel = 'Casting to ${cast.connectedDeviceName ?? "device"}';
-            } else if (cast.isConnected) {
-              castLabel = 'Cast to ${cast.connectedDeviceName ?? "device"}';
-            } else {
-              castLabel = 'Cast to Device';
-            }
-            return MoreMenuItem(
-              icon: cast.isConnected ? Icons.cast_connected_rounded : Icons.cast_rounded,
-              label: castLabel, accent: accent,
-              onTap: () { Navigator.pop(ctx); _handleCastTap(context, accent); },
-            );
-          },
-        );
-      case 'history':
-        return MoreMenuItem(
-          icon: Icons.history_rounded, label: 'Playback History', accent: accent,
-          enabled: _isActive,
-          onTap: () { Navigator.pop(ctx); _showHistory(context, accent, tt); },
-        );
-      case 'remove':
-        return MoreMenuItem(
-          icon: Icons.remove_circle_outline_rounded, label: 'Remove from Absorbing',
-          accent: Colors.red.shade300,
-          onTap: () { Navigator.pop(ctx); _removeFromAbsorbing(); },
-        );
-      case 'car':
-        return MoreMenuItem(
-          icon: Icons.directions_car_rounded, label: 'Car Mode', accent: accent,
-          onTap: () { Navigator.pop(ctx); _openCarMode(context); },
-        );
-      case 'notes':
-        return MoreMenuItem(
-          icon: Icons.note_rounded, label: 'Notes', accent: accent,
-          onTap: () { Navigator.pop(ctx); _showNotes(context, accent); },
-        );
-      default:
-        return const SizedBox.shrink();
-    }
-  }
-
-  void _showNotes(BuildContext context, Color accent) {
-    NotesSheet.show(context,
-      itemId: _itemId,
-      itemTitle: _title,
-      accent: accent,
-    );
-  }
-
-  void _openCarMode(BuildContext context) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => CarModeScreen(
-        player: widget.player,
-        itemId: _itemId,
-        fallbackTitle: _title,
-        fallbackAuthor: _author,
-        fallbackCoverUrl: _coverUrl,
-        fallbackDuration: _effectiveDuration,
-        fallbackChapters: _chapters,
-        episodeId: _episodeId,
-        episodeTitle: _recentEpisode?['title'] as String?,
-      ),
-    ));
-  }
-
-  void _handleCastTap(BuildContext context, Color accent) {
-    final cast = ChromecastService();
-    final auth = context.read<AuthProvider>();
-    final api = auth.apiService;
-    if (cast.isCasting && cast.castingItemId == _itemId) {
-      showModalBottomSheet(
-        context: context,
-        backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        builder: (_) => CastControlSheet(),
-      );
-    } else if (cast.isConnected) {
-      if (api != null) {
-        cast.castItem(
-          api: api, itemId: _itemId, title: _title, author: _author,
-          coverUrl: _coverUrl, totalDuration: _duration, chapters: _chapters,
-          episodeId: _episodeId ?? widget.player.currentEpisodeId,
-        );
-      }
-    } else {
-      showCastDevicePicker(context,
-        api: api, itemId: _itemId, title: _title, author: _author,
-        coverUrl: _coverUrl, totalDuration: _duration, chapters: _chapters,
-        episodeId: _episodeId ?? widget.player.currentEpisodeId);
-    }
-  }
-
-  void _showChapters(BuildContext context, Color accent, TextTheme tt) {
-    final cast = ChromecastService();
-    final chapters = _isCastingThis ? cast.castingChapters : (_isActive ? widget.player.chapters : _chapters);
-    if (chapters.isEmpty) return;
-    final totalDur = _isCastingThis ? cast.castingDuration : (_isActive ? widget.player.totalDuration : _duration);
-
-    // Find current chapter index for auto-scroll
-    int currentIdx = -1;
-    if (_isPlaybackActive) {
-      final pos = _isCastingThis
-          ? cast.castPosition.inMilliseconds / 1000.0
-          : widget.player.position.inMilliseconds / 1000.0;
-      for (int i = 0; i < chapters.length; i++) {
-        final ch = chapters[i] as Map<String, dynamic>;
-        final start = (ch['start'] as num?)?.toDouble() ?? 0;
-        final end = (ch['end'] as num?)?.toDouble() ?? 0;
-        if (pos >= start && pos < end) { currentIdx = i; break; }
-      }
-    }
-
-    showModalBottomSheet(
-      context: context, isScrollControlled: true, useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => DraggableScrollableSheet(
-        expand: false, initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.9,
-        builder: (_, sc) {
-          if (currentIdx > 0) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              final target = currentIdx * 48.0 - 48;
-              if (sc.hasClients) sc.jumpTo(target.clamp(0, sc.position.maxScrollExtent));
-            });
-          }
-          return Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).bottomSheetTheme.backgroundColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border(top: BorderSide(color: accent.withValues(alpha: 0.2), width: 1)),
-          ),
-          child: Column(children: [
-            Padding(padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
-            Text('Chapters (${chapters.length})', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Expanded(child: ListView.builder(
-              controller: sc, itemCount: chapters.length,
-              itemBuilder: (_, i) {
-                final ch = chapters[i] as Map<String, dynamic>;
-                final chTitle = ch['title'] as String? ?? 'Chapter ${i + 1}';
-                final start = (ch['start'] as num?)?.toDouble() ?? 0;
-                final end = (ch['end'] as num?)?.toDouble() ?? 0;
-                final pos = _isCastingThis
-                    ? cast.castPosition.inMilliseconds / 1000.0
-                    : (_isActive ? widget.player.position.inMilliseconds / 1000.0 : 0.0);
-                final isCurrent = _isPlaybackActive && pos >= start && pos < end;
-                final isFinished = _isPlaybackActive && pos >= end;
-                final pct = totalDur > 0 ? (end / totalDur * 100).round() : 0;
-                final cs = Theme.of(context).colorScheme;
-                return ListTile(
-                  dense: true, selected: isCurrent,
-                  selectedTileColor: accent.withValues(alpha: 0.1),
-                  leading: SizedBox(width: 28, child: isFinished
-                    ? Icon(Icons.check_rounded, size: 16, color: cs.onSurfaceVariant.withValues(alpha: 0.4))
-                    : Text('${i + 1}', textAlign: TextAlign.center,
-                        style: tt.labelMedium?.copyWith(fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w400, color: isCurrent ? accent : cs.onSurfaceVariant))),
-                  title: Text(chTitle,
-                    style: tt.bodyMedium?.copyWith(fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
-                      color: isCurrent ? cs.onSurface : isFinished ? cs.onSurface.withValues(alpha: 0.4) : cs.onSurface.withValues(alpha: 0.7))),
-                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text('$pct%', style: tt.labelSmall?.copyWith(
-                      color: isCurrent ? accent.withValues(alpha: 0.7) : cs.onSurface.withValues(alpha: 0.24), fontSize: 10, fontWeight: FontWeight.w600)),
-                    const SizedBox(width: 8),
-                    Text(_fmtDur((end - start) / (_speedAdjustedTime && _isActive ? widget.player.speed : 1.0)), style: tt.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                  ]),
-                  onTap: _isPlaybackActive ? () {
-                    final seekDur = Duration(seconds: start.round());
-                    if (_isCastingThis) {
-                      cast.seekTo(seekDur);
-                    } else {
-                      widget.player.seekTo(seekDur);
-                    }
-                    Navigator.pop(ctx);
-                  } : null,
-                );
-              },
-            )),
-          ]),
-        );
-        },
-      ),
-    );
-  }
-
-  void _showHistory(BuildContext context, Color accent, TextTheme tt) {
-    showModalBottomSheet(
-      context: context, isScrollControlled: true, useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => DraggableScrollableSheet(
-        expand: false, initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.9,
-        builder: (_, sc) => Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).bottomSheetTheme.backgroundColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border(top: BorderSide(color: accent.withValues(alpha: 0.2), width: 1)),
-          ),
-          child: Column(children: [
-            Padding(padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(children: [
-                const Spacer(),
-                Text('Playback History', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-                const Spacer(),
-                IconButton(
-                  icon: Icon(Icons.delete_outline_rounded, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  onPressed: () async {
-                    await PlaybackHistoryService().clearHistory(_itemId);
-                    Navigator.pop(ctx);
-                  },
-                  tooltip: 'Clear history',
-                ),
-              ]),
-            ),
-            if (_isActive)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Text('Tap an event to jump to that position',
-                  style: tt.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.6), fontStyle: FontStyle.italic)),
-              )
-            else
-              const SizedBox(height: 8),
-            Expanded(child: FutureBuilder<List<PlaybackEvent>>(
-              future: PlaybackHistoryService().getHistory(_itemId),
-              builder: (ctx, snap) {
-                if (!snap.hasData) return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-                final events = snap.data!;
-                if (events.isEmpty) return Center(child: Text('No history yet', style: tt.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)));
-
-                // Build list items with session date headers
-                final items = <Widget>[];
-                String? lastDateLabel;
-                for (int i = 0; i < events.length; i++) {
-                  final e = events[i];
-                  final dateLabel = _dateLabel(e.timestamp);
-                  if (dateLabel != lastDateLabel) {
-                    lastDateLabel = dateLabel;
-                    items.add(Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                      child: Text(dateLabel, style: tt.labelSmall?.copyWith(
-                        color: accent.withValues(alpha: 0.6), fontWeight: FontWeight.w600, letterSpacing: 0.5)),
-                    ));
-                  }
-                  final posLabel = _fmtTime(e.positionSeconds);
-                  final timeStr = _timeOfDay(e.timestamp);
-                  items.add(ListTile(
-                    dense: true, visualDensity: const VisualDensity(vertical: -2),
-                    leading: Icon(_historyIcon(e.type), size: 18, color: accent.withValues(alpha: 0.7)),
-                    title: Text(e.label, style: tt.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7))),
-                    subtitle: Text('at $posLabel', style: tt.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                    trailing: Text(timeStr, style: tt.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3))),
-                    onTap: _isActive ? () {
-                      widget.player.seekTo(Duration(seconds: e.positionSeconds.round()));
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(duration: const Duration(seconds: 3), content: Text('Jumped to $posLabel')));
-                    } : null,
-                  ));
-                }
-
-                return ListView(controller: sc, children: items);
-              },
-            )),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  void _showMoreMenu(BuildContext context, Color accent, TextTheme tt) {
-    final count = _visibleButtonCount;
-    final overflowIds = _buttonOrder.skip(count).toList();
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => MoreMenuSheet(
-        overflowIds: overflowIds,
-        allIds: _buttonOrder,
-        visibleCount: count,
-        accent: accent,
-        buildItem: (id) => _buildMoreMenuItem(id, accent, tt, ctx),
-        onReorder: (newOrder) {
-          setState(() => _buttonOrder = newOrder);
-          PlayerSettings.setCardButtonOrder(newOrder);
-        },
-      ),
-    );
-  }
-
-  IconData _historyIcon(PlaybackEventType type) {
-    switch (type) {
-      case PlaybackEventType.play: return Icons.play_arrow_rounded;
-      case PlaybackEventType.pause: return Icons.pause_rounded;
-      case PlaybackEventType.seek: return Icons.swap_horiz_rounded;
-      case PlaybackEventType.syncLocal: return Icons.save_rounded;
-      case PlaybackEventType.syncServer: return Icons.cloud_done_rounded;
-      case PlaybackEventType.autoRewind: return Icons.replay_rounded;
-      case PlaybackEventType.skipForward: return Icons.forward_30_rounded;
-      case PlaybackEventType.skipBackward: return Icons.replay_10_rounded;
-      case PlaybackEventType.speedChange: return Icons.speed_rounded;
-    }
-  }
-
-  String _dateLabel(DateTime dt) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final date = DateTime(dt.year, dt.month, dt.day);
-    if (date == today) return 'Today';
-    if (date == today.subtract(const Duration(days: 1))) return 'Yesterday';
-    if (now.difference(dt).inDays < 7) {
-      const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-      return days[dt.weekday - 1];
-    }
-    return '${dt.month}/${dt.day}/${dt.year}';
-  }
-
-  String _timeOfDay(DateTime dt) {
-    final h = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final m = dt.minute.toString().padLeft(2, '0');
-    final ampm = dt.hour < 12 ? 'AM' : 'PM';
-    return '$h:$m $ampm';
-  }
-
-  String _fmtDur(double s) {
-    final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor(); final sec = (s % 60).floor();
-    if (h > 0) return '${h}h ${m}m';
-    return '${m}m ${sec}s';
-  }
 }
 

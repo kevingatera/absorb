@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../l10n/app_localizations.dart';
+import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 
 class HomeCustomizeSheet extends StatefulWidget {
@@ -90,6 +92,97 @@ class _HomeCustomizeSheetState extends State<HomeCustomizeSheet> {
     });
   }
 
+  Future<void> _showAddGenre(BuildContext context, LibraryProvider lib, ColorScheme cs, TextTheme tt) async {
+    final api = context.read<AuthProvider>().apiService;
+    final libraryId = lib.selectedLibraryId;
+    if (api == null || libraryId == null) return;
+
+    final filterData = await api.getLibraryFilterData(libraryId);
+    if (filterData == null || !context.mounted) return;
+
+    final genres = (filterData['genres'] as List<dynamic>? ?? [])
+        .map((g) => g is Map ? (g['name'] as String? ?? '') : g.toString())
+        .where((g) => g.isNotEmpty)
+        .toList()
+      ..sort();
+
+    final alreadyAdded = lib.addedGenres;
+
+    if (!context.mounted) return;
+    final l = AppLocalizations.of(context)!;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: cs.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (ctx, sc) => Column(children: [
+          const SizedBox(height: 8),
+          Center(child: Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: cs.onSurface.withValues(alpha: 0.24),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          )),
+          const SizedBox(height: 16),
+          Text(l.homeCustomizeAddGenreTitle, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(l.homeCustomizeAddGenreSubtitle,
+            style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
+          const SizedBox(height: 12),
+          Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.3), indent: 20, endIndent: 20),
+          Expanded(
+            child: genres.isEmpty
+                ? ListView(controller: sc, children: [
+                    const SizedBox(height: 60),
+                    Center(child: Text(l.noGenresFound, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant))),
+                  ])
+                : ListView.builder(
+                    controller: sc,
+                    padding: EdgeInsets.only(top: 8, bottom: MediaQuery.of(ctx).padding.bottom + 8),
+                    itemCount: genres.length,
+                    itemBuilder: (ctx, i) {
+                      final genre = genres[i];
+                      final added = alreadyAdded.contains(genre);
+                      return ListTile(
+                        dense: true,
+                        leading: Icon(Icons.label_outline_rounded, size: 18, color: cs.onSurfaceVariant),
+                        title: Text(genre, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                        trailing: added
+                            ? Icon(Icons.check_rounded, size: 18, color: cs.primary)
+                            : null,
+                        onTap: added ? null : () async {
+                          await lib.addGenreSection(genre);
+                          _initialized = false; // force re-init to pick up the new section
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (mounted) setState(() {});
+                        },
+                      );
+                    },
+                  ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _removeGenre(String genre, LibraryProvider lib) async {
+    await lib.removeGenreSection(genre);
+    setState(() {
+      final sectionId = 'genre:$genre';
+      _sections.removeWhere((s) => s['id'] == sectionId);
+      _hiddenIds.remove(sectionId);
+    });
+  }
+
   Future<void> _save(LibraryProvider lib) async {
     await lib.saveSectionOrder(_sections.map((s) => s['id']!).toList());
     // Sync hidden state: apply our local set to the provider
@@ -114,6 +207,7 @@ class _HomeCustomizeSheetState extends State<HomeCustomizeSheet> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final lib = context.read<LibraryProvider>();
+    final l = AppLocalizations.of(context)!;
 
     _initSections(lib);
 
@@ -133,20 +227,31 @@ class _HomeCustomizeSheetState extends State<HomeCustomizeSheet> {
         child: Row(children: [
           GestureDetector(
             onTap: () => _reset(lib),
-            child: Text('Reset', style: tt.labelMedium?.copyWith(
+            child: Text(l.reset, style: tt.labelMedium?.copyWith(
               color: cs.primary, fontWeight: FontWeight.w500,
             )),
           ),
           const Spacer(),
-          Text('Customize Home', style: tt.titleMedium?.copyWith(
+          Text(l.customizeHome, style: tt.titleMedium?.copyWith(
             fontWeight: FontWeight.w600, color: cs.onSurface,
           )),
           const Spacer(),
           GestureDetector(
+            onTap: () => _showAddGenre(context, lib, cs, tt),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Icon(Icons.add_rounded, size: 24, color: cs.primary),
+            ),
+          ),
+          const SizedBox(width: 12),
+          GestureDetector(
             onTap: () => _save(lib),
-            child: Text('Done', style: tt.labelMedium?.copyWith(
-              color: cs.primary, fontWeight: FontWeight.w600,
-            )),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              child: Text(l.done, style: tt.labelLarge?.copyWith(
+                color: cs.primary, fontWeight: FontWeight.w600,
+              )),
+            ),
           ),
         ]),
       ),
@@ -154,7 +259,7 @@ class _HomeCustomizeSheetState extends State<HomeCustomizeSheet> {
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Text(
-          'Drag to reorder, tap eye to show/hide',
+          l.dragToReorderTapEye,
           style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
           textAlign: TextAlign.center,
         ),
@@ -166,7 +271,7 @@ class _HomeCustomizeSheetState extends State<HomeCustomizeSheet> {
       Expanded(
         child: ReorderableListView.builder(
           scrollController: widget.scrollController,
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: EdgeInsets.only(top: 8, bottom: MediaQuery.of(context).padding.bottom + 8),
           itemCount: _sections.length,
           onReorderStart: (_) => HapticFeedback.mediumImpact(),
           onReorder: (oldIndex, newIndex) {
@@ -183,11 +288,14 @@ class _HomeCustomizeSheetState extends State<HomeCustomizeSheet> {
             final isHidden = _hiddenIds.contains(id);
             final isPlaylist = id.startsWith('playlist:');
             final isCollection = id.startsWith('collection:');
+            final isGenre = id.startsWith('genre:');
             final icon = isPlaylist
                 ? Icons.playlist_play_rounded
                 : isCollection
                     ? Icons.collections_bookmark_rounded
-                    : (_sectionIcons[id] ?? Icons.album_outlined);
+                    : isGenre
+                        ? Icons.label_outline_rounded
+                        : (_sectionIcons[id] ?? Icons.album_outlined);
 
             return Container(
               key: ValueKey(id),
@@ -210,6 +318,15 @@ class _HomeCustomizeSheetState extends State<HomeCustomizeSheet> {
                       : cs.onSurface,
                 )),
                 trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (isGenre)
+                    GestureDetector(
+                      onTap: () => _removeGenre(id.substring(6), lib),
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Icon(Icons.remove_circle_outline_rounded, size: 18,
+                          color: Colors.red.withValues(alpha: 0.6)),
+                      ),
+                    ),
                   GestureDetector(
                     onTap: () {
                       setState(() {

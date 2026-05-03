@@ -45,6 +45,16 @@ android {
         versionName = flutter.versionName
     }
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("github") {
+            dimension = "distribution"
+        }
+        create("playstore") {
+            dimension = "distribution"
+        }
+    }
+
     buildTypes {
     debug {
         signingConfig = signingConfigs.getByName("release")
@@ -62,13 +72,8 @@ android {
 
     applicationVariants.all {
         outputs.all {
-            val output =
-                this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            val abi = output.filters
-                .find { it.filterType.toString() == "ABI" }
-                ?.identifier
-            val suffix = if (abi.isNullOrBlank()) "" else "-$abi"
-            output.outputFileName = "absorb-homelab-${versionName}${suffix}.apk"
+            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl)
+                .outputFileName = "absorb-homelab-${versionName}+${versionCode}.apk"
         }
     }
 }

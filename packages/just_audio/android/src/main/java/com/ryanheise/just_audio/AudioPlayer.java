@@ -55,6 +55,7 @@ import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.cache.Cache;
 import androidx.media3.datasource.cache.CacheDataSink;
 import androidx.media3.datasource.cache.CacheDataSource;
+
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor;
 import androidx.media3.datasource.cache.SimpleCache;
 import androidx.media3.database.StandaloneDatabaseProvider;
@@ -179,13 +180,13 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
             }
             switch (player.getPlaybackState()) {
             case Player.STATE_BUFFERING:
-                handler.postDelayed(this, 200);
+                handler.postDelayed(this, 500);
                 break;
             case Player.STATE_READY:
                 if (player.getPlayWhenReady()) {
-                    handler.postDelayed(this, 500);
+                    handler.postDelayed(this, 2000);
                 } else {
-                    handler.postDelayed(this, 1000);
+                    handler.postDelayed(this, 5000);
                 }
                 break;
             default:
@@ -223,7 +224,7 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
                     .setPrioritizeTimeOverSizeThresholds((Boolean)loadControlMap.get("prioritizeTimeOverSizeThresholds"))
                     .setBackBuffer((int)((getLong(loadControlMap.get("backBufferDuration")))/1000), false);
                 if (loadControlMap.get("targetBufferBytes") != null) {
-                    builder.setTargetBufferBytes((Integer)loadControlMap.get("targetBufferBytes"));
+                    builder.setTargetBufferBytes((int)(long)(getLong(loadControlMap.get("targetBufferBytes"))));
                 }
                 loadControl = builder.build();
             }
@@ -532,6 +533,7 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
             case "setPreferredPeakBitRate":
                 result.success(new HashMap<String, Object>());
                 break;
+
             case "seek":
                 Long position = getLong(call.argument("position"));
                 Integer index = call.argument("index");
@@ -896,6 +898,45 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
                     0.0f, 0.707f, // SR  -> L, R
                     0.5f, 0.0f,   // BL  -> L, R
                     0.0f, 0.5f    // BR  -> L, R
+                }));
+            // Downmix Dolby Atmos 5.1.4 (10ch) to stereo. Hit when the
+            // Samsung Dolby E-AC-3 decoder mid-stream-upmixes a 5.1 base to
+            // add 4 height channels. Buffer order follows the channel mask
+            // bit order reported by c2.dolby.eac3.decoder (LSB first):
+            // FL, FR, FC, LFE, BL, BR, TFL, TFR, TBL, TBR
+            monoProcessor.putChannelMixingMatrix(
+                new androidx.media3.common.audio.ChannelMixingMatrix(10, 2, new float[]{
+                    1.0f, 0.0f,   // FL  -> L, R
+                    0.0f, 1.0f,   // FR  -> L, R
+                    0.707f, 0.707f, // FC -> L, R
+                    0.5f, 0.5f,   // LFE -> L, R
+                    0.707f, 0.0f, // BL  -> L, R
+                    0.0f, 0.707f, // BR  -> L, R
+                    0.5f, 0.0f,   // TFL -> L, R (height, -6 dB)
+                    0.0f, 0.5f,   // TFR -> L, R
+                    0.354f, 0.0f, // TBL -> L, R (rear height, -9 dB)
+                    0.0f, 0.354f  // TBR -> L, R
+                }));
+            // Downmix Dolby Atmos 7.1.4 (12ch) to stereo. This is the most
+            // common Atmos bed layout and is what Samsung's Dolby decoder
+            // produces for E-AC-3 JOC content after its CCodecWatchDolbyAtmos
+            // watcher upgrades the decoder from 5.1 to full Atmos output.
+            // Buffer order (mask-bit LSB first):
+            // FL, FR, FC, LFE, BL, BR, SL, SR, TFL, TFR, TBL, TBR
+            monoProcessor.putChannelMixingMatrix(
+                new androidx.media3.common.audio.ChannelMixingMatrix(12, 2, new float[]{
+                    1.0f, 0.0f,   // FL  -> L, R
+                    0.0f, 1.0f,   // FR  -> L, R
+                    0.707f, 0.707f, // FC -> L, R
+                    0.5f, 0.5f,   // LFE -> L, R
+                    0.5f, 0.0f,   // BL  -> L, R
+                    0.0f, 0.5f,   // BR  -> L, R
+                    0.707f, 0.0f, // SL  -> L, R
+                    0.0f, 0.707f, // SR  -> L, R
+                    0.5f, 0.0f,   // TFL -> L, R (height, -6 dB)
+                    0.0f, 0.5f,   // TFR -> L, R
+                    0.354f, 0.0f, // TBL -> L, R (rear height, -9 dB)
+                    0.0f, 0.354f  // TBR -> L, R
                 }));
             sMonoProcessor = monoProcessor;
             MonoController.register(AudioPlayer::setMonoEnabled);

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -7,9 +8,11 @@ import '../providers/library_provider.dart';
 import '../screens/app_shell.dart';
 import '../services/audio_player_service.dart';
 import '../services/bookmark_service.dart';
+import '../services/scoped_prefs.dart';
 import '../widgets/card_buttons.dart';
 import '../services/download_service.dart';
 import '../widgets/absorb_page_header.dart';
+import '../l10n/app_localizations.dart';
 
 class BookmarksScreen extends StatefulWidget {
   const BookmarksScreen({super.key});
@@ -24,6 +27,9 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
   String _sort = 'newest';
   // Selected bookmarks as "itemId::bookmarkId" keys
   final Set<String> _selected = {};
+  final Map<String, String> _titleCache = {};
+
+  static const _titleCacheKey = 'bookmark_book_titles';
 
   @override
   void initState() {
@@ -33,12 +39,113 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
 
   Future<void> _loadSort() async {
     _sort = await PlayerSettings.getBookmarkSort();
+    // Read the persisted title cache before rendering so rows don't flash
+    // raw item-ID fragments on the first paint while _syncAll fetches.
+    await _loadTitleCache();
+    // Show local bookmarks immediately, then sync with server
     _load();
+    _syncAll();
+  }
+
+  Future<void> _loadTitleCache() async {
+    final raw = await ScopedPrefs.getString(_titleCacheKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        decoded.forEach((k, v) {
+          if (k is String && v is String) _titleCache[k] = v;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveTitleCache() async {
+    try {
+      await ScopedPrefs.setString(_titleCacheKey, jsonEncode(_titleCache));
+    } catch (_) {}
   }
 
   Future<void> _load() async {
     final all = await BookmarkService().getAllBookmarks(sort: _sort);
     if (mounted) setState(() { _allBookmarks = all; _loading = false; });
+  }
+
+  Future<void> _syncAll() async {
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) return;
+    final user = await api.getMe();
+    if (user == null || !mounted) return;
+    final itemIds = <String>{};
+    // Bookmarks on the user object (keyed by libraryItemId)
+    final userBookmarks = user['bookmarks'] as List<dynamic>?;
+    if (userBookmarks != null) {
+      for (final b in userBookmarks) {
+        if (b is Map<String, dynamic>) {
+          final itemId = b['libraryItemId'] as String? ?? '';
+          if (itemId.isNotEmpty) itemIds.add(itemId);
+        }
+      }
+    }
+    // Also check mediaProgress for bookmarks
+    final progressList = user['mediaProgress'] as List<dynamic>? ?? [];
+    for (final p in progressList) {
+      if (p is! Map<String, dynamic>) continue;
+      final bookmarks = p['bookmarks'] as List?;
+      if (bookmarks != null && bookmarks.isNotEmpty) {
+        final itemId = p['libraryItemId'] as String? ?? '';
+        if (itemId.isNotEmpty) itemIds.add(itemId);
+      }
+    }
+    // Also include items we have local bookmarks for
+    final local = await BookmarkService().getAllBookmarks();
+    itemIds.addAll(local.keys);
+    // Group server bookmarks by itemId for efficient sync
+    final serverByItem = <String, List<Map<String, dynamic>>>{};
+    if (userBookmarks != null) {
+      for (final b in userBookmarks) {
+        if (b is Map<String, dynamic>) {
+          final id = b['libraryItemId'] as String? ?? '';
+          if (id.isNotEmpty) {
+            serverByItem.putIfAbsent(id, () => []).add(b);
+          }
+        }
+      }
+    }
+    // Sync each item with pre-loaded server data
+    for (final itemId in itemIds) {
+      if (!mounted) break;
+      await BookmarkService().syncBookmarks(itemId, api,
+        preloadedServerBookmarks: serverByItem[itemId] ?? []);
+    }
+    // Fetch titles for items not in any local cache
+    bool titleCacheDirty = false;
+    for (final itemId in itemIds) {
+      if (!mounted) break;
+      if (_titleCache.containsKey(itemId)) continue;
+      // Only need a server fetch when no cache (library/download/title) has it.
+      final resolved = _resolveTitle(itemId);
+      if (resolved == null) {
+        final item = await api.getLibraryItem(itemId);
+        if (item != null) {
+          final media = item['media'] as Map<String, dynamic>? ?? {};
+          final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+          final title = metadata['title'] as String?;
+          if (title != null && title.isNotEmpty) {
+            _titleCache[itemId] = title;
+            titleCacheDirty = true;
+          }
+        }
+      } else {
+        // Promote library/download-resolved titles into our persisted cache
+        // so future cold visits don't flash the fallback either.
+        _titleCache[itemId] = resolved;
+        titleCacheDirty = true;
+      }
+    }
+    if (titleCacheDirty) await _saveTitleCache();
+    // Reload after sync
+    if (mounted) _load();
   }
 
   String _selKey(String itemId, String bookmarkId) => '$itemId::$bookmarkId';
@@ -85,21 +192,22 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
   Future<void> _deleteSelected() async {
     if (_selected.isEmpty) return;
 
+    final l = AppLocalizations.of(context)!;
     final count = _selected.length;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.delete_outline_rounded),
-        title: Text('Delete $count bookmark${count == 1 ? '' : 's'}?'),
-        content: const Text('This cannot be undone.'),
+        title: Text(l.bookmarksDeleteCount(count)),
+        content: Text(l.bookmarksDeleteContent),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
+            child: Text(l.delete),
           ),
         ],
       ),
@@ -116,7 +224,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
 
     for (final entry in grouped.entries) {
       for (final bmId in entry.value) {
-        await BookmarkService().deleteBookmark(itemId: entry.key, bookmarkId: bmId);
+        await BookmarkService().deleteBookmark(itemId: entry.key, bookmarkId: bmId, api: context.read<AuthProvider>().apiService);
       }
     }
 
@@ -125,50 +233,106 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Deleted $count bookmark${count == 1 ? '' : 's'}'),
+        content: Text(l.bookmarksDeletedCount(count)),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
     }
   }
 
-  /// Best-effort title lookup — no API calls.
-  String _resolveTitle(String itemId) {
-    final cache = context.read<LibraryProvider>().absorbingItemCache[itemId];
-    if (cache != null) {
-      final media = cache['media'] as Map<String, dynamic>? ?? {};
+  /// Returns the book title for [itemId] from any available cache, or null
+  /// when the title isn't known locally yet. Callers should render a neutral
+  /// placeholder on null rather than the raw item ID.
+  String? _resolveTitle(String itemId) {
+    final cached = _titleCache[itemId];
+    if (cached != null && cached.isNotEmpty) return cached;
+    final libCache =
+        context.read<LibraryProvider>().absorbingItemCache[itemId];
+    if (libCache != null) {
+      final media = libCache['media'] as Map<String, dynamic>? ?? {};
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
       final title = metadata['title'] as String?;
       if (title != null && title.isNotEmpty) return title;
     }
     final dl = DownloadService().getInfo(itemId);
     if (dl.title != null && dl.title!.isNotEmpty) return dl.title!;
-    return itemId.length > 12 ? '${itemId.substring(0, 12)}…' : itemId;
+    return null;
+  }
+
+  Future<void> _editBookmark(String itemId, Bookmark bookmark) async {
+    final l = AppLocalizations.of(context)!;
+    final titleC = TextEditingController(text: bookmark.title);
+    final noteC = TextEditingController(text: bookmark.note ?? '');
+    final result = await showDialog<Map<String, String>>(context: context, builder: (ctx) => AlertDialog(
+      title: Text(l.editBookmark),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: titleC, decoration: InputDecoration(labelText: l.titleLabel, border: const OutlineInputBorder())),
+        const SizedBox(height: 12),
+        TextField(controller: noteC, maxLines: 3, decoration: InputDecoration(labelText: l.noteOptionalLabel, border: const OutlineInputBorder(), alignLabelWithHint: true)),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l.cancel)),
+        FilledButton(onPressed: () => Navigator.pop(ctx, {'title': titleC.text, 'note': noteC.text}), child: Text(l.save)),
+      ],
+    ));
+    if (result != null && result['title']!.isNotEmpty) {
+      await BookmarkService().updateBookmark(
+        itemId: itemId, bookmarkId: bookmark.id,
+        title: result['title']!, note: result['note']?.isNotEmpty == true ? result['note'] : null,
+        api: context.read<AuthProvider>().apiService,
+      );
+      _load();
+    }
   }
 
   Future<void> _jumpToBookmark(String itemId, Bookmark bookmark, String bookTitle) async {
-    final confirmed = await showDialog<bool>(
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
+    final action = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.bookmark_rounded),
-        title: const Text('Jump to bookmark?'),
-        content: Text(
-          '"${bookmark.title}" at ${bookmark.formattedPosition}\nin $bookTitle',
-        ),
+        title: Text(bookmark.title, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (bookmark.note != null && bookmark.note!.isNotEmpty) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: cs.onSurface.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(bookmark.note!, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant, height: 1.4)),
+            ),
+            const SizedBox(height: 12),
+          ],
+          Text(l.bookmarksScreenPositionInBook(bookmark.formattedPosition, bookTitle),
+            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
+        ]),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l.bookmarksScreenClose),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'edit'),
+            child: Text(l.edit),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Jump'),
+            onPressed: () => Navigator.pop(ctx, 'jump'),
+            child: Text(l.bookmarksJump),
           ),
         ],
       ),
     );
 
-    if (confirmed != true || !mounted) return;
+    if (action == 'edit') {
+      await _editBookmark(itemId, bookmark);
+      return;
+    }
+
+    if (action != 'jump' || !mounted) return;
 
     // Read providers before async gaps
     final lib = context.read<LibraryProvider>();
@@ -178,6 +342,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     // If the same book is already loaded, just seek
     if (player.currentItemId == itemId) {
       await player.seekTo(Duration(seconds: bookmark.positionSeconds.round()));
+      if (!player.isPlaying) player.play();
       if (mounted) Navigator.pop(context);
       AppShell.goToAbsorbingGlobal();
       return;
@@ -186,8 +351,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     // Otherwise load the book from API
     if (api == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Not connected to server'),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(l.bookmarksNotConnected),
           behavior: SnackBarBehavior.floating,
         ));
       }
@@ -197,8 +362,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     final fullItem = await api.getLibraryItem(itemId);
     if (fullItem == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Could not load book'),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(l.bookmarksCouldNotLoad),
           behavior: SnackBarBehavior.floating,
         ));
       }
@@ -223,6 +388,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
       totalDuration: duration,
       chapters: chapters,
       startTime: bookmark.positionSeconds,
+      forceStartTime: true,
     );
     if (error != null && mounted) showErrorSnackBar(context, error);
 
@@ -234,6 +400,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -246,28 +413,50 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 12, 8, 0),
                     child: Row(children: [
-                      const Expanded(child: AbsorbPageHeader(title: 'All Bookmarks', padding: EdgeInsets.zero)),
+                      Expanded(child: AbsorbPageHeader(title: l.bookmarksTitle, padding: EdgeInsets.zero)),
                       if (_selecting)
                         IconButton(
                           icon: Icon(Icons.close_rounded, color: cs.onSurfaceVariant),
-                          tooltip: 'Cancel selection',
+                          tooltip: l.bookmarksCancelSelection,
                           onPressed: _exitSelection,
                         )
                       else ...[
                         if (_allBookmarks.isNotEmpty) ...[
-                          IconButton(
-                            icon: Icon(_sort == 'newest' ? Icons.schedule_rounded : Icons.sort_rounded, color: cs.onSurfaceVariant),
-                            tooltip: _sort == 'newest' ? 'Sorted by newest' : 'Sorted by position',
-                            onPressed: () {
-                              final next = _sort == 'newest' ? 'position' : 'newest';
+                          GestureDetector(
+                            onTap: () {
+                              final next = _sort == 'newest' ? 'position'
+                                  : _sort == 'position' ? 'position_desc'
+                                  : 'newest';
                               setState(() => _sort = next);
                               PlayerSettings.setBookmarkSort(next);
                               _load();
                             },
+                            child: Container(
+                              height: 32,
+                              padding: const EdgeInsets.symmetric(horizontal: 10),
+                              decoration: BoxDecoration(
+                                color: cs.onSurface.withValues(alpha: 0.06),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                Icon(
+                                  _sort == 'newest' ? Icons.schedule_rounded
+                                      : _sort == 'position' ? Icons.arrow_upward_rounded
+                                      : Icons.arrow_downward_rounded,
+                                  color: cs.onSurfaceVariant, size: 16,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _sort == 'newest' ? l.bookmarksScreenSortNewest
+                                      : l.bookmarksScreenSortPosition,
+                                  style: Theme.of(context).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                                ),
+                              ]),
+                            ),
                           ),
                           IconButton(
                             icon: Icon(Icons.checklist_rounded, color: cs.onSurfaceVariant),
-                            tooltip: 'Select',
+                            tooltip: l.bookmarksSelect,
                             onPressed: () => setState(() => _selecting = true),
                           ),
                         ],
@@ -289,7 +478,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                           children: [
                             Icon(Icons.bookmark_border_rounded, size: 48, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
                             const SizedBox(height: 12),
-                            Text('No bookmarks yet', style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
+                            Text(l.bookmarksNoBookmarks, style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
                           ],
                         ),
                       ),
@@ -303,11 +492,11 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                           final lib = context.read<LibraryProvider>();
                           final itemId = _allBookmarks.keys.elementAt(i);
                           final bookmarks = _allBookmarks[itemId]!;
-                          final title = _resolveTitle(itemId);
+                          final resolvedTitle = _resolveTitle(itemId);
                           final coverUrl = lib.getCoverUrl(itemId, width: 400);
                           return _BookGroup(
                             itemId: itemId,
-                            title: title,
+                            title: resolvedTitle,
                             coverUrl: coverUrl,
                             mediaHeaders: lib.mediaHeaders,
                             bookmarks: bookmarks,
@@ -318,7 +507,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                             onToggle: _toggleSelect,
                             onToggleGroup: () => _toggleBookGroup(itemId, bookmarks),
                             onLongPress: _enterSelection,
-                            onJump: (id, bm) => _jumpToBookmark(id, bm, title),
+                            onJump: (id, bm) =>
+                                _jumpToBookmark(id, bm, resolvedTitle ?? ''),
                           );
                         },
                       ),
@@ -336,13 +526,13 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                         top: false,
                         child: Row(children: [
                           Text(
-                            '${_selected.length} selected',
+                            l.bookmarksSelectedCount(_selected.length),
                             style: tt.bodyMedium?.copyWith(color: cs.onSurface),
                           ),
                           const Spacer(),
                           FilledButton.tonalIcon(
                             icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                            label: const Text('Delete'),
+                            label: Text(l.delete),
                             style: FilledButton.styleFrom(
                               backgroundColor: cs.errorContainer,
                               foregroundColor: cs.onErrorContainer,
@@ -361,7 +551,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
 
 class _BookGroup extends StatelessWidget {
   final String itemId;
-  final String title;
+  final String? title;
   final String? coverUrl;
   final Map<String, String> mediaHeaders;
   final List<Bookmark> bookmarks;
@@ -431,12 +621,21 @@ class _BookGroup extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      title,
-                      style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    child: title == null
+                        ? Container(
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: cs.onSurface.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          )
+                        : Text(
+                            title!,
+                            style: tt.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                   ),
                   Text(
                     '${bookmarks.length}',

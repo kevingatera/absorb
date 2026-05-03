@@ -24,6 +24,8 @@ class EqualizerService extends ChangeNotifier {
   double _virtualizer = 0.0; // 0.0–1.0
   double _loudnessGain = 0.0; // 0.0–1.0
   bool _mono = false;
+  bool _perItem = false;
+  String? _currentItemId;
 
   // Built-in presets (EQ curve shapes)
   static const Map<String, List<double>> presets = {
@@ -49,6 +51,8 @@ class EqualizerService extends ChangeNotifier {
   double get virtualizer => _virtualizer;
   double get loudnessGain => _loudnessGain;
   bool get mono => _mono;
+  bool get perItem => _perItem;
+  String? get currentItemId => _currentItemId;
 
   /// Initialize — try to connect to platform EQ, fall back to software presets.
   Future<void> init() async {
@@ -242,9 +246,118 @@ class EqualizerService extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Toggle per-item EQ scoping.
+  Future<void> setPerItem(bool value) async {
+    _perItem = value;
+    await ScopedPrefs.setBool('eq_perItem', value);
+    notifyListeners();
+  }
+
+  /// Switch EQ to a new item. Saves current settings under the old item,
+  /// then loads the new item's settings (or defaults to EQ off).
+  Future<void> switchItem(String itemId) async {
+    if (!_perItem) {
+      _currentItemId = itemId;
+      return;
+    }
+    if (_currentItemId != null && _currentItemId != itemId) {
+      await _saveItemSettings(_currentItemId!);
+    }
+    _currentItemId = itemId;
+    await _loadItemSettings(itemId);
+    if (_enabled) {
+      _applyCurrentSettings();
+    } else {
+      _resetPlatform();
+    }
+    notifyListeners();
+  }
+
   // ── Persistence ──
 
+  String _itemKey(String key, String itemId) => 'eq_${itemId}_$key';
+
+  /// Read an item's persisted EQ settings without mutating service state.
+  /// Used by the EQ sheet to preview/edit a non-playing item's EQ.
+  Future<Map<String, dynamic>> loadItemSnapshot(String itemId) async {
+    final bandCount = _bandLevels.isEmpty ? 5 : _bandLevels.length;
+    final hasItemEq = await ScopedPrefs.containsKey(_itemKey('enabled', itemId));
+    if (!hasItemEq) {
+      return {
+        'enabled': false,
+        'preset': 'flat',
+        'bassBoost': 0.0,
+        'virtualizer': 0.0,
+        'loudnessGain': 0.0,
+        'mono': false,
+        'bands': List<double>.filled(bandCount, 0.0),
+      };
+    }
+    final bandStr = await ScopedPrefs.getString(_itemKey('bands', itemId));
+    final bands = bandStr != null
+        ? bandStr.split(',').map((s) => double.tryParse(s) ?? 0.0).toList()
+        : List<double>.filled(bandCount, 0.0);
+    return {
+      'enabled': await ScopedPrefs.getBool(_itemKey('enabled', itemId)) ?? false,
+      'preset': await ScopedPrefs.getString(_itemKey('preset', itemId)) ?? 'flat',
+      'bassBoost': await ScopedPrefs.getDouble(_itemKey('bassBoost', itemId)) ?? 0.0,
+      'virtualizer': await ScopedPrefs.getDouble(_itemKey('virtualizer', itemId)) ?? 0.0,
+      'loudnessGain': await ScopedPrefs.getDouble(_itemKey('loudnessGain', itemId)) ?? 0.0,
+      'mono': await ScopedPrefs.getBool(_itemKey('mono', itemId)) ?? false,
+      'bands': bands,
+    };
+  }
+
+  /// Persist a full snapshot to an item's storage without affecting live state.
+  Future<void> saveItemSnapshot(String itemId, Map<String, dynamic> s) async {
+    await ScopedPrefs.setBool(_itemKey('enabled', itemId), s['enabled'] as bool);
+    await ScopedPrefs.setString(_itemKey('preset', itemId), s['preset'] as String);
+    await ScopedPrefs.setDouble(_itemKey('bassBoost', itemId), s['bassBoost'] as double);
+    await ScopedPrefs.setDouble(_itemKey('virtualizer', itemId), s['virtualizer'] as double);
+    await ScopedPrefs.setDouble(_itemKey('loudnessGain', itemId), s['loudnessGain'] as double);
+    await ScopedPrefs.setBool(_itemKey('mono', itemId), s['mono'] as bool);
+    final bands = (s['bands'] as List).cast<double>();
+    await ScopedPrefs.setString(_itemKey('bands', itemId), bands.map((l) => l.toStringAsFixed(1)).join(','));
+  }
+
+  Future<void> _loadItemSettings(String itemId) async {
+    final hasItemEq = await ScopedPrefs.containsKey(_itemKey('enabled', itemId));
+    if (!hasItemEq) {
+      _enabled = false;
+      _activePreset = 'flat';
+      _bassBoost = 0.0;
+      _virtualizer = 0.0;
+      _loudnessGain = 0.0;
+      _mono = false;
+      _bandLevels = List.filled(_bandLevels.length, 0.0);
+      return;
+    }
+    _enabled = await ScopedPrefs.getBool(_itemKey('enabled', itemId)) ?? false;
+    _activePreset = await ScopedPrefs.getString(_itemKey('preset', itemId)) ?? 'flat';
+    _bassBoost = await ScopedPrefs.getDouble(_itemKey('bassBoost', itemId)) ?? 0.0;
+    _virtualizer = await ScopedPrefs.getDouble(_itemKey('virtualizer', itemId)) ?? 0.0;
+    _loudnessGain = await ScopedPrefs.getDouble(_itemKey('loudnessGain', itemId)) ?? 0.0;
+    _mono = await ScopedPrefs.getBool(_itemKey('mono', itemId)) ?? false;
+    final bandStr = await ScopedPrefs.getString(_itemKey('bands', itemId));
+    if (bandStr != null) {
+      _bandLevels = bandStr.split(',').map((s) => double.tryParse(s) ?? 0.0).toList();
+    } else {
+      _bandLevels = List.filled(_bandLevels.length, 0.0);
+    }
+  }
+
+  Future<void> _saveItemSettings(String itemId) async {
+    await ScopedPrefs.setBool(_itemKey('enabled', itemId), _enabled);
+    await ScopedPrefs.setString(_itemKey('preset', itemId), _activePreset);
+    await ScopedPrefs.setDouble(_itemKey('bassBoost', itemId), _bassBoost);
+    await ScopedPrefs.setDouble(_itemKey('virtualizer', itemId), _virtualizer);
+    await ScopedPrefs.setDouble(_itemKey('loudnessGain', itemId), _loudnessGain);
+    await ScopedPrefs.setBool(_itemKey('mono', itemId), _mono);
+    await ScopedPrefs.setString(_itemKey('bands', itemId), _bandLevels.map((l) => l.toStringAsFixed(1)).join(','));
+  }
+
   Future<void> _loadSettings() async {
+    _perItem = await ScopedPrefs.getBool('eq_perItem') ?? false;
     _enabled = await ScopedPrefs.getBool('eq_enabled') ?? false;
     _activePreset = await ScopedPrefs.getString('eq_preset') ?? 'flat';
     _bassBoost = await ScopedPrefs.getDouble('eq_bassBoost') ?? 0.0;
@@ -260,6 +373,22 @@ class EqualizerService extends ChangeNotifier {
     }
   }
 
+  /// Reload settings from the currently-scoped SharedPreferences. Call this
+  /// after switching user accounts so the singleton picks up the new user's
+  /// stored EQ config instead of keeping the previous user's in-memory state
+  /// (which would otherwise also get written back into the new user's scope
+  /// on the next save).
+  Future<void> reloadForActiveAccount() async {
+    await _loadSettings();
+    _currentItemId = null;
+    if (_enabled) {
+      await _applyCurrentSettings();
+    } else {
+      await _resetPlatform();
+    }
+    notifyListeners();
+  }
+
   Future<void> _saveSettings() async {
     await ScopedPrefs.setBool('eq_enabled', _enabled);
     await ScopedPrefs.setString('eq_preset', _activePreset);
@@ -268,11 +397,22 @@ class EqualizerService extends ChangeNotifier {
     await ScopedPrefs.setDouble('eq_loudnessGain', _loudnessGain);
     await ScopedPrefs.setBool('eq_mono', _mono);
     await ScopedPrefs.setString('eq_bands', _bandLevels.map((l) => l.toStringAsFixed(1)).join(','));
+    if (_perItem && _currentItemId != null) {
+      await _saveItemSettings(_currentItemId!);
+    }
   }
 
   /// Formatted frequency label.
   String freqLabel(int hz) {
     if (hz >= 1000) return '${(hz / 1000).toStringAsFixed(hz % 1000 == 0 ? 0 : 1)}k';
     return '${hz}Hz';
+  }
+
+  String freqName(int hz) {
+    if (hz <= 100) return 'Sub';
+    if (hz <= 400) return 'Bass';
+    if (hz <= 1500) return 'Mids';
+    if (hz <= 6000) return 'High';
+    return 'Air';
   }
 }

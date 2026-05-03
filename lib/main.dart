@@ -21,9 +21,11 @@ import 'services/sleep_timer_service.dart';
 import 'services/scoped_prefs.dart';
 import 'services/user_account_service.dart';
 import 'services/android_auto_service.dart';
+import 'services/carplay_service.dart';
 import 'services/chromecast_service.dart';
 import 'services/home_widget_service.dart';
 import 'services/log_service.dart';
+import 'services/quick_actions_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/app_shell.dart';
 import 'widgets/absorb_wave_icon.dart';
@@ -73,6 +75,11 @@ void applyTrustAllCerts(bool enabled) {
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
 
+/// Global navigator key so non-widget code (e.g. app-icon shortcut handlers)
+/// can push routes without needing a BuildContext.
+final GlobalKey<NavigatorState> rootNavigatorKey =
+    GlobalKey<NavigatorState>();
+
 ThemeMode parseThemeMode(String value) {
   switch (value) {
     case 'light': return ThemeMode.light;
@@ -111,6 +118,7 @@ void main() async {
     final savedTheme = await PlayerSettings.getThemeMode();
     applyThemeMode(savedTheme);
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
+    PlayerSettings.showExplicitBadge = await PlayerSettings.getShowExplicitBadge();
     // Restore last cover seed color so the theme doesn't flash on startup
     {
       final seedInt = await PlayerSettings.getCoverSeedColor();
@@ -219,6 +227,7 @@ class AbsorbApp extends StatelessWidget {
 
             return MaterialApp(
               scaffoldMessengerKey: scaffoldMessengerKey,
+              navigatorKey: rootNavigatorKey,
               title: 'Absorb',
               debugShowCheckedModeBanner: false,
               localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -360,7 +369,23 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _initServices() async {
-    // Initialize log service FIRST so all debugPrint calls are captured in the
+    // Load device info before log service so the log header has the real
+    // app version and device model instead of fallback values.
+    await ApiService.initVersion();
+    try {
+      if (Platform.isAndroid) {
+        final info = await DeviceInfoPlugin().androidInfo;
+        ApiService.deviceManufacturer = info.manufacturer;
+        ApiService.deviceModel = info.model;
+        ApiService.deviceSdkInt = info.version.sdkInt;
+      } else if (Platform.isIOS) {
+        final info = await DeviceInfoPlugin().iosInfo;
+        ApiService.deviceManufacturer = 'Apple';
+        ApiService.deviceModel = info.utsname.machine;
+      }
+    } catch (_) {}
+
+    // Initialize log service early so all debugPrint calls are captured in the
     // log file. This is critical for diagnosing startup freezes in production.
     try {
       final loggingEnabled = await PlayerSettings.getLoggingEnabled();
@@ -383,6 +408,7 @@ class _AuthGateState extends State<AuthGate> {
     final scopedTheme = await PlayerSettings.getThemeMode();
     applyThemeMode(scopedTheme);
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
+    PlayerSettings.showExplicitBadge = await PlayerSettings.getShowExplicitBadge();
     // Restore cover seed color
     {
       final seedInt = await PlayerSettings.getCoverSeedColor();
@@ -407,22 +433,9 @@ class _AuthGateState extends State<AuthGate> {
     // Migrate unified queueMode → per-type book/podcast modes (one-time)
     await PlayerSettings.migrateBookPodcastQueueMode();
 
-    // Load device info for server identification
-    debugPrint('[Init] device info... (${sw.elapsedMilliseconds}ms)');
+    // Generate persistent device ID for server identification
+    debugPrint('[Init] device ID... (${sw.elapsedMilliseconds}ms)');
     await ApiService.initDeviceId();
-    await ApiService.initVersion();
-    try {
-      if (Platform.isAndroid) {
-        final info = await DeviceInfoPlugin().androidInfo;
-        ApiService.deviceManufacturer = info.manufacturer;
-        ApiService.deviceModel = info.model;
-        ApiService.deviceSdkInt = info.version.sdkInt;
-      } else if (Platform.isIOS) {
-        final info = await DeviceInfoPlugin().iosInfo;
-        ApiService.deviceManufacturer = 'Apple';
-        ApiService.deviceModel = info.utsname.machine;
-      }
-    } catch (_) {}
 
     // Downloads must be loaded before the audio handler so getChildren()
     // can serve the Android Auto browse tree immediately.
@@ -442,6 +455,12 @@ class _AuthGateState extends State<AuthGate> {
     } catch (e) {
       debugPrint('[Init] AudioPlayerService.init timed out or failed: $e');
     }
+    // Route cold-start play() calls (headphones / lock screen tap before
+    // the UI has bootstrapped the current item) through the existing
+    // home-widget restore path. Registered as a static callback to avoid a
+    // circular import between AudioPlayerService and HomeWidgetService.
+    AudioPlayerService.onColdStartPlayRequested =
+        HomeWidgetService().resumeLastPlayedIfAvailable;
     debugPrint('[Init] AudioPlayerService done (${sw.elapsedMilliseconds}ms)');
 
     try {
@@ -474,9 +493,22 @@ class _AuthGateState extends State<AuthGate> {
       if (Platform.isAndroid) {
         // Pre-populate Android Auto browse tree in background.
         Future.microtask(() => AndroidAutoService().refresh());
+      }
+      if (Platform.isIOS) {
+        // Initialize CarPlay browse tree.
+        CarPlayService().init();
+      }
+      if (Platform.isAndroid || Platform.isIOS) {
         // Initialize homescreen widget
         await HomeWidgetService().init();
       }
+      // App-icon long-press shortcuts. On Android the service registers
+      // dynamic shortcuts + handler; on iOS it only wires the handler since
+      // shortcut items themselves are declared statically in Info.plist
+      // (so we get real UIKit system icon types like `.play`, `.search`).
+      // Depends on AudioPlayerService + HomeWidgetService so they're ready
+      // when the shortcut handler fires.
+      await QuickActionsService().init();
     } catch (e) {
       debugPrint('[Init] Service init failed: $e');
     }

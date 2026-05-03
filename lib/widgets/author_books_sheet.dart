@@ -1,35 +1,36 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'overlay_toast.dart';
 import 'package:provider/provider.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
+import '../services/audio_player_service.dart';
+import 'library_grid_tiles.dart';
 import 'library_search_results.dart';
+import 'series_books_sheet.dart';
+import 'stackable_sheet.dart';
+
+enum _AuthorLayout { list, grid }
 
 /// Show a bottom sheet with author info and books.
 void showAuthorDetailSheet(BuildContext context, {
   required String authorId,
   required String authorName,
 }) {
-  FocusManager.instance.primaryFocus?.unfocus();
   final auth = context.read<AuthProvider>();
   final lib = context.read<LibraryProvider>();
-  showModalBottomSheet(
+  showStackableSheet(
     context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    builder: (_) => DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      minChildSize: 0.05, snap: true,
-      maxChildSize: 0.9,
-      expand: false,
-      builder: (ctx, scrollController) => AuthorBooksSheet(
-        libraryId: lib.selectedLibraryId ?? '',
-        authorId: authorId,
-        authorName: authorName,
-        serverUrl: auth.serverUrl,
-        token: auth.token,
-        scrollController: scrollController,
-      ),
+    showHandle: true,
+    builder: (ctx, scrollController) => AuthorBooksSheet(
+      libraryId: lib.selectedLibraryId ?? '',
+      authorId: authorId,
+      authorName: authorName,
+      serverUrl: auth.serverUrl,
+      token: auth.token,
+      scrollController: scrollController,
     ),
   );
 }
@@ -92,11 +93,23 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
   String? _description;
   String? _imageUrl;
   bool _descExpanded = false;
+  _AuthorLayout _layout = _AuthorLayout.list;
+  bool _groupBySeries = true;
 
   @override
   void initState() {
     super.initState();
+    _loadViewSettings();
     _loadAuthorAndBooks();
+  }
+
+  Future<void> _loadViewSettings() async {
+    final grid = await PlayerSettings.getSheetGridView();
+    final collapse = await PlayerSettings.getSheetCollapseSeries();
+    if (mounted) setState(() {
+      _layout = grid ? _AuthorLayout.grid : _AuthorLayout.list;
+      _groupBySeries = collapse;
+    });
   }
 
   Future<void> _loadAuthorAndBooks() async {
@@ -120,6 +133,17 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
           // libraryItems from the author endpoint include full metadata with series info
           final rawItems = authorData['libraryItems'] as List<dynamic>? ?? [];
           _books = rawItems.whereType<Map<String, dynamic>>().toList();
+          // Register updatedAt for cover cache busting
+          final lib = context.read<LibraryProvider>();
+          for (final book in _books) {
+            final id = book['id'] as String?;
+            final bts = book['updatedAt'] as num?;
+            if (id != null && bts != null) lib.registerUpdatedAt(id, bts.toInt());
+            if (id != null) {
+              final coverPath = (book['media'] as Map<String, dynamic>?)?['coverPath'] as String?;
+              lib.registerHasCover(id, coverPath != null && coverPath.isNotEmpty);
+            }
+          }
         }
         _isLoading = false;
       });
@@ -130,6 +154,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
     final lib = context.read<LibraryProvider>();
     final headers = lib.mediaHeaders;
 
@@ -137,7 +162,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeader(cs, tt, headers),
+          _buildHeader(cs, tt, headers, l),
           const Expanded(child: Center(child: CircularProgressIndicator())),
         ],
       );
@@ -145,95 +170,39 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
 
     final bottomPad = 24 + MediaQuery.of(context).viewPadding.bottom;
     final hasDesc = _description != null && _description!.isNotEmpty;
-    final sections = _buildSections();
+    final sections = _buildSections(l);
 
-    // Flatten sections into list items: header, description, then section widgets
-    final items = <Widget>[
-      _buildHeader(cs, tt, headers),
-      if (hasDesc) _buildDescription(cs, tt),
+    // Header + description are always at the top
+    final headerWidgets = <Widget>[
+      _buildHeader(cs, tt, headers, l),
+      if (hasDesc) _buildDescription(cs, tt, l),
+      if (_books.isNotEmpty) _buildViewModeBar(cs, l),
     ];
 
     if (_books.isEmpty) {
-      items.add(Center(
-        child: Padding(
-          padding: const EdgeInsets.only(top: 48),
-          child: Text('No books found',
-              style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
-        ),
-      ));
-    } else {
-      for (final section in sections) {
-        final label = section.label;
-        final books = section.books;
-        // Section header with divider
-        items.add(Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Row(children: [
-            Expanded(child: Divider(color: cs.outlineVariant)),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(label,
-                style: tt.labelMedium?.copyWith(
-                  color: cs.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                )),
+      return ListView(
+        controller: widget.scrollController,
+        padding: EdgeInsets.fromLTRB(0, 0, 0, bottomPad),
+        children: [
+          ...headerWidgets,
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 48),
+              child: Text(l.noBooksFound,
+                  style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
             ),
-            Expanded(child: Divider(color: cs.outlineVariant)),
-          ]),
-        ));
-        for (final book in books) {
-          final bookId = book['id'] as String? ?? '';
-          final bookTitle = (book['media'] as Map<String, dynamic>?)?['metadata']?['title'] as String? ?? 'Unknown';
-          final isOnAbsorbing = lib.isOnAbsorbingList(bookId);
-          items.add(Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Dismissible(
-              key: ValueKey('absorb-$bookId'),
-              direction: isOnAbsorbing ? DismissDirection.none : DismissDirection.startToEnd,
-              confirmDismiss: (_) async {
-                await lib.addToAbsorbingQueue(bookId);
-                lib.absorbingItemCache[bookId] = Map<String, dynamic>.from(book);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text('Added "$bookTitle" to Absorbing'),
-                    behavior: SnackBarBehavior.floating,
-                    duration: const Duration(seconds: 2),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ));
-                }
-                return false;
-              },
-              background: Container(
-                alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.only(left: 20),
-                decoration: BoxDecoration(
-                  color: cs.primary.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(Icons.add_circle_outline_rounded, color: cs.primary),
-              ),
-              child: BookResultTile(
-                item: book,
-                serverUrl: widget.serverUrl,
-                token: widget.token,
-                popOnTap: true,
-                subtitle: _sequenceFor(book, label),
-              ),
-            ),
-          ));
-        }
-      }
+          ),
+        ],
+      );
     }
 
-    return ListView.builder(
-      controller: widget.scrollController,
-      padding: EdgeInsets.fromLTRB(0, 0, 0, bottomPad),
-      itemCount: items.length,
-      itemBuilder: (context, index) => items[index],
-    );
+    if (_layout == _AuthorLayout.list) {
+      return _buildListView(cs, tt, lib, sections, headerWidgets, bottomPad, l);
+    }
+    return _buildGridView(cs, tt, lib, sections, headerWidgets, bottomPad, l);
   }
 
-  List<_BookSection> _buildSections() {
+  List<_BookSection> _buildSections(AppLocalizations l) {
     final seriesMap = <String, _BookSection>{};
     final standalones = <Map<String, dynamic>>[];
 
@@ -246,10 +215,25 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
       final entries = seriesNameRaw.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
       bool addedToSeries = false;
 
+      // Also try to get series ID from the structured series list
+      final seriesList = metadata['series'] as List<dynamic>? ?? [];
+
       for (final entry in entries) {
         final name = entry.replaceFirst(RegExp(r'\s*#\s*[\d.]+$'), '').trim();
         if (name.isEmpty) continue;
-        seriesMap.putIfAbsent(name, () => _BookSection(label: name, books: []));
+        // Try to find the series ID from the structured data
+        String? sid;
+        for (final s in seriesList) {
+          if (s is Map<String, dynamic> && (s['name'] as String? ?? '').toLowerCase() == name.toLowerCase()) {
+            sid = s['id'] as String?;
+            break;
+          }
+        }
+        seriesMap.putIfAbsent(name, () => _BookSection(label: name, seriesId: sid, books: []));
+        // Update seriesId if we found one and the section didn't have one
+        if (sid != null && seriesMap[name]!.seriesId == null) {
+          seriesMap[name] = _BookSection(label: name, seriesId: sid, books: seriesMap[name]!.books);
+        }
         seriesMap[name]!.books.add(book);
         addedToSeries = true;
       }
@@ -285,7 +269,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
 
     final allSections = <_BookSection>[...seriesSections];
     if (standalones.isNotEmpty) {
-      allSections.add(_BookSection(label: 'Standalone', books: standalones));
+      allSections.add(_BookSection(label: l.standalone, books: standalones, isStandalone: true));
     }
     return allSections;
   }
@@ -317,7 +301,274 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
     return double.maxFinite;
   }
 
-  Widget _buildHeader(ColorScheme cs, TextTheme tt, Map<String, String> headers) {
+  Widget _buildViewModeBar(ColorScheme cs, AppLocalizations l) {
+    Widget layoutBtn(IconData icon, _AuthorLayout mode, String tooltip) {
+      final active = _layout == mode;
+      return IconButton(
+        icon: Icon(icon, size: 20, color: active ? cs.primary : cs.onSurfaceVariant),
+        tooltip: tooltip,
+        visualDensity: VisualDensity.compact,
+        onPressed: () {
+          setState(() => _layout = mode);
+          PlayerSettings.setSheetGridView(mode == _AuthorLayout.grid);
+        },
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: Row(
+        children: [
+          IconButton(
+            icon: Icon(Icons.collections_bookmark_rounded, size: 20,
+              color: _groupBySeries ? cs.primary : cs.onSurfaceVariant),
+            tooltip: l.authorBooksGroupBySeries,
+            visualDensity: VisualDensity.compact,
+            onPressed: () {
+              setState(() => _groupBySeries = !_groupBySeries);
+              PlayerSettings.setSheetCollapseSeries(_groupBySeries);
+            },
+          ),
+          const Spacer(),
+          layoutBtn(Icons.view_list_rounded, _AuthorLayout.list, l.authorBooksList),
+          layoutBtn(Icons.apps_rounded, _AuthorLayout.grid, l.authorBooksGrid),
+        ],
+      ),
+    );
+  }
+
+  /// Build a flat list of items mixing collapsed series tiles and standalone books.
+  List<dynamic> _buildCollapsedItems(List<_BookSection> sections) {
+    final items = <dynamic>[];
+    for (final section in sections) {
+      if (section.isStandalone) {
+        items.addAll(section.books);
+      } else {
+        items.add(section); // collapsed series
+      }
+    }
+    return items;
+  }
+
+  Widget _buildListView(ColorScheme cs, TextTheme tt, LibraryProvider lib,
+      List<_BookSection> sections, List<Widget> headerWidgets, double bottomPad, AppLocalizations l) {
+    final items = <Widget>[...headerWidgets];
+    if (_groupBySeries) {
+      // Collapsed: series as tappable rows, standalones as book tiles
+      final collapsed = _buildCollapsedItems(sections);
+      for (final item in collapsed) {
+        if (item is _BookSection) {
+          items.add(_collapsedSeriesTile(cs, tt, lib, item, l));
+        } else if (item is Map<String, dynamic>) {
+          items.add(_dismissibleBookTile(lib, cs, item, l.standalone, l));
+        }
+      }
+    } else {
+      for (final section in sections) {
+        items.add(_sectionDivider(cs, tt, section.label));
+        for (final book in section.books) {
+          items.add(_dismissibleBookTile(lib, cs, book, section.label, l));
+        }
+      }
+    }
+    return ListView.builder(
+      controller: widget.scrollController,
+      padding: EdgeInsets.fromLTRB(0, 0, 0, bottomPad),
+      itemCount: items.length,
+      itemBuilder: (context, index) => items[index],
+    );
+  }
+
+  Widget _buildGridView(ColorScheme cs, TextTheme tt, LibraryProvider lib,
+      List<_BookSection> sections, List<Widget> headerWidgets, double bottomPad, AppLocalizations l) {
+    if (_groupBySeries) {
+      // Collapsed: mix series tiles and standalone book tiles in a grid
+      final collapsed = _buildCollapsedItems(sections);
+      return CustomScrollView(
+        controller: widget.scrollController,
+        slivers: [
+          SliverList(delegate: SliverChildListDelegate(headerWidgets)),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, bottomPad),
+            sliver: SliverGrid(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: (MediaQuery.of(context).size.width / 130).floor().clamp(3, 10),
+                mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 0.55,
+              ),
+              delegate: SliverChildBuilderDelegate((_, i) {
+                final item = collapsed[i];
+                if (item is _BookSection) {
+                  return _collapsedSeriesGridTile(cs, tt, lib, item);
+                }
+                return GridBookTile(item: item as Map<String, dynamic>);
+              }, childCount: collapsed.length),
+            ),
+          ),
+        ],
+      );
+    }
+    // Non-collapsed grid with series dividers
+    return CustomScrollView(
+      controller: widget.scrollController,
+      slivers: [
+        SliverList(delegate: SliverChildListDelegate(headerWidgets)),
+        for (final section in sections) ...[
+          SliverToBoxAdapter(child: _sectionDivider(cs, tt, section.label)),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            sliver: SliverGrid(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: (MediaQuery.of(context).size.width / 130).floor().clamp(3, 10),
+                mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 0.55,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (_, i) => GridBookTile(item: section.books[i], sequenceBadge: _sequenceFor(section.books[i], section.label)?.replaceFirst('#', '')),
+                childCount: section.books.length,
+              ),
+            ),
+          ),
+        ],
+        SliverPadding(padding: EdgeInsets.only(bottom: bottomPad)),
+      ],
+    );
+  }
+
+  Widget _collapsedSeriesTile(ColorScheme cs, TextTheme tt, LibraryProvider lib, _BookSection section, AppLocalizations l) {
+    final bookCount = section.books.length;
+    final headers = lib.mediaHeaders;
+    final coverUrls = section.books.take(3).map((b) {
+      final id = b['id'] as String? ?? '';
+      return id.isNotEmpty ? lib.getCoverUrl(id) : null;
+    }).toList();
+    final coverCount = coverUrls.length.clamp(1, 3);
+    final stackWidth = 40.0 + (coverCount - 1) * 8.0;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _openSeriesSheet(section),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            child: Row(children: [
+              SizedBox(
+                width: stackWidth, height: 40,
+                child: Stack(children: [
+                  for (int i = coverCount - 1; i >= 0; i--)
+                    Positioned(
+                      left: i * 8.0,
+                      child: Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(6),
+                          boxShadow: i > 0 ? [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 2, offset: const Offset(-1, 1))] : [],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: coverUrls[i] != null
+                            ? CachedNetworkImage(imageUrl: coverUrls[i]!, fit: BoxFit.cover, httpHeaders: headers, width: 40, height: 40,
+                                errorWidget: (_, __, ___) => Container(color: cs.surfaceContainerHighest,
+                                  child: Icon(Icons.auto_stories_rounded, size: 18, color: cs.onSurfaceVariant)))
+                            : Container(color: cs.surfaceContainerHighest,
+                                child: Icon(Icons.auto_stories_rounded, size: 18, color: cs.onSurfaceVariant)),
+                        ),
+                      ),
+                    ),
+                ]),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(section.label, style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(l.authorBooksBookCount(bookCount),
+                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                ],
+              )),
+              Icon(Icons.chevron_right_rounded, size: 20, color: cs.onSurfaceVariant),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _collapsedSeriesGridTile(ColorScheme cs, TextTheme tt, LibraryProvider lib, _BookSection section) {
+    return GridSeriesTileDirect(series: {
+      'name': section.label,
+      'id': section.seriesId ?? '',
+      'books': section.books,
+    });
+  }
+
+
+  void _openSeriesSheet(_BookSection section) {
+    showSeriesBooksSheet(context,
+      seriesName: section.label,
+      seriesId: section.seriesId,
+      books: section.books,
+      serverUrl: widget.serverUrl,
+      token: widget.token,
+      libraryId: widget.libraryId,
+    );
+  }
+
+  Widget _sectionDivider(ColorScheme cs, TextTheme tt, String label) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Row(children: [
+        Expanded(child: Divider(color: cs.outlineVariant)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(label, style: tt.labelMedium?.copyWith(
+            color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+        ),
+        Expanded(child: Divider(color: cs.outlineVariant)),
+      ]),
+    );
+  }
+
+  Widget _dismissibleBookTile(LibraryProvider lib, ColorScheme cs, Map<String, dynamic> book, String sectionLabel, AppLocalizations l) {
+    final bookId = book['id'] as String? ?? '';
+    final bookTitle = (book['media'] as Map<String, dynamic>?)?['metadata']?['title'] as String? ?? l.unknown;
+    final isOnAbsorbing = lib.isOnAbsorbingList(bookId);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Dismissible(
+        key: ValueKey('absorb-$bookId'),
+        direction: isOnAbsorbing ? DismissDirection.none : DismissDirection.startToEnd,
+        confirmDismiss: (_) async {
+          await lib.addToAbsorbingQueue(bookId);
+          lib.absorbingItemCache[bookId] = Map<String, dynamic>.from(book);
+          HapticFeedback.mediumImpact();
+          if (context.mounted) {
+            showOverlayToast(context, l.sectionDetailAddedToAbsorbing(bookTitle), icon: Icons.add_circle_outline_rounded);
+          }
+          return false;
+        },
+        background: Container(
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.only(left: 20),
+          decoration: BoxDecoration(
+            color: cs.primary.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(Icons.add_circle_outline_rounded, color: cs.primary),
+        ),
+        child: BookResultTile(
+          item: book,
+          serverUrl: widget.serverUrl,
+          token: widget.token,
+          subtitle: _sequenceFor(book, sectionLabel),
+          sequenceBadge: _sequenceFor(book, sectionLabel)?.replaceFirst('#', ''),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(ColorScheme cs, TextTheme tt, Map<String, String> headers, AppLocalizations l) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
       child: Row(
@@ -353,7 +604,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      '${_books.length} ${_books.length == 1 ? 'book' : 'books'}',
+                      l.authorBooksBookCount(_books.length),
                       style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                     ),
                   ),
@@ -365,7 +616,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
     );
   }
 
-  Widget _buildDescription(ColorScheme cs, TextTheme tt) {
+  Widget _buildDescription(ColorScheme cs, TextTheme tt, AppLocalizations l) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
       child: GestureDetector(
@@ -384,7 +635,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
             ),
             const SizedBox(height: 4),
             Text(
-              _descExpanded ? 'Show less' : 'Read more',
+              _descExpanded ? l.showLess : l.readMore,
               style: tt.labelSmall?.copyWith(
                 color: cs.primary,
                 fontWeight: FontWeight.w500,
@@ -406,6 +657,8 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
 
 class _BookSection {
   final String label;
+  final String? seriesId;
   final List<Map<String, dynamic>> books;
-  _BookSection({required this.label, required this.books});
+  final bool isStandalone;
+  _BookSection({required this.label, this.seriesId, required this.books, this.isStandalone = false});
 }

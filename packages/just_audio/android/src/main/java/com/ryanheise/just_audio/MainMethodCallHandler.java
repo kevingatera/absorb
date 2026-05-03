@@ -78,6 +78,7 @@ public class MainMethodCallHandler implements MethodCallHandler {
             result.success(null);
             break;
         }
+
         default:
             result.notImplemented();
             break;

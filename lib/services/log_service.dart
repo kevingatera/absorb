@@ -11,12 +11,13 @@ class LogService {
   factory LogService() => _instance;
   LogService._();
 
-  static const supportEmail = 'barnabas.absorb@gmail.com';
+  static const supportEmail = 'absorb@barnabashq.com';
 
   // Keep 1MB max, trim to 512KB.
   static const _maxSize = 1 * 1024 * 1024; // 1 MB
   static const _keepSize = 512 * 1024; // 512 KB
   static const _rotateCheckInterval = 500; // check every N writes
+  static const _createdAtKey = 'log_created_at';
 
   File? _logFile;
   bool _enabled = false;
@@ -34,12 +35,35 @@ class LogService {
     final dir = await getApplicationDocumentsDirectory();
     _logFile = File('${dir.path}/absorb_logs.txt');
 
-    // Auto-clear if log is older than 24 hours
-    if (_logFile!.existsSync()) {
-      final lastModified = _logFile!.lastModifiedSync();
-      if (DateTime.now().difference(lastModified).inHours >= 24) {
-        _logFile!.writeAsStringSync('');
+    // Auto-clear if log is older than 24 hours.
+    // Track creation time via a sidecar file since lastModified updates
+    // on every write and can't be used for age checks.
+    final createdAtFile = File('${dir.path}/$_createdAtKey');
+    bool shouldClear = false;
+    if (_logFile!.existsSync() && createdAtFile.existsSync()) {
+      try {
+        final createdMs = int.tryParse(createdAtFile.readAsStringSync().trim());
+        if (createdMs != null) {
+          final age = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(createdMs));
+          if (age.inHours >= 24) shouldClear = true;
+        }
+      } catch (_) {
+        shouldClear = true;
       }
+    }
+
+    if (shouldClear || !_logFile!.existsSync() || !createdAtFile.existsSync()) {
+      // Start fresh - write device/server info header
+      final header = StringBuffer()
+        ..writeln('=== Absorb Log ===')
+        ..writeln('App Version: ${ApiService.appVersion}')
+        ..writeln('Device: ${ApiService.deviceManufacturer} ${ApiService.deviceModel}')
+        ..writeln('OS: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}')
+        ..writeln('Created: ${DateTime.now().toIso8601String()}')
+        ..writeln('==================')
+        ..writeln();
+      await _logFile!.writeAsString(header.toString());
+      createdAtFile.writeAsStringSync(DateTime.now().millisecondsSinceEpoch.toString());
     }
 
     // Rotate on startup if needed
@@ -61,8 +85,9 @@ class LogService {
     _originalDebugPrint?.call(message, wrapWidth: wrapWidth);
     if (_logFile != null && message != null) {
       final ts = DateTime.now().toIso8601String();
+      final sanitized = _sanitize(message);
       _logFile!.writeAsStringSync(
-        '[$ts] $message\n',
+        '[$ts] $sanitized\n',
         mode: FileMode.append,
       );
       _maybeRotate();
@@ -73,8 +98,9 @@ class LogService {
   void log(String message) {
     if (_logFile != null) {
       final ts = DateTime.now().toIso8601String();
+      final sanitized = _sanitize(message);
       _logFile!.writeAsStringSync(
-        '[$ts] $message\n',
+        '[$ts] $sanitized\n',
         mode: FileMode.append,
       );
       _maybeRotate();
@@ -116,7 +142,24 @@ class LogService {
 
   Future<void> clearLogs() async {
     if (_logFile != null && await _logFile!.exists()) {
-      await _logFile!.writeAsString('');
+      // Write a fresh header immediately so logs shared in the same session
+      // still have device info (don't wait for next init/restart).
+      final header = StringBuffer()
+        ..writeln('=== Absorb Log ===')
+        ..writeln('App Version: ${ApiService.appVersion}')
+        ..writeln('Device: ${ApiService.deviceManufacturer} ${ApiService.deviceModel}')
+        ..writeln('OS: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}')
+        ..writeln('Created: ${DateTime.now().toIso8601String()}')
+        ..writeln('==================')
+        ..writeln();
+      await _logFile!.writeAsString(header.toString());
+      // Reset creation timestamp
+      try {
+        final dir = _logFile!.parent;
+        final createdAtFile = File('${dir.path}/$_createdAtKey');
+        createdAtFile.writeAsStringSync(
+            DateTime.now().millisecondsSinceEpoch.toString());
+      } catch (_) {}
     }
   }
 
@@ -133,6 +176,89 @@ class LogService {
     return buf.toString();
   }
 
+  /// Params whose values should be masked in logged URLs.
+  static final _sensitiveParamPattern = RegExp(
+    r'token|code|secret|password|key|verifier|challenge|state|cookie|auth|bearer',
+    caseSensitive: false,
+  );
+
+  /// Sanitize a single log message: mask URLs, sensitive query params, and
+  /// bare key=value pairs that look like credentials.
+  static String _sanitize(String message) {
+    var result = _sanitizeUrls(message);
+    // Mask standalone sensitive key=value pairs not inside URLs
+    // (e.g. "token=abc123" in non-URL context)
+    result = result.replaceAllMapped(
+      RegExp(r'(token|secret|password|authorization|bearer|\w*key)\s*[=:]\s*(?!null\b|\*\*\*|true\b|false\b)\S+', caseSensitive: false),
+      (m) => '${m.group(1)}=***',
+    );
+    return result;
+  }
+
+  /// Sanitize URLs in log content, replacing server hosts with a connection
+  /// type label (e.g. [local-ip], [tailscale], [reverse-proxy]) while keeping
+  /// API paths intact for debugging.
+  static String _sanitizeUrls(String content) {
+    // Collect unique hostnames found in URLs so we can scrub bare references too
+    final foundHosts = <String>{};
+
+    final urlPattern = RegExp(r'https?://[^\s\]"]+');
+    var result = content.replaceAllMapped(urlPattern, (match) {
+      final url = match.group(0)!;
+      try {
+        final uri = Uri.parse(url);
+        final host = uri.host.toLowerCase();
+        foundHosts.add(host);
+        String label;
+        if (host == 'localhost' || host == '127.0.0.1') {
+          label = '[localhost]';
+        } else if (host.endsWith('.ts.net')) {
+          label = '[tailscale]';
+        } else if (_isPrivateIp(host)) {
+          label = '[local-ip]';
+        } else if (uri.scheme == 'https') {
+          label = '[reverse-proxy]';
+        } else {
+          label = '[remote-http]';
+        }
+        final path = uri.path.isNotEmpty ? uri.path : '';
+        final query = _maskQuery(uri);
+        return '$label$path$query';
+      } catch (_) {
+        return '[url-redacted]';
+      }
+    });
+
+    // Scrub bare hostnames that leak in error messages (e.g. SocketException
+    // includes "address = hostname.com, port = 1234")
+    for (final host in foundHosts) {
+      if (host == 'localhost' || host == '127.0.0.1') continue;
+      result = result.replaceAll(host, '[host-redacted]');
+    }
+    return result;
+  }
+
+  /// Keep query param names but mask values of sensitive ones.
+  static String _maskQuery(Uri uri) {
+    if (uri.queryParameters.isEmpty) return '';
+    final masked = uri.queryParameters.entries.map((e) {
+      if (_sensitiveParamPattern.hasMatch(e.key)) {
+        return '${e.key}=***';
+      }
+      return '${e.key}=${e.value}';
+    }).join('&');
+    return '?$masked';
+  }
+
+  static bool _isPrivateIp(String host) {
+    final parts = host.split('.');
+    if (parts.length != 4) return false;
+    final a = int.tryParse(parts[0]);
+    final b = int.tryParse(parts[1]);
+    if (a == null || b == null) return false;
+    return a == 10 || (a == 172 && b >= 16 && b <= 31) || (a == 192 && b == 168);
+  }
+
   /// Share log file as attachment via share sheet with device info.
   ///
   /// [sharePositionOrigin] is required on iPad for the share popover anchor.
@@ -143,8 +269,15 @@ class LogService {
         _logFile != null && await _logFile!.exists() && await _logFile!.length() > 0;
 
     if (hasFile) {
+      // Write sanitized copy to share instead of raw logs
+      final raw = await _logFile!.readAsString();
+      final sanitized = _sanitizeUrls(raw);
+      final dir = _logFile!.parent;
+      final sanitizedFile = File('${dir.path}/absorb_logs_share.txt');
+      await sanitizedFile.writeAsString(sanitized);
+
       await Share.shareXFiles(
-        [XFile(_logFile!.path)],
+        [XFile(sanitizedFile.path)],
         subject: 'Absorb Log Report',
         text: 'Send to: $supportEmail\n\n$info',
         sharePositionOrigin: sharePositionOrigin,

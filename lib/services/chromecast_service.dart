@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:flutter_chrome_cast/flutter_chrome_cast.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 import 'api_service.dart';
 import 'audio_player_service.dart';
 import 'progress_sync_service.dart';
@@ -65,9 +65,39 @@ class ChromecastService extends ChangeNotifier {
 
   StreamSubscription? _sessionSub, _mediaStatusSub, _positionSub;
   Timer? _syncTimer;
+  Timer? _idleDebounceTimer;
+  Timer? _disconnectDebounceTimer;
   final _progressSync = ProgressSyncService();
   bool _initialized = false;
   bool _isCompletingBook = false;
+  bool _foregroundServiceActive = false;
+
+  /// Method channel to the native Android CastForegroundService. The Cast SDK
+  /// notification lives in Google Play Services' process, so Absorb's process
+  /// has no foreground promotion during cast by default - Android Doze then
+  /// throttles the 15s sync timer to ~9-15 min intervals under screen-lock.
+  /// Fixes GH #184.
+  static const MethodChannel _castServiceChannel =
+      MethodChannel('com.absorb.cast_service');
+
+  Future<void> _setForegroundService(bool active) async {
+    if (!Platform.isAndroid) return;
+    if (active == _foregroundServiceActive) return;
+    _foregroundServiceActive = active;
+    try {
+      await _castServiceChannel.invokeMethod(active ? 'start' : 'stop');
+    } catch (e) {
+      debugPrint('[Cast] setForegroundService($active) error: $e');
+    }
+  }
+
+  // Grace periods for transient cast hiccups. Idle/disconnect events during
+  // active casting can be spurious (network blips, track transitions, stream
+  // re-subscribe races) - we wait briefly before actually tearing down UI
+  // state so the user doesn't see the card vanish while the Chromecast keeps
+  // playing on its own.
+  static const Duration _idleGrace = Duration(seconds: 5);
+  static const Duration _disconnectGrace = Duration(seconds: 5);
 
   // ── Init ──
 
@@ -113,15 +143,36 @@ class ChromecastService extends ChangeNotifier {
         final state = GoogleCastSessionManager.instance.connectionState;
         debugPrint('[Cast] SESSION EVENT — connectionState: $state, session: ${session?.device?.friendlyName ?? "null"}');
         if (state == GoogleCastConnectState.connected) {
+          // Cancel any pending disconnect wipe - we're back before the grace expired.
+          if (_disconnectDebounceTimer?.isActive ?? false) {
+            debugPrint('[Cast] Reconnected within grace period - cancelling disconnect wipe');
+            _disconnectDebounceTimer?.cancel();
+            _disconnectDebounceTimer = null;
+          }
+          final wasConnected = _connectionState == CastConnectionState.connected;
           _connectionState = CastConnectionState.connected;
           _connectedDeviceName = session?.device?.friendlyName;
           debugPrint('[Cast] ✓ CONNECTED to: $_connectedDeviceName');
           _listenToMediaStatus();
           _listenToPosition();
           _updateVolumeFromSession();
+          // Rehydrate casting metadata if we lost it (e.g. after a disconnect
+          // wipe, or if app was restarted while cast was active).
+          if (!wasConnected || _castingItemId == null) {
+            _rehydrateFromRemoteMedia();
+          }
         } else if (state == GoogleCastConnectState.disconnected) {
-          debugPrint('[Cast] ✗ DISCONNECTED');
-          _onDisconnected();
+          debugPrint('[Cast] ✗ DISCONNECTED (scheduling wipe in ${_disconnectGrace.inSeconds}s)');
+          // Debounce: transient wifi/session blips can emit disconnected then
+          // reconnect shortly after. Only wipe state if it sticks.
+          _disconnectDebounceTimer?.cancel();
+          _disconnectDebounceTimer = Timer(_disconnectGrace, () {
+            debugPrint('[Cast] Disconnect grace expired - wiping state');
+            _onDisconnected();
+          });
+          // Reflect "connecting" in the UI so controls aren't fully dead but
+          // also aren't claiming a live connection.
+          _connectionState = CastConnectionState.connecting;
         } else {
           debugPrint('[Cast] ~ CONNECTING...');
           _connectionState = CastConnectionState.connecting;
@@ -137,6 +188,7 @@ class ChromecastService extends ChangeNotifier {
   void _onDisconnected() {
     if (_castingItemId != null && _castPosition > Duration.zero) _saveProgressLocal();
 
+    unawaited(_setForegroundService(false));
     _connectionState = CastConnectionState.disconnected;
     _playbackState = CastPlaybackState.idle;
     _connectedDeviceName = null;
@@ -148,27 +200,117 @@ class ChromecastService extends ChangeNotifier {
     _mediaStatusSub?.cancel();
     _positionSub?.cancel();
     _syncTimer?.cancel();
-    _updateWakeLock(false);
+    _idleDebounceTimer?.cancel();
+    _disconnectDebounceTimer?.cancel();
+
 
     _onPlaybackStateChangedCallback?.call(false);
     notifyListeners();
+  }
+
+  /// After a reconnect where we lost our local casting state, try to read the
+  /// current remote media status and repopulate enough metadata for the UI to
+  /// show the now-playing card again. Best-effort: if nothing is playing
+  /// remotely, this is a no-op.
+  void _rehydrateFromRemoteMedia() {
+    try {
+      final status = GoogleCastRemoteMediaClient.instance.mediaStatus;
+      if (status == null) {
+        debugPrint('[Cast] Rehydrate: no remote media status available');
+        return;
+      }
+      final info = status.mediaInformation;
+      if (info == null) {
+        debugPrint('[Cast] Rehydrate: no mediaInformation on status');
+        return;
+      }
+      debugPrint('[Cast] Rehydrate: remote playerState=${status.playerState}, contentId=${info.contentId}');
+      // We can't fully reconstruct itemId / chapters from the cast payload
+      // alone, but we can at least surface title/author/duration so the UI
+      // doesn't look dead. The sync timer and completion logic stay dormant
+      // until castItem is invoked again for a known item.
+      final meta = info.metadata;
+      if (meta is GoogleCastGenericMediaMetadata) {
+        _castingTitle ??= meta.title;
+        _castingAuthor ??= meta.subtitle;
+      }
+      if (_castingDuration <= 0) {
+        _castingDuration = info.duration?.inSeconds.toDouble() ?? 0;
+      }
+      switch (status.playerState) {
+        case CastMediaPlayerState.playing: _playbackState = CastPlaybackState.playing; break;
+        case CastMediaPlayerState.paused: _playbackState = CastPlaybackState.paused; break;
+        case CastMediaPlayerState.buffering: _playbackState = CastPlaybackState.buffering; break;
+        case CastMediaPlayerState.loading: _playbackState = CastPlaybackState.loading; break;
+        default: break;
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[Cast] Rehydrate error: $e');
+    }
   }
 
   void _listenToMediaStatus() {
     _mediaStatusSub?.cancel();
     _mediaStatusSub = GoogleCastRemoteMediaClient.instance.mediaStatusStream.listen((status) {
       final prev = _playbackState;
+
+      // Determine the raw target state this event implies.
+      CastPlaybackState target;
       if (status == null) {
-        _playbackState = CastPlaybackState.idle;
+        target = CastPlaybackState.idle;
       } else {
         debugPrint('[Cast] Media status: ${status.playerState}');
         switch (status.playerState) {
-          case CastMediaPlayerState.playing: _playbackState = CastPlaybackState.playing; break;
-          case CastMediaPlayerState.paused: _playbackState = CastPlaybackState.paused; break;
-          case CastMediaPlayerState.buffering: _playbackState = CastPlaybackState.buffering; break;
-          case CastMediaPlayerState.loading: _playbackState = CastPlaybackState.loading; break;
-          default: _playbackState = CastPlaybackState.idle;
+          case CastMediaPlayerState.playing: target = CastPlaybackState.playing; break;
+          case CastMediaPlayerState.paused: target = CastPlaybackState.paused; break;
+          case CastMediaPlayerState.buffering: target = CastPlaybackState.buffering; break;
+          case CastMediaPlayerState.loading: target = CastPlaybackState.loading; break;
+          default: target = CastPlaybackState.idle;
         }
+      }
+
+      // Any non-idle event means we're still live - cancel any pending idle wipe.
+      if (target != CastPlaybackState.idle && (_idleDebounceTimer?.isActive ?? false)) {
+        debugPrint('[Cast] Idle grace cancelled - received $target');
+        _idleDebounceTimer?.cancel();
+        _idleDebounceTimer = null;
+      }
+
+      // If the cast reports idle while we still have an active item that isn't
+      // near the end, treat it as a transient blip and wait before actually
+      // flipping to idle. This prevents the UI card from vanishing on brief
+      // stream hiccups / track transitions while the Chromecast keeps playing.
+      if (target == CastPlaybackState.idle &&
+          _castingItemId != null &&
+          _castingDuration > 0 &&
+          !_isAdvancingTrack) {
+        final pos = _castPosition.inMilliseconds / 1000.0;
+        final nearEnd = pos >= _castingDuration - 5;
+        final atTrackBoundary = _fallbackTracks != null && _fallbackTrackIdx < _fallbackTracks!.length - 1;
+
+        if (nearEnd || atTrackBoundary) {
+          // Real end-of-track/book - apply immediately, existing completion
+          // logic below will handle it.
+          _playbackState = CastPlaybackState.idle;
+        } else if (!(_idleDebounceTimer?.isActive ?? false)) {
+          debugPrint('[Cast] Idle during active cast (pos=${pos.toStringAsFixed(1)}s/${_castingDuration.toStringAsFixed(1)}s) - debouncing ${_idleGrace.inSeconds}s');
+          _idleDebounceTimer = Timer(_idleGrace, () {
+            debugPrint('[Cast] Idle grace expired - applying idle state');
+            _playbackState = CastPlaybackState.idle;
+        
+            _onPlaybackStateChangedCallback?.call(false);
+            notifyListeners();
+          });
+          // Leave _playbackState as-is (typically playing/buffering) so the UI
+          // keeps showing the cast card during the grace window.
+          return;
+        } else {
+          // Grace already running - keep prior state visible.
+          return;
+        }
+      } else {
+        _playbackState = target;
       }
 
       // Notify listeners & manage wake lock on playback state transitions
@@ -176,8 +318,6 @@ class ChromecastService extends ChangeNotifier {
       final nowPlaying = _playbackState == CastPlaybackState.playing || _playbackState == CastPlaybackState.buffering;
       if (wasPlaying != nowPlaying) {
         _onPlaybackStateChangedCallback?.call(nowPlaying);
-        _updateWakeLock(nowPlaying);
-
       }
 
       // Detect playback completion: was playing/buffering → now idle
@@ -228,7 +368,18 @@ class ChromecastService extends ChangeNotifier {
     _syncTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (isCasting && _castingItemId != null) {
         _saveProgressLocal();
-        _syncProgressToServer();
+        // Only report listening time while actually playing. Wall-clock
+        // elapsed would otherwise inflate server stats during pauses.
+        // Explicit pause/play/stop paths still call _syncProgressToServer
+        // directly to flush pending listening time around state changes.
+        if (isPlaying) {
+          _syncProgressToServer();
+        } else {
+          // Advance the sync baseline so a direct sync later (disconnect,
+          // stop, remote resume) doesn't bill the paused seconds as
+          // timeListened.
+          _lastSyncTime = DateTime.now();
+        }
       }
     });
   }
@@ -266,6 +417,7 @@ class ChromecastService extends ChangeNotifier {
       try { await _api!.closePlaybackSession(_playbackSessionId!); } catch (_) {}
       _playbackSessionId = null;
     }
+    await _setForegroundService(false);
     try {
       await GoogleCastSessionManager.instance.endSessionAndStopCasting();
     } catch (e) { debugPrint('[Cast] Disconnect error: $e'); }
@@ -345,6 +497,9 @@ class ChromecastService extends ChangeNotifier {
 
       _playbackSessionId = sessionData['id'] as String?;
       _lastSyncTime = DateTime.now();
+      // Promote Absorb's process to foreground so Doze doesn't throttle the
+      // per-15s sync timer when the user locks their screen. See GH #184.
+      unawaited(_setForegroundService(true));
 
       // Load per-book speed (or global default)
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
@@ -371,9 +526,14 @@ class ChromecastService extends ChangeNotifier {
           debugPrint('[Cast] setPlaybackRate error: $e');
         }
       }
+      if (!loaded) {
+        // loadMedia failed - release the foreground promotion we took above.
+        await _setForegroundService(false);
+      }
       return loaded;
     } catch (e, st) {
       debugPrint('[Cast] castItem error: $e\n$st');
+      await _setForegroundService(false);
       _playbackState = CastPlaybackState.idle; notifyListeners(); return false;
     }
   }
@@ -597,7 +757,14 @@ class ChromecastService extends ChangeNotifier {
 
   // ── Controls ──
 
-  Future<void> play() async { if (isConnected) try { await GoogleCastRemoteMediaClient.instance.play(); } catch (_) {} }
+  Future<void> play() async {
+    if (!isConnected) return;
+    try { await GoogleCastRemoteMediaClient.instance.play(); } catch (_) {}
+    // Reset the sync clock so the first tick after resume only counts the
+    // seconds actually played since now, not the wall-clock elapsed since
+    // the last sync (which would include the entire pause).
+    _lastSyncTime = DateTime.now();
+  }
   Future<void> pause() async {
     if (!isConnected) return;
     try { await GoogleCastRemoteMediaClient.instance.pause(); } catch (_) {}
@@ -652,11 +819,13 @@ class ChromecastService extends ChangeNotifier {
       _playbackSessionId = null;
     }
 
+    await _setForegroundService(false);
     _playbackState = CastPlaybackState.idle;
     _castingItemId = _castingEpisodeId = _castingTitle = _castingAuthor = _castingCoverUrl = null;
     _castingDuration = 0; _castingChapters = [];
     _fallbackTracks = null; _fallbackOffsets = null; _fallbackTrackIdx = -1;
-    _updateWakeLock(false);
+    _idleDebounceTimer?.cancel();
+
     _onPlaybackStateChangedCallback?.call(false);
     notifyListeners();
   }
@@ -717,6 +886,7 @@ class ChromecastService extends ChangeNotifier {
 
     // Clear casting state but keep connection
     _syncTimer?.cancel();
+    await _setForegroundService(false);
     _castingItemId = _castingEpisodeId = _castingTitle = _castingAuthor = _castingCoverUrl = null;
     _castingDuration = 0;
     _castingChapters = [];
@@ -743,6 +913,7 @@ class ChromecastService extends ChangeNotifier {
       _lastSyncTime = now;
 
       if (_playbackSessionId != null) {
+        debugPrint('[CastSync] ct=${ct.toStringAsFixed(1)}s timeListened=${elapsed}s sid=${_playbackSessionId!.substring(0, 8)}...');
         // Sync via playback session so timeListened is tracked in stats
         await _api!.syncPlaybackSession(
           _playbackSessionId!,
@@ -795,16 +966,15 @@ class ChromecastService extends ChangeNotifier {
 
   // ── Wake Lock ──
 
-  void _updateWakeLock(bool active) {
-    if (active) {
-      WakelockPlus.enable();
-      debugPrint('[Cast] Wake lock enabled');
-    } else {
-      WakelockPlus.disable();
-      debugPrint('[Cast] Wake lock disabled');
-    }
-  }
 
   @override
-  void dispose() { _sessionSub?.cancel(); _mediaStatusSub?.cancel(); _positionSub?.cancel(); _syncTimer?.cancel(); super.dispose(); }
+  void dispose() {
+    _sessionSub?.cancel();
+    _mediaStatusSub?.cancel();
+    _positionSub?.cancel();
+    _syncTimer?.cancel();
+    _idleDebounceTimer?.cancel();
+    _disconnectDebounceTimer?.cancel();
+    super.dispose();
+  }
 }

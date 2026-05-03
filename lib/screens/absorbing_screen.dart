@@ -10,6 +10,8 @@ import '../services/scoped_prefs.dart';
 import '../widgets/absorb_page_header.dart';
 import '../main.dart' show oledNotifier;
 import '../widgets/absorbing_card.dart';
+import '../widgets/offline_status_icon.dart';
+import '../l10n/app_localizations.dart';
 
 class AbsorbingScreen extends StatefulWidget {
   const AbsorbingScreen({super.key});
@@ -47,6 +49,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
 
   final _cast = ChromecastService();
+  String _queueMode = 'off';
 
   @override
   void initState() {
@@ -57,6 +60,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     _cast.addListener(_rebuild);
     _restoreLastFinished();
     _loadMergeLibraries();
+    _loadQueueMode();
   }
 
   Future<void> _restoreLastFinished() async {
@@ -69,6 +73,26 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   Future<void> _loadMergeLibraries() async {
     final v = await PlayerSettings.getMergeAbsorbingLibraries();
     if (mounted && v != _mergeLibraries) setState(() => _mergeLibraries = v);
+  }
+
+  Future<void> _loadQueueMode() async {
+    final lib = context.read<LibraryProvider>();
+    String mode;
+    if (_mergeLibraries) {
+      // When merged, use the more restrictive of the two modes
+      // (matches Settings screen's _mergedQueueMode logic)
+      final bm = await PlayerSettings.getBookQueueMode();
+      final pm = await PlayerSettings.getPodcastQueueMode();
+      const order = ['off', 'manual', 'auto_next'];
+      final bi = order.indexOf(bm);
+      final pi = order.indexOf(pm);
+      mode = order[(bi < pi ? bi : pi).clamp(0, 2)];
+    } else {
+      mode = lib.isPodcastLibrary
+          ? await PlayerSettings.getPodcastQueueMode()
+          : await PlayerSettings.getBookQueueMode();
+    }
+    if (mounted && mode != _queueMode) setState(() => _queueMode = mode);
   }
 
   @override
@@ -93,6 +117,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   bool _mergeLibraries = false;
   bool? _lastSeenHasBook;
   bool? _lastSeenIsPlaying;
+  String? _lastSeenLibraryId;
 
   bool? _lastLoggedEffectiveOffline;
   int? _lastLoggedRawCount;
@@ -161,9 +186,22 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     // when it stops/disconnects, keep that card at front.
     final nowCasting = _cast.isCasting;
     if (nowCasting && !_wasCasting) {
-      // Casting just started — scroll to the cast card
+      // Casting just started — move cast card to front, same as local playback
       _lastCastItemId = _cast.castingItemId;
       _lastCastEpisodeId = _cast.castingEpisodeId;
+      final castKey = _lastCastEpisodeId != null
+          ? '$_lastCastItemId-$_lastCastEpisodeId'
+          : _lastCastItemId!;
+      final lib = context.read<LibraryProvider>();
+      lib.unblockFromAbsorbing(castKey);
+      _lastFinishedId = castKey;
+      ScopedPrefs.setString('absorbing_last_finished', castKey);
+      final currentPage = _pageController.hasClients
+          ? (_pageController.page ?? 0).round() : 0;
+      _suppressReorder = currentPage > 0;
+      if (!_suppressReorder) {
+        lib.moveAbsorbingToFront(castKey);
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToActiveCard());
     } else if (nowCasting) {
       _lastCastItemId = _cast.castingItemId;
@@ -322,7 +360,10 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       final cached = cache[key];
       if (cached != null) {
         final itemLibId = cached['libraryId'] as String?;
-        if (_mergeLibraries || selectedLibraryId == null || itemLibId == null || itemLibId == selectedLibraryId) {
+        final mediaType = cached['mediaType'] as String?;
+        final isPodItem = mediaType == 'podcast' || key.length > 36;
+        if (_mergeLibraries || selectedLibraryId == null ||
+            (itemLibId != null ? itemLibId == selectedLibraryId : isPodItem == lib.isPodcastLibrary)) {
           items.add(cached);
         } else {
           skippedKeys[key] = 'wrong library (item=$itemLibId, selected=$selectedLibraryId)';
@@ -399,7 +440,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
     // When nothing is playing, keep the last-finished item at the front
     // Only if it matches the current library type
-    if (!_player.hasBook && _lastFinishedId != null && !removes.contains(_lastFinishedId)) {
+    if (!_player.hasBook && !_cast.isCasting && _lastFinishedId != null && !removes.contains(_lastFinishedId)) {
       // Compound podcast keys are "uuid-uuid" (>36 chars); plain book UUIDs are 36.
       final finishedIsPodcast = _lastFinishedId!.length > 36;
       if (_mergeLibraries || finishedIsPodcast == isPod) {
@@ -449,11 +490,21 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   @override
   Widget build(BuildContext context) {
     _loadMergeLibraries(); // refresh in case setting changed
+    _loadQueueMode(); // refresh for current library type
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
     final lowerFade = Color.lerp(cs.surface, scaffoldBg, 0.55) ?? scaffoldBg;
     final lib = context.watch<LibraryProvider>();
+
+    // Reset carousel to first card when library changes
+    if (lib.selectedLibraryId != _lastSeenLibraryId && _lastSeenLibraryId != null) {
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(0);
+      }
+    }
+    _lastSeenLibraryId = lib.selectedLibraryId;
     final dl = DownloadService();
     var books = _getAbsorbingBooks(lib);
     final rawCount = books.length;
@@ -520,28 +571,21 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
           children: [
             // ── Header ──
             AbsorbPageHeader(
-              title: 'Absorbing',
+              title: l.absorbingTitle,
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-              trailing: GestureDetector(
-                onTap: () {
-                  final newVal = !lib.isManualOffline;
-                  lib.setManualOffline(newVal);
-                  if (newVal) {
-                    final dl = DownloadService();
-                    final itemId = _player.currentItemId;
-                    final epId = _player.currentEpisodeId;
-                    final dlKey = epId != null && itemId != null
-                        ? '$itemId-$epId'
-                        : itemId;
-                    if (dlKey == null || !dl.isDownloaded(dlKey)) {
-                      _stopAndRefresh(lib);
-                    }
+              trailing: OfflineStatusIcon(
+                onTapWhenOnline: () {
+                  lib.setManualOffline(true);
+                  final dl = DownloadService();
+                  final itemId = _player.currentItemId;
+                  final epId = _player.currentEpisodeId;
+                  final dlKey = epId != null && itemId != null
+                      ? '$itemId-$epId'
+                      : itemId;
+                  if (dlKey == null || !dl.isDownloaded(dlKey)) {
+                    _stopAndRefresh(lib);
                   }
                 },
-                child: Icon(
-                  effectiveOffline ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
-                  size: 20, color: effectiveOffline ? Colors.orange : Colors.green,
-                ),
               ),
               actions: [
                 // Stop button (visible when playing)
@@ -555,13 +599,19 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: subtleBorder),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.stop_rounded, size: 18, color: muted),
-                          const SizedBox(width: 4),
-                          Text('Stop', style: TextStyle(color: muted, fontSize: 13, fontWeight: FontWeight.w500)),
-                        ],
+                      child: SizedBox(
+                        height: 20,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_isSyncing)
+                              SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 1.5, color: muted))
+                            else
+                              Icon(Icons.stop_rounded, size: 18, color: muted),
+                            const SizedBox(width: 4),
+                            Text(l.absorbingStop, style: TextStyle(color: muted, fontSize: 13, fontWeight: FontWeight.w500)),
+                          ],
+                        ),
                       ),
                     ),
                   )
@@ -585,18 +635,32 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                           : Icon(Icons.refresh_rounded, size: 18, color: muted),
                     ),
                   ),
-              if (books.length > 1) ...[
+              if (books.isNotEmpty) ...[
                 const SizedBox(width: 8),
                 GestureDetector(
                   onTap: () => _showReorderSheet(context, lib, books),
                   child: Container(
-                    padding: const EdgeInsets.all(6),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                     decoration: BoxDecoration(
                       color: subtleBg,
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: subtleBorder),
                     ),
-                    child: Icon(Icons.reorder_rounded, size: 18, color: muted),
+                    child: SizedBox(
+                      height: 20,
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.reorder_rounded, size: 18, color: muted),
+                        if (_queueMode != 'off') ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            _queueMode == 'auto_next'
+                                ? (_mergeLibraries ? l.queueModeAuto : lib.isPodcastLibrary ? l.queueModeShowLabel : l.queueModeSeriesLabel)
+                                : l.queueModeManual,
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: cs.primary),
+                          ),
+                        ],
+                      ]),
+                    ),
                   ),
                 ),
               ],
@@ -613,7 +677,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
               child: showBlockingLoader
                   ? Center(child: CircularProgressIndicator(strokeWidth: 2, color: cs.onSurface.withValues(alpha: 0.24)))
                   : books.isEmpty
-                      ? _emptyState(cs, tt, effectiveOffline)
+                      ? _emptyState(cs, tt, effectiveOffline, l)
                       : books.length == 1
                           ? LayoutBuilder(
                               builder: (context, constraints) {
@@ -639,7 +703,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                                 builder: (context, child) {
                                   double distFromCenter = 0.0;
                                   double rawDist = 0.0;
-                                  if (_pageController.position.haveDimensions) {
+                                  if (_pageController.hasClients && _pageController.positions.length == 1 && _pageController.position.haveDimensions) {
                                     final page = _pageController.page ?? _pageController.initialPage.toDouble();
                                     rawDist = page - i; // negative = card is to the right
                                     distFromCenter = rawDist.abs();
@@ -683,7 +747,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     );
   }
 
-  Widget _emptyState(ColorScheme cs, TextTheme tt, bool isOffline) {
+  Widget _emptyState(ColorScheme cs, TextTheme tt, bool isOffline, AppLocalizations l) {
     final lib = context.read<LibraryProvider>();
     final isPod = lib.isPodcastLibrary;
     return Center(
@@ -695,13 +759,13 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             size: 64, color: cs.onSurface.withValues(alpha: 0.15)),
           const SizedBox(height: 16),
           Text(isOffline
-              ? (isPod ? 'No downloaded episodes' : 'No downloaded books')
-              : (isPod ? 'Nothing playing yet' : 'Nothing absorbing yet'),
+              ? (isPod ? l.absorbingNoDownloadedEpisodes : l.absorbingNoDownloadedBooks)
+              : (isPod ? l.absorbingNothingPlayingYet : l.absorbingNothingAbsorbingYet),
             style: tt.titleMedium?.copyWith(color: cs.onSurfaceVariant)),
           const SizedBox(height: 8),
           Text(isOffline
-              ? (isPod ? 'Download episodes to listen offline' : 'Download books to listen offline')
-              : (isPod ? 'Start an episode from the Shows tab' : 'Start a book from the Library tab'),
+              ? (isPod ? l.absorbingDownloadEpisodesToListen : l.absorbingDownloadBooksToListen)
+              : (isPod ? l.absorbingStartEpisodeFromShows : l.absorbingStartBookFromLibrary),
             style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.24))),
         ],
       ),
@@ -725,6 +789,25 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
           books: books,
           lib: lib,
           absorbingKeyFn: _absorbingKey,
+          queueMode: _queueMode,
+          isMerged: _mergeLibraries,
+          isPodcast: lib.isPodcastLibrary,
+          onQueueModeChanged: (mode) async {
+            setState(() => _queueMode = mode);
+            if (_mergeLibraries) {
+              // Merged view: keep both types in sync
+              await PlayerSettings.setBookQueueMode(mode);
+              await PlayerSettings.setPodcastQueueMode(mode);
+            } else {
+              final isPod = lib.isPodcastLibrary;
+              if (isPod) {
+                await PlayerSettings.setPodcastQueueMode(mode);
+              } else {
+                await PlayerSettings.setBookQueueMode(mode);
+              }
+            }
+            PlayerSettings.notifySettingsChanged();
+          },
         ),
       ),
     );
@@ -755,7 +838,7 @@ class _PageDots extends StatelessWidget {
       return ListenableBuilder(
         listenable: controller,
         builder: (_, __) {
-          final page = controller.hasClients ? (controller.page ?? 0).round() : 0;
+          final page = controller.hasClients && controller.positions.length == 1 ? (controller.page ?? 0).round() : 0;
           return Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(count, (i) {
@@ -794,12 +877,20 @@ class _ReorderAbsorbingSheet extends StatefulWidget {
   final List<Map<String, dynamic>> books;
   final LibraryProvider lib;
   final String Function(Map<String, dynamic>) absorbingKeyFn;
+  final String queueMode;
+  final bool isMerged;
+  final bool isPodcast;
+  final ValueChanged<String> onQueueModeChanged;
 
   const _ReorderAbsorbingSheet({
     required this.keys,
     required this.books,
     required this.lib,
     required this.absorbingKeyFn,
+    required this.queueMode,
+    required this.isMerged,
+    required this.isPodcast,
+    required this.onQueueModeChanged,
   });
 
   @override
@@ -809,6 +900,7 @@ class _ReorderAbsorbingSheet extends StatefulWidget {
 class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
   late List<String> _order;
   late Map<String, Map<String, dynamic>> _booksByKey;
+  late String _queueMode;
 
   @override
   void initState() {
@@ -817,12 +909,14 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
     _booksByKey = {
       for (final b in widget.books) widget.absorbingKeyFn(b): b,
     };
+    _queueMode = widget.queueMode;
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
 
     return Container(
@@ -844,20 +938,42 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
           child: Row(children: [
-            Expanded(child: Text('Manage Queue',
+            Expanded(child: Text(l.absorbingManageQueue,
               style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600))),
             TextButton(
               onPressed: () {
                 widget.lib.reorderAbsorbing(_order);
                 Navigator.pop(context);
               },
-              child: const Text('Done'),
+              child: Text(l.absorbingDone),
             ),
           ]),
+        ),
+        // Queue mode toggle
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: SegmentedButton<String>(
+            segments: [
+              ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 16), label: Text(l.queueModeOff)),
+              ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 16), label: Text(l.queueModeManual)),
+              ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 16),
+                label: Text(widget.isMerged ? l.queueModeAuto : widget.isPodcast ? l.queueModeShowLabel : l.queueModeSeriesLabel)),
+            ],
+            selected: {_queueMode},
+            onSelectionChanged: (v) {
+              setState(() => _queueMode = v.first);
+              widget.onQueueModeChanged(v.first);
+            },
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
         ),
         Expanded(
           child: ReorderableListView.builder(
             buildDefaultDragHandles: false,
+            onReorderStart: (_) => HapticFeedback.mediumImpact(),
             padding: EdgeInsets.only(bottom: bottomInset + 16),
             proxyDecorator: (child, index, animation) {
               return AnimatedBuilder(
@@ -886,7 +1002,7 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
 
               final media = book['media'] as Map<String, dynamic>? ?? {};
               final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-              final title = metadata['title'] as String? ?? 'Unknown';
+              final title = metadata['title'] as String? ?? l.unknown;
               final author = metadata['authorName'] as String? ?? '';
               final re = book['recentEpisode'] as Map<String, dynamic>?;
               final epTitle = re?['title'] as String?;

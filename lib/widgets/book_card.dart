@@ -2,9 +2,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/library_provider.dart';
+import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
-import 'author_name_link.dart';
+import 'absorbing_shared.dart';
 import 'book_detail_sheet.dart';
 import 'episode_list_sheet.dart';
 
@@ -26,30 +28,29 @@ class BookCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
     final lib = context.watch<LibraryProvider>();
 
     final itemId = item['id'] as String?;
     final media = item['media'] as Map<String, dynamic>? ?? {};
     final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
 
-    final title = metadata['title'] as String? ?? 'Unknown Title';
+    final title = metadata['title'] as String? ?? l.bookCardUnknownTitle;
     final authorName = metadata['authorName'] as String? ?? '';
     final coverUrl = lib.getCoverUrl(itemId);
 
     // Progress from LibraryProvider (fetched via /api/me, same source as book detail)
     final progress = lib.getProgress(itemId);
     final isFinished = lib.getProgressData(itemId)?['isFinished'] == true;
+    final isExplicit = PlayerSettings.showExplicitBadge && metadata['explicit'] == true;
     final isDownloaded = DownloadService().isDownloaded(itemId ?? '');
 
     final headers = lib.mediaHeaders;
 
     if (isWide) {
-      return _buildWideCard(
-          context, cs, tt, title, authorName, coverUrl, progress, headers);
+      return _buildWideCard(context, cs, tt, l, title, authorName, coverUrl, progress, headers, isExplicit: isExplicit);
     }
-    return _buildCompactCard(
-        context, cs, tt, title, authorName, coverUrl, progress, headers,
-        isFinished: isFinished, isDownloaded: isDownloaded);
+    return _buildCompactCard(context, cs, tt, l, title, authorName, coverUrl, progress, headers, isFinished: isFinished, isDownloaded: isDownloaded, isExplicit: isExplicit);
   }
 
   void _navigateToDetail(BuildContext context) {
@@ -74,12 +75,14 @@ class BookCard extends StatelessWidget {
     BuildContext context,
     ColorScheme cs,
     TextTheme tt,
+    AppLocalizations l,
     String title,
     String authorName,
     String? coverUrl,
     double progress,
-    Map<String, String> headers,
-  ) {
+    Map<String, String> headers, {
+    bool isExplicit = false,
+  }) {
     return Card(
       elevation: 0,
       color: cs.surfaceContainerHigh,
@@ -96,16 +99,22 @@ class BookCard extends StatelessWidget {
               height: 120,
               child: Stack(
                 children: [
-                  _CoverImage(
-                      coverUrl: coverUrl,
-                      cs: cs,
-                      fit: BoxFit.contain,
-                      httpHeaders: headers),
-                  if (DownloadService()
-                      .isDownloaded(item['id'] as String? ?? ''))
+                  _CoverImage(coverUrl: coverUrl, cs: cs, fit: BoxFit.contain, httpHeaders: headers),
+                  if (isExplicit)
                     Positioned(
-                      top: 4,
-                      right: 4,
+                      top: 4, right: DownloadService().isDownloaded(item['id'] as String? ?? '') ? 30 : 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(l.bookCardExplicitBadge, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                  if (DownloadService().isDownloaded(item['id'] as String? ?? ''))
+                    Positioned(
+                      top: 4, right: 4,
                       child: Container(
                         padding: const EdgeInsets.all(3),
                         decoration: BoxDecoration(
@@ -122,8 +131,7 @@ class BookCard extends StatelessWidget {
             // Info section
             Expanded(
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -140,9 +148,8 @@ class BookCard extends StatelessWidget {
                     ),
                     if (authorName.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      AuthorNameLink(
-                        item: item,
-                        authorName: authorName,
+                      Text(
+                        authorName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: tt.bodySmall?.copyWith(
@@ -190,6 +197,7 @@ class BookCard extends StatelessWidget {
     BuildContext context,
     ColorScheme cs,
     TextTheme tt,
+    AppLocalizations l,
     String title,
     String authorName,
     String? coverUrl,
@@ -197,6 +205,7 @@ class BookCard extends StatelessWidget {
     Map<String, String> headers, {
     bool isFinished = false,
     bool isDownloaded = false,
+    bool isExplicit = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -219,7 +228,7 @@ class BookCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  _CoverImage(coverUrl: coverUrl, cs: cs, httpHeaders: headers),
+                  _CoverImage(coverUrl: coverUrl, cs: cs, httpHeaders: headers, coverAspectRatio: coverAspectRatio),
                   if (progress > 0 && !isFinished)
                     Positioned(
                       left: 0,
@@ -237,17 +246,27 @@ class BookCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                  if (isExplicit)
+                    Positioned(
+                      top: 4, right: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(l.bookCardExplicitBadge, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                      ),
+                    ),
                   if (isFinished || isDownloaded)
                     Positioned(
                       left: 0,
                       right: 0,
                       bottom: 0,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                         decoration: BoxDecoration(
-                          borderRadius: const BorderRadius.vertical(
-                              bottom: Radius.circular(12)),
+                          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
                           gradient: LinearGradient(
                             begin: Alignment.bottomCenter,
                             end: Alignment.topCenter,
@@ -263,20 +282,13 @@ class BookCard extends StatelessWidget {
                           children: [
                             if (isFinished) ...[
                               Icon(Icons.check_circle_rounded,
-                                  size: 10,
-                                  color: Theme.of(context).brightness ==
-                                          Brightness.dark
-                                      ? Colors.greenAccent[400]
-                                      : Colors.green.shade700),
+                                  size: 10, color: Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400] : Colors.green.shade700),
                               const SizedBox(width: 3),
-                              Text('Done',
+                              Text(l.bookCardDone,
                                   style: TextStyle(
                                       fontSize: 9,
                                       fontWeight: FontWeight.w600,
-                                      color: Theme.of(context).brightness ==
-                                              Brightness.dark
-                                          ? Colors.greenAccent[400]
-                                          : Colors.green.shade700)),
+                                      color: Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400] : Colors.green.shade700)),
                             ],
                             if (isFinished && isDownloaded)
                               const SizedBox(width: 6),
@@ -284,7 +296,7 @@ class BookCard extends StatelessWidget {
                               Icon(Icons.download_done_rounded,
                                   size: 10, color: cs.primary),
                               const SizedBox(width: 3),
-                              Text('Saved',
+                              Text(l.bookCardSaved,
                                   style: TextStyle(
                                       fontSize: 9,
                                       fontWeight: FontWeight.w600,
@@ -316,9 +328,8 @@ class BookCard extends StatelessWidget {
         if (authorName.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: AuthorNameLink(
-              item: item,
-              authorName: authorName,
+            child: Text(
+              authorName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: tt.labelSmall?.copyWith(
@@ -337,12 +348,9 @@ class _CoverImage extends StatelessWidget {
   final ColorScheme cs;
   final BoxFit fit;
   final Map<String, String> httpHeaders;
+  final double coverAspectRatio;
 
-  const _CoverImage(
-      {required this.coverUrl,
-      required this.cs,
-      this.fit = BoxFit.cover,
-      this.httpHeaders = const {}});
+  const _CoverImage({required this.coverUrl, required this.cs, this.fit = BoxFit.cover, this.httpHeaders = const {}, this.coverAspectRatio = 1.0});
 
   @override
   Widget build(BuildContext context) {
@@ -350,22 +358,37 @@ class _CoverImage extends StatelessWidget {
       return _placeholder();
     }
 
+    final isSquare = (coverAspectRatio - 1.0).abs() < 0.01;
+    final effectiveFit = isSquare ? BoxFit.contain : fit;
+
     // Local file path (offline cached cover)
     if (coverUrl!.startsWith('/')) {
       final file = File(coverUrl!);
       if (file.existsSync()) {
-        return Image.file(file,
-            fit: fit, errorBuilder: (_, __, ___) => _placeholder());
+        return BlurPaddedCover(
+          enabled: isSquare,
+          child: Image.file(file, fit: effectiveFit, errorBuilder: (_, __, ___) => _placeholder()),
+          blurChild: Image.file(file, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+        );
       }
       return _placeholder();
     }
 
-    return CachedNetworkImage(
-      imageUrl: coverUrl!,
-      fit: fit,
-      httpHeaders: httpHeaders,
-      placeholder: (_, __) => _placeholder(),
-      errorWidget: (_, __, ___) => _placeholder(),
+    return BlurPaddedCover(
+      enabled: isSquare,
+      child: CachedNetworkImage(
+        imageUrl: coverUrl!,
+        fit: effectiveFit,
+        httpHeaders: httpHeaders,
+        placeholder: (_, __) => _placeholder(),
+        errorWidget: (_, __, ___) => _placeholder(),
+      ),
+      blurChild: CachedNetworkImage(
+        imageUrl: coverUrl!,
+        fit: BoxFit.cover,
+        httpHeaders: httpHeaders,
+        errorWidget: (_, __, ___) => const SizedBox.shrink(),
+      ),
     );
   }
 

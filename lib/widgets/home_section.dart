@@ -1,7 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/library_provider.dart';
+import '../services/download_service.dart';
+import 'absorbing_shared.dart';
 import 'book_card.dart';
 import 'author_card.dart';
 import 'series_card.dart';
@@ -13,7 +16,8 @@ class HomeSection extends StatelessWidget {
   final List<dynamic> entities;
   final String sectionType;
   final String sectionId;
-  final VoidCallback? onHeaderTap;
+  final VoidCallback? onTitleTap;
+  final double coverAspectRatio;
 
   const HomeSection({
     super.key,
@@ -22,7 +26,8 @@ class HomeSection extends StatelessWidget {
     required this.entities,
     required this.sectionType,
     required this.sectionId,
-    this.onHeaderTap,
+    this.onTitleTap,
+    this.coverAspectRatio = 1.0,
   });
 
   @override
@@ -31,24 +36,22 @@ class HomeSection extends StatelessWidget {
     final tt = Theme.of(context).textTheme;
 
     final isContinueListening = sectionId == 'continue-listening';
+    final isPlaylistSection = sectionType == 'playlist';
     final isAuthorSection = sectionType == 'author' || sectionType == 'authors';
     final isSeriesSection = sectionType == 'series';
     final isEpisodeSection = sectionType == 'episode';
 
     // Check if any entities have recentEpisode (podcast episode sections)
-    final hasEpisodeEntities = !isEpisodeSection &&
-        entities.isNotEmpty &&
+    final hasEpisodeEntities = !isEpisodeSection && entities.isNotEmpty &&
         entities.first is Map<String, dynamic> &&
         (entities.first as Map<String, dynamic>)['recentEpisode'] != null;
     final effectiveEpisode = isEpisodeSection || hasEpisodeEntities;
 
+    final bool isRectCover = coverAspectRatio < 1.0;
     final double cardWidth =
         isContinueListening ? 300 : (isAuthorSection ? 120 : 140);
-    final double cardHeight = isContinueListening
-        ? 120
-        : effectiveEpisode
-            ? 200
-            : (isAuthorSection ? 170 : 200);
+    final double cardHeight =
+        isContinueListening ? 120 : effectiveEpisode ? 200 : (isAuthorSection ? 170 : (isRectCover ? 260 : 200));
 
     return Padding(
       padding: const EdgeInsets.only(top: 24),
@@ -56,41 +59,36 @@ class HomeSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Section header
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: onHeaderTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    Icon(icon,
-                        size: 16, color: cs.primary.withValues(alpha: 0.7)),
-                    const SizedBox(width: 8),
-                    Text(
-                      title,
-                      style: tt.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w500,
-                        color: cs.onSurface.withValues(alpha: 0.8),
-                        letterSpacing: 0.3,
-                      ),
+          GestureDetector(
+            onTap: onTitleTap,
+            behavior: onTitleTap != null ? HitTestBehavior.opaque : HitTestBehavior.deferToChild,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Icon(icon, size: 16, color: cs.primary.withValues(alpha: 0.7)),
+                  const SizedBox(width: 8),
+                  Text(
+                    title,
+                    style: tt.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: cs.onSurface.withValues(alpha: 0.8),
+                      letterSpacing: 0.3,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Container(
-                        height: 0.5,
-                        color: cs.outlineVariant.withValues(alpha: 0.2),
-                      ),
-                    ),
-                    if (onHeaderTap != null) ...[
-                      const SizedBox(width: 10),
-                      Icon(Icons.chevron_right_rounded,
-                          size: 18,
-                          color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
-                    ],
+                  ),
+                  if (onTitleTap != null) ...[
+                    const SizedBox(width: 4),
+                    Icon(Icons.chevron_right_rounded, size: 16,
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
                   ],
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      height: 0.5,
+                      color: cs.outlineVariant.withValues(alpha: 0.2),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -103,7 +101,20 @@ class HomeSection extends StatelessWidget {
               cardWidth: cardWidth,
               itemCount: entities.length,
               itemBuilder: (context, index) {
-                final entity = entities[index];
+                var entity = entities[index];
+
+                // Playlist items nest actual item under 'libraryItem'
+                if (isPlaylistSection && entity is Map<String, dynamic>) {
+                  final inner = entity['libraryItem'] as Map<String, dynamic>?;
+                  if (inner != null) {
+                    final episodeId = entity['episodeId'] as String?;
+                    final episode = entity['episode'] as Map<String, dynamic>?;
+                    entity = Map<String, dynamic>.from(inner);
+                    if (episodeId != null && episode != null) {
+                      entity['recentEpisode'] = episode;
+                    }
+                  }
+                }
 
                 if (isAuthorSection) {
                   return SizedBox(
@@ -115,7 +126,7 @@ class HomeSection extends StatelessWidget {
                 if (isSeriesSection) {
                   return SizedBox(
                     width: cardWidth,
-                    child: SeriesCard(series: entity),
+                    child: SeriesCard(series: entity, coverAspectRatio: coverAspectRatio),
                   );
                 }
 
@@ -143,6 +154,7 @@ class HomeSection extends StatelessWidget {
                     item: entity,
                     showProgress: isContinueListening,
                     isWide: isContinueListening,
+                    coverAspectRatio: isContinueListening ? 1.0 : coverAspectRatio,
                   ),
                 );
               },
@@ -193,8 +205,8 @@ class _SnapScrollListState extends State<_SnapScrollList> {
       onNotification: (notification) {
         final offset = _controller.offset;
         final targetIndex = (offset / itemExtent).round();
-        final targetOffset = (targetIndex * itemExtent)
-            .clamp(0.0, _controller.position.maxScrollExtent);
+        final targetOffset =
+            (targetIndex * itemExtent).clamp(0.0, _controller.position.maxScrollExtent);
         if ((offset - targetOffset).abs() > 1) {
           Future.microtask(() {
             if (_controller.hasClients) {
@@ -233,6 +245,7 @@ class _EpisodeCard extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final lib = context.watch<LibraryProvider>();
+    final l = AppLocalizations.of(context)!;
 
     final itemId = item['id'] as String? ?? '';
     final media = item['media'] as Map<String, dynamic>? ?? {};
@@ -244,6 +257,10 @@ class _EpisodeCard extends StatelessWidget {
     // Get episode info from recentEpisode
     final episode = item['recentEpisode'] as Map<String, dynamic>?;
     final episodeTitle = episode?['title'] as String? ?? showTitle;
+    final episodeId = episode?['id'] as String?;
+    final progress = episodeId != null ? lib.getEpisodeProgress(itemId, episodeId) : 0.0;
+    final isFinished = episodeId != null && lib.getEpisodeProgressData(itemId, episodeId)?['isFinished'] == true;
+    final isDownloaded = episodeId != null && DownloadService().isDownloaded('$itemId-$episodeId');
 
     return GestureDetector(
       onTap: () {
@@ -273,29 +290,90 @@ class _EpisodeCard extends StatelessWidget {
                 children: [
                   if (coverUrl != null)
                     coverUrl.startsWith('/')
-                        ? Image.file(File(coverUrl),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
-                                color: cs.surfaceContainerHigh,
-                                child: Icon(Icons.podcasts_rounded,
-                                    size: 32,
-                                    color: cs.onSurfaceVariant
-                                        .withValues(alpha: 0.3))))
-                        : Image.network(coverUrl,
-                            fit: BoxFit.cover,
-                            headers: lib.mediaHeaders,
-                            errorBuilder: (_, __, ___) => Container(
-                                color: cs.surfaceContainerHigh,
-                                child: Icon(Icons.podcasts_rounded,
-                                    size: 32,
-                                    color: cs.onSurfaceVariant
-                                        .withValues(alpha: 0.3))))
+                        ? BlurPaddedCover(
+                            child: Image.file(File(coverUrl), fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => Container(
+                                  color: cs.surfaceContainerHigh,
+                                  child: Icon(Icons.podcasts_rounded, size: 32,
+                                    color: cs.onSurfaceVariant.withValues(alpha: 0.3)))),
+                            blurChild: Image.file(File(coverUrl), fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const SizedBox.shrink()))
+                        : BlurPaddedCover(
+                            child: Image.network(coverUrl, fit: BoxFit.contain,
+                                headers: lib.mediaHeaders,
+                                errorBuilder: (_, __, ___) => Container(
+                                  color: cs.surfaceContainerHigh,
+                                  child: Icon(Icons.podcasts_rounded, size: 32,
+                                    color: cs.onSurfaceVariant.withValues(alpha: 0.3)))),
+                            blurChild: Image.network(coverUrl, fit: BoxFit.cover,
+                                headers: lib.mediaHeaders,
+                                errorBuilder: (_, __, ___) => const SizedBox.shrink()))
                   else
                     Container(
                       color: cs.surfaceContainerHigh,
-                      child: Icon(Icons.podcasts_rounded,
-                          size: 32,
-                          color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
+                      child: Icon(Icons.podcasts_rounded, size: 32,
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
+                    ),
+                  // Progress bar
+                  if (progress > 0 && !isFinished)
+                    Positioned(
+                      left: 0, right: 0, bottom: 0,
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                        child: LinearProgressIndicator(
+                          value: progress.clamp(0, 1),
+                          minHeight: 3,
+                          backgroundColor: Colors.transparent,
+                          valueColor: AlwaysStoppedAnimation(cs.primary),
+                        ),
+                      ),
+                    ),
+                  // Finished / downloaded badge
+                  if (isFinished || isDownloaded)
+                    Positioned(
+                      left: 0, right: 0, bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                          gradient: LinearGradient(
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.85),
+                              Colors.black.withValues(alpha: 0.0),
+                            ],
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isFinished) ...[
+                              Icon(Icons.check_circle_rounded,
+                                  size: 10, color: Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400] : Colors.green.shade700),
+                              const SizedBox(width: 3),
+                              Text(l.homeSectionDoneBadge,
+                                  style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w600,
+                                      color: Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400] : Colors.green.shade700)),
+                            ],
+                            if (isFinished && isDownloaded)
+                              const SizedBox(width: 6),
+                            if (isDownloaded) ...[
+                              Icon(Icons.download_done_rounded,
+                                  size: 10, color: cs.primary),
+                              const SizedBox(width: 3),
+                              Text(l.saved,
+                                  style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w600,
+                                      color: cs.primary)),
+                            ],
+                          ],
+                        ),
+                      ),
                     ),
                   // Subscribed bell
                   if (isSubscribed)

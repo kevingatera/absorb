@@ -2,11 +2,15 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'overlay_toast.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
+import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import 'book_detail_sheet.dart';
+import 'stackable_sheet.dart';
 
 class CollectionDetailSheet extends StatefulWidget {
   final String collectionId;
@@ -19,38 +23,15 @@ class CollectionDetailSheet extends StatefulWidget {
   });
 
   static void show(BuildContext context, String collectionId) {
-    showModalBottomSheet(
+    showStackableSheet(
       context: context,
-      isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return GestureDetector(
-          onTap: () => Navigator.pop(context),
-          behavior: HitTestBehavior.opaque,
-          child: DraggableScrollableSheet(
-            initialChildSize: 0.7,
-            minChildSize: 0.4,
-            maxChildSize: 0.95,
-            builder: (context, scrollController) {
-              return GestureDetector(
-                onTap: () {},
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).bottomSheetTheme.backgroundColor ??
-                        Theme.of(context).colorScheme.surface,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                  ),
-                  child: CollectionDetailSheet(
-                    collectionId: collectionId,
-                    scrollController: scrollController,
-                  ),
-                ),
-              );
-            },
-          ),
-        );
-      },
+      showHandle: true,
+      maxChildSize: 0.95,
+      builder: (context, scrollController) => CollectionDetailSheet(
+        collectionId: collectionId,
+        scrollController: scrollController,
+      ),
     );
   }
 
@@ -60,6 +41,7 @@ class CollectionDetailSheet extends StatefulWidget {
 
 class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
   bool _reordering = false;
+  bool _gridView = false;
   List<Map<String, dynamic>>? _reorderItems;
 
   Future<void> _removeItem(LibraryProvider lib, String libraryItemId) async {
@@ -67,19 +49,20 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
   }
 
   Future<void> _deleteCollection(BuildContext context, LibraryProvider lib) async {
+    final l = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Collection'),
-        content: const Text('Are you sure you want to delete this collection?'),
+        title: Text(l.deleteCollection),
+        content: Text(l.deleteCollectionContent),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
+            child: Text(l.delete),
           ),
         ],
       ),
@@ -121,6 +104,7 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
     final lib = context.watch<LibraryProvider>();
     final isRoot = context.read<AuthProvider>().isRoot;
 
@@ -129,31 +113,22 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
     ).firstOrNull;
 
     if (collection == null) {
-      return const Center(child: Text('Collection not found'));
+      return Center(child: Text(l.collectionNotFound));
     }
 
-    final name = collection['name'] as String? ?? 'Collection';
+    final name = collection['name'] as String? ?? l.collectionDetailDefaultName;
     final description = collection['description'] as String? ?? '';
     final books = (collection['books'] as List<dynamic>?) ?? [];
 
     return Column(children: [
-      // Grab handle + header
-      const SizedBox(height: 8),
-      Center(child: Container(
-        width: 40, height: 4,
-        decoration: BoxDecoration(
-          color: cs.onSurface.withValues(alpha: 0.24),
-          borderRadius: BorderRadius.circular(2),
-        ),
-      )),
-      const SizedBox(height: 16),
+      const SizedBox(height: 4),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Row(children: [
           if (_reordering) ...[
             GestureDetector(
               onTap: _cancelReorder,
-              child: Text('Cancel', style: tt.labelMedium?.copyWith(
+              child: Text(l.cancel, style: tt.labelMedium?.copyWith(
                 color: cs.onSurfaceVariant, fontWeight: FontWeight.w500,
               )),
             ),
@@ -164,7 +139,7 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
             const Spacer(),
             GestureDetector(
               onTap: () => _saveReorder(lib),
-              child: Text('Done', style: tt.labelMedium?.copyWith(
+              child: Text(l.done, style: tt.labelMedium?.copyWith(
                 color: cs.primary, fontWeight: FontWeight.w600,
               )),
             ),
@@ -184,8 +159,15 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
                 fontWeight: FontWeight.w600, color: cs.onSurface,
               )),
             ),
-            Text('${books.length} book${books.length == 1 ? '' : 's'}',
+            Text(l.collectionDetailBookCount(books.length),
               style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(width: 12),
+            GestureDetector(
+              onTap: () => setState(() => _gridView = !_gridView),
+              child: Icon(
+                _gridView ? Icons.view_list_rounded : Icons.grid_view_rounded,
+                size: 20, color: cs.onSurfaceVariant),
             ),
             if (isRoot && books.length > 1) ...[
               const SizedBox(width: 12),
@@ -214,13 +196,15 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
       // Content
       Expanded(
         child: _reordering
-            ? _buildReorderList(cs, tt, lib)
-            : _buildItemList(cs, tt, lib, books, isRoot: isRoot),
+            ? _buildReorderList(cs, tt, lib, l)
+            : _gridView
+                ? _buildGrid(cs, tt, lib, books, l)
+                : _buildItemList(cs, tt, lib, books, l, isRoot: isRoot),
       ),
     ]);
   }
 
-  Widget _buildReorderList(ColorScheme cs, TextTheme tt, LibraryProvider lib) {
+  Widget _buildReorderList(ColorScheme cs, TextTheme tt, LibraryProvider lib, AppLocalizations l) {
     final items = _reorderItems!;
     return ReorderableListView.builder(
       padding: EdgeInsets.only(top: 8, bottom: 8 + MediaQuery.of(context).viewPadding.bottom),
@@ -238,7 +222,7 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
         final itemId = book['id'] as String? ?? '';
         final media = book['media'] as Map<String, dynamic>? ?? {};
         final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-        final title = metadata['title'] as String? ?? 'Unknown';
+        final title = metadata['title'] as String? ?? l.unknown;
         final coverUrl = lib.getCoverUrl(itemId);
 
         return Container(
@@ -285,7 +269,7 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
     );
   }
 
-  Widget _buildItemList(ColorScheme cs, TextTheme tt, LibraryProvider lib, List<dynamic> books, {required bool isRoot}) {
+  Widget _buildItemList(ColorScheme cs, TextTheme tt, LibraryProvider lib, List<dynamic> books, AppLocalizations l, {required bool isRoot}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final doneColor = isDark ? Colors.greenAccent[400]! : Colors.green.shade700;
 
@@ -298,9 +282,10 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
         final itemId = book['id'] as String? ?? '';
         final media = book['media'] as Map<String, dynamic>? ?? {};
         final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-        final title = metadata['title'] as String? ?? 'Unknown';
+        final title = metadata['title'] as String? ?? l.unknown;
         final author = metadata['authorName'] as String? ?? '';
         final coverUrl = lib.getCoverUrl(itemId);
+        final isExplicit = PlayerSettings.showExplicitBadge && metadata['explicit'] == true;
         final progress = lib.getProgress(itemId);
         final isFinished = lib.getProgressData(itemId)?['isFinished'] == true;
         final isDownloaded = DownloadService().isDownloaded(itemId);
@@ -334,6 +319,18 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
                                   ))
                             : _placeholder(cs),
                       ),
+                      if (isExplicit)
+                        Positioned(
+                          top: 4, right: 4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withValues(alpha: 0.85),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(l.bookCardExplicitBadge, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                          ),
+                        ),
                       if (progress > 0 && !isFinished)
                         Positioned(
                           left: 0, right: 0, bottom: 0,
@@ -364,13 +361,13 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
                                 Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
                                   Icon(Icons.check_circle_rounded, size: 10, color: doneColor),
                                   const SizedBox(width: 3),
-                                  Text('Done', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: doneColor)),
+                                  Text(l.collectionDetailDone, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: doneColor)),
                                 ]),
                               if (isDownloaded)
                                 Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
                                   Icon(Icons.download_done_rounded, size: 10, color: cs.primary),
                                   const SizedBox(width: 3),
-                                  Text('Saved', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: cs.primary)),
+                                  Text(l.saved, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: cs.primary)),
                                 ]),
                             ]),
                           ),
@@ -410,13 +407,9 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
             confirmDismiss: (_) async {
               await lib.addToAbsorbingQueue(itemId);
               lib.absorbingItemCache[itemId] = Map<String, dynamic>.from(book);
+              HapticFeedback.mediumImpact();
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text('Added "$title" to Absorbing'),
-                  behavior: SnackBarBehavior.floating,
-                  duration: const Duration(seconds: 2),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ));
+                showOverlayToast(context, l.collectionDetailAddedToAbsorbing(title), icon: Icons.add_circle_outline_rounded);
               }
               return false;
             },
@@ -440,13 +433,9 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
             if (direction == DismissDirection.startToEnd) {
               await lib.addToAbsorbingQueue(itemId);
               lib.absorbingItemCache[itemId] = Map<String, dynamic>.from(book);
+              HapticFeedback.mediumImpact();
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text('Added "$title" to Absorbing'),
-                  behavior: SnackBarBehavior.floating,
-                  duration: const Duration(seconds: 2),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ));
+                showOverlayToast(context, l.collectionDetailAddedToAbsorbing(title), icon: Icons.add_circle_outline_rounded);
               }
               return false;
             }
@@ -469,6 +458,126 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
             child: Icon(Icons.delete_rounded, color: cs.error),
           ),
           child: card,
+        );
+      },
+    );
+  }
+
+  Widget _buildGrid(ColorScheme cs, TextTheme tt, LibraryProvider lib, List<dynamic> books, AppLocalizations l) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final doneColor = isDark ? Colors.greenAccent[400]! : Colors.green.shade700;
+
+    return GridView.builder(
+      controller: widget.scrollController,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4)
+          .copyWith(bottom: 40),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 0.62,
+      ),
+      itemCount: books.length,
+      itemBuilder: (context, index) {
+        final book = books[index] as Map<String, dynamic>;
+        final itemId = book['id'] as String? ?? '';
+        final media = book['media'] as Map<String, dynamic>? ?? {};
+        final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+        final title = metadata['title'] as String? ?? l.unknown;
+        final author = metadata['authorName'] as String? ?? '';
+        final coverUrl = lib.getCoverUrl(itemId);
+        final isExplicit = PlayerSettings.showExplicitBadge && metadata['explicit'] == true;
+        final progress = lib.getProgress(itemId);
+        final isFinished = lib.getProgressData(itemId)?['isFinished'] == true;
+        final isDownloaded = DownloadService().isDownloaded(itemId);
+
+        return GestureDetector(
+          onTap: () => showBookDetailSheet(context, itemId),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AspectRatio(
+                aspectRatio: 1,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Stack(children: [
+                    Positioned.fill(
+                      child: coverUrl != null
+                          ? (coverUrl.startsWith('/')
+                              ? Image.file(File(coverUrl), fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => _placeholder(cs))
+                              : CachedNetworkImage(
+                                  imageUrl: coverUrl, fit: BoxFit.cover,
+                                  httpHeaders: lib.mediaHeaders,
+                                  placeholder: (_, __) => _placeholder(cs),
+                                  errorWidget: (_, __, ___) => _placeholder(cs),
+                                ))
+                          : _placeholder(cs),
+                    ),
+                    if (isExplicit)
+                      Positioned(
+                        top: 4, right: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(l.bookCardExplicitBadge, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                        ),
+                      ),
+                    if (progress > 0 && !isFinished)
+                      Positioned(
+                        left: 0, right: 0, bottom: 0,
+                        child: LinearProgressIndicator(
+                          value: progress.clamp(0.0, 1.0),
+                          minHeight: 3,
+                          backgroundColor: Colors.black38,
+                          valueColor: AlwaysStoppedAnimation(cs.primary),
+                        ),
+                      ),
+                    if (isFinished || isDownloaded)
+                      Positioned(
+                        left: 0, right: 0, bottom: 0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.bottomCenter,
+                              end: Alignment.topCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.85),
+                                Colors.black.withValues(alpha: 0.0),
+                              ],
+                            ),
+                          ),
+                          child: Column(mainAxisSize: MainAxisSize.min, children: [
+                            if (isFinished)
+                              Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
+                                Icon(Icons.check_circle_rounded, size: 10, color: doneColor),
+                                const SizedBox(width: 3),
+                                Text(l.collectionDetailDone, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: doneColor)),
+                              ]),
+                            if (isDownloaded)
+                              Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
+                                Icon(Icons.download_done_rounded, size: 10, color: cs.primary),
+                                const SizedBox(width: 3),
+                                Text(l.saved, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: cs.primary)),
+                              ]),
+                          ]),
+                        ),
+                      ),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(title, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: tt.labelSmall?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
+              if (author.isNotEmpty)
+                Text(author, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: tt.labelSmall?.copyWith(fontSize: 10, color: cs.onSurfaceVariant)),
+            ],
+          ),
         );
       },
     );

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:just_audio/just_audio.dart' as ja;
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:vibration/vibration.dart';
 import 'scoped_prefs.dart';
@@ -17,6 +18,7 @@ class AutoSleepSettings {
   final int endHour;     // 24h format, e.g. 6 for 6 AM
   final int endMinute;
   final int durationMinutes; // how many minutes the auto-started timer runs
+  final bool useEndOfChapter; // use end-of-chapter mode instead of timed
 
   const AutoSleepSettings({
     this.enabled = false,
@@ -25,7 +27,21 @@ class AutoSleepSettings {
     this.endHour = 6,
     this.endMinute = 0,
     this.durationMinutes = 30,
+    this.useEndOfChapter = false,
   });
+
+  AutoSleepSettings copyWith({
+    bool? enabled, int? startHour, int? startMinute,
+    int? endHour, int? endMinute, int? durationMinutes, bool? useEndOfChapter,
+  }) => AutoSleepSettings(
+    enabled: enabled ?? this.enabled,
+    startHour: startHour ?? this.startHour,
+    startMinute: startMinute ?? this.startMinute,
+    endHour: endHour ?? this.endHour,
+    endMinute: endMinute ?? this.endMinute,
+    durationMinutes: durationMinutes ?? this.durationMinutes,
+    useEndOfChapter: useEndOfChapter ?? this.useEndOfChapter,
+  );
 
   /// Check if the current time is within the auto sleep window.
   bool isInWindow() {
@@ -60,6 +76,7 @@ class AutoSleepSettings {
       endHour: await ScopedPrefs.getInt('autoSleep_endHour') ?? 6,
       endMinute: await ScopedPrefs.getInt('autoSleep_endMinute') ?? 0,
       durationMinutes: await ScopedPrefs.getInt('autoSleep_duration') ?? 30,
+      useEndOfChapter: await ScopedPrefs.getBool('autoSleep_endOfChapter') ?? false,
     );
   }
 
@@ -70,6 +87,7 @@ class AutoSleepSettings {
     await ScopedPrefs.setInt('autoSleep_endHour', endHour);
     await ScopedPrefs.setInt('autoSleep_endMinute', endMinute);
     await ScopedPrefs.setInt('autoSleep_duration', durationMinutes);
+    await ScopedPrefs.setBool('autoSleep_endOfChapter', useEndOfChapter);
   }
 }
 
@@ -101,12 +119,12 @@ class SleepTimerService extends ChangeNotifier {
   String _shakeMode = 'addTime'; // 'off', 'addTime', 'resetTimer'
   StreamSubscription? _accelSub;
   DateTime _lastShake = DateTime(2000);
-  static const _shakeThreshold = 20.0; // m/s² of linear acceleration (gravity excluded)
+  double _shakeThreshold = 18.0; // m/s² of linear acceleration (gravity excluded); loaded from settings
   static const _shakeCooldown = Duration(seconds: 3);
 
   // Wind-down warning & fade
   bool _warningSent = false;
-  static const _warningThreshold = Duration(seconds: 30);
+  Duration _fadeThreshold = const Duration(seconds: 30);
   double _fadeStartVolume = 1.0; // volume when fade begins
 
   // Reset on pause/play
@@ -136,71 +154,98 @@ class SleepTimerService extends ChangeNotifier {
 
   // ── Time-based sleep ──
   
-  void setTimeSleep(Duration duration) {
+  void setTimeSleep(Duration duration) async {
     cancel();
     _mode = SleepTimerMode.time;
     _timeRemaining = duration;
     _initialDuration = duration;
     _warningSent = false;
+    final fadeSecs = await PlayerSettings.getSleepFadeDuration();
+    _fadeThreshold = Duration(seconds: fadeSecs);
     _startTimeCountdown();
     _startShakeDetection();
     notifyListeners();
-    debugPrint('[SleepTimer] Set time sleep: ${duration.inMinutes}m');
+    debugPrint('[SleepTimer] Set time sleep: ${duration.inMinutes}m (fade: ${fadeSecs}s)');
   }
+
+  int _tickIntervalSeconds = 5;
 
   void _startTimeCountdown() {
     _timer?.cancel();
     _wasPlaying = _isPlaybackActive;
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) async {
-      if (_timeRemaining.inSeconds <= 0) {
-        _triggerSleep();
-        return;
-      }
-      final isPlaying = _isPlaybackActive;
+    _scheduleNextTick();
+  }
 
-      // Detect pause→play transition and reset if setting is on
-      if (isPlaying && !_wasPlaying) {
-        final resetOnPause = await PlayerSettings.getResetSleepOnPause();
-        if (resetOnPause) {
-          _timeRemaining = _initialDuration;
-          _warningSent = false;
-          if (_isFadingOut) {
-            _isFadingOut = false;
-            _player.setVolume(_fadeStartVolume);
-          }
-          debugPrint('[SleepTimer] Reset to ${_initialDuration.inMinutes}m on resume');
-          onToast?.call('Sleep timer reset: ${_initialDuration.inMinutes}m');
+  void _scheduleNextTick() {
+    _timer?.cancel();
+    // Tick every 1s when the app is foregrounded (so the UI countdown looks
+    // smooth) or during the fade period (volume ramp needs per-second resolution).
+    // Only slow down to 5s when backgrounded and far from the fade - no UI to
+    // update, so we save a handful of wake-ups.
+    final nearFade = _timeRemaining <= _fadeThreshold + const Duration(seconds: 5);
+    final fastTick = nearFade || !_player.isBackgrounded;
+    _tickIntervalSeconds = fastTick ? 1 : 5;
+    _timer = Timer.periodic(Duration(seconds: _tickIntervalSeconds), _onTimerTick);
+  }
+
+  void _onTimerTick(Timer timer) async {
+    if (_timeRemaining.inSeconds <= 0) {
+      _triggerSleep();
+      return;
+    }
+    final isPlaying = _isPlaybackActive;
+
+    // Detect pause->play transition and reset if setting is on
+    if (isPlaying && !_wasPlaying) {
+      final resetOnPause = await PlayerSettings.getResetSleepOnPause();
+      if (resetOnPause) {
+        _timeRemaining = _initialDuration;
+        _warningSent = false;
+        if (_isFadingOut) {
+          _isFadingOut = false;
+          _player.setVolume(_fadeStartVolume);
         }
+        debugPrint('[SleepTimer] Reset to ${_initialDuration.inMinutes}m on resume');
+        onToast?.call('Sleep timer reset: ${_initialDuration.inMinutes}m');
+        _scheduleNextTick();
       }
-      _wasPlaying = isPlaying;
+    }
+    _wasPlaying = isPlaying;
 
-      // Only count down when playing
-      if (isPlaying) {
-        _timeRemaining -= const Duration(seconds: 1);
-
-        // Wind-down warning at 30 seconds: vibration + optional fade
-        if (!_warningSent && _timeRemaining <= _warningThreshold && _timeRemaining.inSeconds > 0) {
-          _warningSent = true;
-          onToast?.call('Sleep timer ending soon…');
-          final fadeEnabled = await PlayerSettings.getSleepFadeOut();
-          if (fadeEnabled && !_cast.isCasting) {
-            _isFadingOut = true;
-            _fadeStartVolume = _player.volume;
-            debugPrint('[SleepTimer] Warning: ${_timeRemaining.inSeconds}s remaining — starting fade');
-          } else {
-            debugPrint('[SleepTimer] Warning: ${_timeRemaining.inSeconds}s remaining');
-          }
-        }
-
-        // Gradually lower volume during the last 30 seconds
-        if (_isFadingOut && _timeRemaining.inSeconds > 0 && !_cast.isCasting) {
-          final fraction = _timeRemaining.inSeconds / _warningThreshold.inSeconds;
-          _player.setVolume((_fadeStartVolume * fraction).clamp(0.0, 1.0));
-        }
-
-        notifyListeners();
+    // Only count down when playing
+    if (isPlaying) {
+      _timeRemaining -= Duration(seconds: _tickIntervalSeconds);
+      // Switch to fast ticks when approaching fade threshold
+      if (_tickIntervalSeconds > 1 &&
+          _timeRemaining <= _fadeThreshold + const Duration(seconds: 5)) {
+        _scheduleNextTick();
       }
-    });
+
+      // Wind-down: vibration + optional fade + optional chime
+      if (!_warningSent && _timeRemaining <= _fadeThreshold && _timeRemaining.inSeconds > 0) {
+        _warningSent = true;
+        onToast?.call('Sleep timer ending soon...');
+        final fadeEnabled = await PlayerSettings.getSleepFadeOut();
+        if (fadeEnabled && !_cast.isCasting) {
+          _isFadingOut = true;
+          _fadeStartVolume = _player.volume;
+          debugPrint('[SleepTimer] Warning: ${_timeRemaining.inSeconds}s remaining - starting fade (${_fadeThreshold.inSeconds}s)');
+        } else {
+          debugPrint('[SleepTimer] Warning: ${_timeRemaining.inSeconds}s remaining');
+        }
+        // Play chime sound if enabled
+        final chimeEnabled = await PlayerSettings.getSleepChime();
+        if (chimeEnabled) _playChime();
+      }
+
+      // Gradually lower volume during the fade period
+      if (_isFadingOut && _timeRemaining.inSeconds > 0 && !_cast.isCasting) {
+        final fraction = _timeRemaining.inSeconds / _fadeThreshold.inSeconds;
+        _player.setVolume((_fadeStartVolume * fraction).clamp(0.0, 1.0));
+      }
+
+      notifyListeners();
+    }
   }
 
   /// Add time (used by shake reset in time mode, or manual add)
@@ -208,13 +253,15 @@ class SleepTimerService extends ChangeNotifier {
     if (_mode != SleepTimerMode.time) return;
     _timeRemaining += extra;
     // Reset warning and restore volume if we're above threshold again
-    if (_timeRemaining > _warningThreshold) {
+    if (_timeRemaining > _fadeThreshold) {
       _warningSent = false;
       if (_isFadingOut) {
         _isFadingOut = false;
         _player.setVolume(_fadeStartVolume);
       }
     }
+    // Reschedule in case we jumped between slow/fast tick zones
+    if (_timer?.isActive == true) _scheduleNextTick();
     notifyListeners();
     debugPrint('[SleepTimer] Added ${extra.inMinutes}m — now ${_timeRemaining.inMinutes}m');
   }
@@ -326,6 +373,7 @@ class SleepTimerService extends ChangeNotifier {
     _timer = null;
     _positionSub?.cancel();
     _positionSub = null;
+    if (_accelSub != null) debugPrint('[SleepTimer] Accelerometer stream stopped');
     _accelSub?.cancel();
     _accelSub = null;
     _mode = SleepTimerMode.off;
@@ -333,6 +381,7 @@ class SleepTimerService extends ChangeNotifier {
     _chaptersRemaining = 0;
     _targetChapterIndex = -1;
     _warningSent = false;
+    _autoStarted = false;
     // Restore volume if cancelled during fade-out
     if (wasFading) {
       _player.setVolume(_fadeStartVolume);
@@ -350,15 +399,53 @@ class SleepTimerService extends ChangeNotifier {
     }
   }
 
+  /// Play a gentle bell chime to warn that sleep timer is ending soon.
+  /// Ducks the main player volume briefly so the chime is audible over the
+  /// audiobook, then restores it.
+  ja.AudioPlayer? _chimePlayer;
+  void _playChime() async {
+    try {
+      final vol = await PlayerSettings.getSleepChimeVolume();
+      _chimePlayer?.dispose();
+      final chime = ja.AudioPlayer();
+      _chimePlayer = chime;
+      await chime.setVolume(vol);
+      await chime.setAsset('assets/audio/bell.mp3');
+
+      // Duck the main player so the chime cuts through
+      final player = AudioPlayerService();
+      final prevVol = player.volume;
+      final ducked = (prevVol * 0.15).clamp(0.0, 1.0);
+      await player.setVolume(ducked);
+      debugPrint('[SleepTimer] Chime: playing (vol=$vol, ducked main ${prevVol.toStringAsFixed(2)} -> ${ducked.toStringAsFixed(2)})');
+
+      chime.play();
+      chime.playerStateStream.where((s) => s.processingState == ja.ProcessingState.completed).first.then((_) {
+        // Restore main player volume after chime finishes
+        player.setVolume(prevVol);
+        chime.dispose();
+        if (_chimePlayer == chime) _chimePlayer = null;
+      });
+    } catch (e) {
+      debugPrint('[SleepTimer] Chime error: $e');
+    }
+  }
+
 
   // ── Shake detection ──
 
   Future<void> _startShakeDetection() async {
     _shakeMode = await PlayerSettings.getShakeMode();
     if (_shakeMode == 'off') return;
-    
+
+    final sensitivity = await PlayerSettings.getShakeSensitivity();
+    _shakeThreshold = PlayerSettings.shakeThresholdFor(sensitivity);
+
     _accelSub?.cancel();
-    _accelSub = userAccelerometerEventStream().listen((event) {
+    debugPrint('[Battery] Accelerometer stream STARTED (shakeMode=$_shakeMode, sensitivity=$sensitivity, threshold=$_shakeThreshold)');
+    _accelSub = userAccelerometerEventStream(
+      samplingPeriod: const Duration(milliseconds: 100),
+    ).listen((event) {
       final magnitude = sqrt(
         event.x * event.x + event.y * event.y + event.z * event.z);
       if (magnitude > _shakeThreshold) {
@@ -381,6 +468,7 @@ class SleepTimerService extends ChangeNotifier {
   bool _autoSleepDismissed = false; // user manually cancelled — don't re-trigger this window
   bool _wasInWindow = false; // tracks window transitions to reset dismiss flag
   Timer? _windowBoundaryTimer; // fires once at exact window start time
+  bool _autoStarted = false; // current timer was started by auto sleep (not manual)
 
   /// Load auto sleep settings.
   Future<void> loadAutoSleepSettings() async {
@@ -395,9 +483,17 @@ class SleepTimerService extends ChangeNotifier {
   }
 
   void _onSettingsUpdated() {
+    final s = _autoSleepSettings;
+    debugPrint('[SleepTimer] _onSettingsUpdated enabled=${s?.enabled} window=${s?.startLabel}-${s?.endLabel} mode=${s?.useEndOfChapter == true ? "chapter" : "${s?.durationMinutes}m"} autoStarted=$_autoStarted isActive=$isActive');
     // Cancel stale boundary timer — it was for the old window
     _windowBoundaryTimer?.cancel();
     _windowBoundaryTimer = null;
+    // If an auto-started timer is running, tear it down so the new duration /
+    // mode / window can take effect on re-evaluation.
+    if (_autoStarted && isActive) {
+      debugPrint('[SleepTimer] Settings changed — restarting auto-started timer');
+      cancel();
+    }
     // Re-evaluate with new settings if playing, or schedule boundary
     if (_autoSleepSettings != null && _autoSleepSettings!.enabled) {
       checkAutoSleep();
@@ -426,9 +522,13 @@ class SleepTimerService extends ChangeNotifier {
   Future<void> checkAutoSleep() async {
     if (_autoSleepSettings == null) await loadAutoSleepSettings();
     final settings = _autoSleepSettings;
-    if (settings == null || !settings.enabled) return;
+    if (settings == null || !settings.enabled) {
+      debugPrint('[SleepTimer] checkAutoSleep: disabled or no settings');
+      return;
+    }
 
     final inWindow = settings.isInWindow();
+    debugPrint('[SleepTimer] checkAutoSleep: inWindow=$inWindow isActive=$isActive dismissed=$_autoSleepDismissed autoStarted=$_autoStarted');
 
     // If we just left the window, reset the dismiss flag for next entry
     if (!inWindow && _wasInWindow) {
@@ -441,10 +541,18 @@ class SleepTimerService extends ChangeNotifier {
       _windowBoundaryTimer?.cancel();
       _windowBoundaryTimer = null;
       if (!isActive && !_autoSleepDismissed) {
-        debugPrint('[SleepTimer] Auto sleep: in window ${settings.startLabel}–${settings.endLabel}, '
-            'starting ${settings.durationMinutes}m timer');
-        setTimeSleep(Duration(minutes: settings.durationMinutes));
-        onToast?.call('Auto sleep: ${settings.durationMinutes}m timer started');
+        if (settings.useEndOfChapter) {
+          debugPrint('[SleepTimer] Auto sleep: in window ${settings.startLabel}–${settings.endLabel}, '
+              'starting end-of-chapter timer');
+          setChapterSleep(1);
+          onToast?.call('Auto sleep: end of chapter timer started');
+        } else {
+          debugPrint('[SleepTimer] Auto sleep: in window ${settings.startLabel}–${settings.endLabel}, '
+              'starting ${settings.durationMinutes}m timer');
+          setTimeSleep(Duration(minutes: settings.durationMinutes));
+          onToast?.call('Auto sleep: ${settings.durationMinutes}m timer started');
+        }
+        _autoStarted = true;
       }
     } else {
       // Not in window yet — schedule a one-shot timer for when it opens
@@ -467,9 +575,16 @@ class SleepTimerService extends ChangeNotifier {
       _windowBoundaryTimer = null;
       if (_isPlaybackActive && !isActive && !_autoSleepDismissed) {
         _wasInWindow = true;
-        debugPrint('[SleepTimer] Window boundary hit — starting ${settings.durationMinutes}m timer');
-        setTimeSleep(Duration(minutes: settings.durationMinutes));
-        onToast?.call('Auto sleep: ${settings.durationMinutes}m timer started');
+        if (settings.useEndOfChapter) {
+          debugPrint('[SleepTimer] Window boundary hit — starting end-of-chapter timer');
+          setChapterSleep(1);
+          onToast?.call('Auto sleep: end of chapter timer started');
+        } else {
+          debugPrint('[SleepTimer] Window boundary hit — starting ${settings.durationMinutes}m timer');
+          setTimeSleep(Duration(minutes: settings.durationMinutes));
+          onToast?.call('Auto sleep: ${settings.durationMinutes}m timer started');
+        }
+        _autoStarted = true;
       }
     });
   }
@@ -501,6 +616,41 @@ class SleepTimerService extends ChangeNotifier {
         addChapter();
         onToast?.call('+1 chapter added!');
       }
+    }
+  }
+
+  /// Re-read shake settings and restart the accelerometer stream. Call when
+  /// the user changes shake mode or sensitivity from settings UI.
+  Future<void> restartShakeDetection() async {
+    _accelSub?.cancel();
+    _accelSub = null;
+    if (isActive) await _startShakeDetection();
+  }
+
+  /// Pause battery-intensive operations when app is backgrounded.
+  /// Only pauses shake detection if nothing is playing (user might shake
+  /// with screen off to extend sleep timer).
+  void onAppBackgrounded() {
+    if (!_isPlaybackActive) {
+      _accelSub?.cancel();
+      _accelSub = null;
+      debugPrint('[SleepTimer] Paused shake detection (backgrounded, not playing)');
+    }
+    // Switch the countdown to 5s ticks - no UI to update while backgrounded.
+    if (_mode == SleepTimerMode.time && (_timer?.isActive ?? false)) {
+      _scheduleNextTick();
+    }
+  }
+
+  /// Resume operations when app is foregrounded.
+  void onAppForegrounded() {
+    if (isActive && _accelSub == null) {
+      _startShakeDetection();
+      debugPrint('[SleepTimer] Resumed shake detection (foregrounded)');
+    }
+    // Switch the countdown back to 1s ticks so the UI countdown is smooth.
+    if (_mode == SleepTimerMode.time && (_timer?.isActive ?? false)) {
+      _scheduleNextTick();
     }
   }
 

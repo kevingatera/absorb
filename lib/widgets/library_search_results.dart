@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
-import '../providers/auth_provider.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/library_provider.dart';
+import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import 'author_books_sheet.dart';
 import 'book_detail_sheet.dart';
@@ -13,36 +14,34 @@ class BookResultTile extends StatelessWidget {
   final Map<String, dynamic> item;
   final String? serverUrl;
   final String? token;
-  final bool popOnTap;
   final String? subtitle;
+  final String? sequenceBadge;
 
   const BookResultTile({
     super.key,
     required this.item,
     required this.serverUrl,
     required this.token,
-    this.popOnTap = false,
     this.subtitle,
+    this.sequenceBadge,
   });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
 
     final itemId = item['id'] as String?;
     final media = item['media'] as Map<String, dynamic>? ?? {};
     final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-    final title = metadata['title'] as String? ?? 'Unknown';
+    final title = metadata['title'] as String? ?? l.unknown;
     final authorName = metadata['authorName'] as String? ?? '';
     final lib = context.watch<LibraryProvider>();
-    final isDownloaded =
-        itemId != null && DownloadService().isDownloaded(itemId);
-    final isFinished =
-        itemId != null && lib.getProgressData(itemId)?['isFinished'] == true;
-    final greenColor = Theme.of(context).brightness == Brightness.dark
-        ? Colors.greenAccent[400]!
-        : Colors.green.shade700;
+    final isExplicit = PlayerSettings.showExplicitBadge && metadata['explicit'] == true;
+    final isDownloaded = itemId != null && DownloadService().isDownloaded(itemId);
+    final isFinished = itemId != null && lib.getProgressData(itemId)?['isFinished'] == true;
+    final greenColor = Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400]! : Colors.green.shade700;
 
     String? coverUrl;
     if (itemId != null && serverUrl != null && token != null) {
@@ -65,14 +64,11 @@ class BookResultTile extends StatelessWidget {
           onTap: () {
             FocusManager.instance.primaryFocus?.unfocus();
             if (itemId != null) {
-              final nav = Navigator.of(context);
-              if (popOnTap) nav.pop();
-              final ctx = popOnTap ? nav.context : context;
-              final lib = ctx.read<LibraryProvider>();
+              final lib = context.read<LibraryProvider>();
               if (lib.isPodcastLibrary) {
-                EpisodeListSheet.show(ctx, item);
+                EpisodeListSheet.show(context, item);
               } else {
-                showBookDetailSheet(ctx, itemId);
+                showBookDetailSheet(context, itemId);
               }
             }
           },
@@ -94,22 +90,41 @@ class BookResultTile extends StatelessWidget {
                             errorWidget: (_, __, ___) => _ph(cs),
                           )
                         : _ph(cs),
+                    if (sequenceBadge != null)
+                      Positioned(
+                        top: 3, left: 3,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(l.librarySearchResultsSequence(sequenceBadge!),
+                            style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                    if (isExplicit)
+                      Positioned(
+                        top: 3, right: 3,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                          child: Text(l.librarySearchResultsExplicitBadge, style: const TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w800)),
+                        ),
+                      ),
                     if (isFinished || isDownloaded)
                       Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
+                        left: 0, right: 0, bottom: 0,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               begin: Alignment.bottomCenter,
                               end: Alignment.topCenter,
-                              colors: [
-                                Colors.black.withValues(alpha: 0.85),
-                                Colors.black.withValues(alpha: 0.0)
-                              ],
+                              colors: [Colors.black.withValues(alpha: 0.85), Colors.black.withValues(alpha: 0.0)],
                             ),
                           ),
                           child: Row(
@@ -117,26 +132,15 @@ class BookResultTile extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               if (isFinished) ...[
-                                Icon(Icons.check_circle_rounded,
-                                    size: 8, color: greenColor),
+                                Icon(Icons.check_circle_rounded, size: 8, color: greenColor),
                                 const SizedBox(width: 2),
-                                Text('Done',
-                                    style: TextStyle(
-                                        fontSize: 7,
-                                        fontWeight: FontWeight.w600,
-                                        color: greenColor)),
+                                Text(l.librarySearchResultsDone, style: TextStyle(fontSize: 7, fontWeight: FontWeight.w600, color: greenColor)),
                               ],
-                              if (isFinished && isDownloaded)
-                                const SizedBox(width: 4),
+                              if (isFinished && isDownloaded) const SizedBox(width: 4),
                               if (isDownloaded) ...[
-                                Icon(Icons.download_done_rounded,
-                                    size: 8, color: cs.primary),
+                                Icon(Icons.download_done_rounded, size: 8, color: cs.primary),
                                 const SizedBox(width: 2),
-                                Text('Saved',
-                                    style: TextStyle(
-                                        fontSize: 7,
-                                        fontWeight: FontWeight.w600,
-                                        color: cs.primary)),
+                                Text(l.librarySearchResultsSaved, style: TextStyle(fontSize: 7, fontWeight: FontWeight.w600, color: cs.primary)),
                               ],
                             ],
                           ),
@@ -163,8 +167,8 @@ class BookResultTile extends StatelessWidget {
                         Text(subtitle!,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: tt.bodySmall
-                                ?.copyWith(color: cs.primary, fontSize: 11)),
+                            style: tt.bodySmall?.copyWith(
+                                color: cs.primary, fontSize: 11)),
                       if (authorName.isNotEmpty)
                         Text(authorName,
                             maxLines: 1,
@@ -214,7 +218,8 @@ class SeriesResultCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-    final seriesName = series['name'] as String? ?? 'Unknown Series';
+    final l = AppLocalizations.of(context)!;
+    final seriesName = series['name'] as String? ?? l.librarySearchResultsUnknownSeries;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -239,8 +244,7 @@ class SeriesResultCard extends StatelessWidget {
                   ),
                   child: Center(
                     child: Icon(Icons.auto_stories_rounded,
-                        size: 22,
-                        color: cs.onSecondaryContainer.withValues(alpha: 0.7)),
+                        size: 22, color: cs.onSecondaryContainer.withValues(alpha: 0.7)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -256,7 +260,7 @@ class SeriesResultCard extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                               color: cs.onSurface)),
                       Text(
-                          '${books.length} book${books.length != 1 ? 's' : ''}',
+                          l.librarySearchResultsBookCount(books.length),
                           style: tt.bodySmall
                               ?.copyWith(color: cs.onSurfaceVariant)),
                     ],
@@ -302,8 +306,9 @@ class EpisodeResultTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
 
-    final episodeTitle = episode['title'] as String? ?? 'Unknown Episode';
+    final episodeTitle = episode['title'] as String? ?? l.librarySearchResultsUnknownEpisode;
     final showMedia = show['media'] as Map<String, dynamic>? ?? {};
     final showMeta = showMedia['metadata'] as Map<String, dynamic>? ?? {};
     final showTitle = showMeta['title'] as String? ?? '';
@@ -339,8 +344,7 @@ class EpisodeResultTile extends StatelessWidget {
                     ? CachedNetworkImage(
                         imageUrl: coverUrl,
                         fit: BoxFit.cover,
-                        httpHeaders:
-                            context.read<LibraryProvider>().mediaHeaders,
+                        httpHeaders: context.read<LibraryProvider>().mediaHeaders,
                         placeholder: (_, __) => _ph(cs),
                         errorWidget: (_, __, ___) => _ph(cs),
                       )
@@ -348,8 +352,7 @@ class EpisodeResultTile extends StatelessWidget {
               ),
               Expanded(
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -364,8 +367,7 @@ class EpisodeResultTile extends StatelessWidget {
                         Text(showTitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: tt.bodySmall
-                                ?.copyWith(color: cs.onSurfaceVariant)),
+                            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                     ],
                   ),
                 ),
@@ -391,7 +393,7 @@ class EpisodeResultTile extends StatelessWidget {
   }
 }
 
-class AuthorResultTile extends StatefulWidget {
+class AuthorResultTile extends StatelessWidget {
   final Map<String, dynamic> author;
   final String? serverUrl;
   final String? token;
@@ -404,65 +406,22 @@ class AuthorResultTile extends StatefulWidget {
   });
 
   @override
-  State<AuthorResultTile> createState() => _AuthorResultTileState();
-}
-
-class _AuthorResultTileState extends State<AuthorResultTile> {
-  int? _resolvedCount;
-
-  @override
-  void initState() {
-    super.initState();
-    final count = _extractBookCount(widget.author);
-    _resolvedCount = count > 0 ? count : null;
-    if (_resolvedCount == null) _loadAuthorCount();
-  }
-
-  int _extractBookCount(Map<String, dynamic> author) {
-    final direct = (author['numBooks'] as num?)?.toInt();
-    if (direct != null && direct > 0) return direct;
-    final total = (author['totalItems'] as num?)?.toInt();
-    if (total != null && total > 0) return total;
-    final items = author['items'] as List<dynamic>?;
-    if (items != null && items.isNotEmpty) return items.length;
-    return 0;
-  }
-
-  Future<void> _loadAuthorCount() async {
-    final authorId = widget.author['id'] as String? ?? '';
-    if (authorId.isEmpty) return;
-    final auth = context.read<AuthProvider>();
-    final api = auth.apiService;
-    final libraryId = context.read<LibraryProvider>().selectedLibraryId;
-    if (api == null) return;
-
-    final fullAuthor = await api.getAuthorById(authorId, libraryId: libraryId);
-    if (!mounted || fullAuthor == null) return;
-    final count = _extractBookCount(fullAuthor);
-    if (count > 0) {
-      setState(() => _resolvedCount = count);
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
 
-    final author = widget.author;
-    final name = author['name'] as String? ?? 'Unknown';
+    final name = author['name'] as String? ?? l.unknown;
     final authorId = author['id'] as String? ?? '';
-    final numBooks = _resolvedCount;
+    final numBooks = author['numBooks'] as int?;
 
     String? imageUrl;
-    if (authorId.isNotEmpty &&
-        widget.serverUrl != null &&
-        widget.token != null) {
-      final cleanUrl = widget.serverUrl!.endsWith('/')
-          ? widget.serverUrl!.substring(0, widget.serverUrl!.length - 1)
-          : widget.serverUrl!;
+    if (authorId.isNotEmpty && serverUrl != null && token != null) {
+      final cleanUrl = serverUrl!.endsWith('/')
+          ? serverUrl!.substring(0, serverUrl!.length - 1)
+          : serverUrl!;
       imageUrl =
-          '$cleanUrl/api/authors/$authorId/image?width=200&token=${widget.token}';
+          '$cleanUrl/api/authors/$authorId/image?width=200&token=$token';
       final ts = author['updatedAt'] as num?;
       if (ts != null) imageUrl = '$imageUrl&ts=${ts.toInt()}';
     }
@@ -494,8 +453,7 @@ class _AuthorResultTileState extends State<AuthorResultTile> {
                       ? CachedNetworkImage(
                           imageUrl: imageUrl,
                           fit: BoxFit.cover,
-                          httpHeaders:
-                              context.read<LibraryProvider>().mediaHeaders,
+                          httpHeaders: context.read<LibraryProvider>().mediaHeaders,
                           placeholder: (_, __) => _ph(cs),
                           errorWidget: (_, __, ___) => _ph(cs),
                         )
@@ -514,7 +472,8 @@ class _AuthorResultTileState extends State<AuthorResultTile> {
                               fontWeight: FontWeight.w600,
                               color: cs.onSurface)),
                       if (numBooks != null)
-                        Text('$numBooks book${numBooks != 1 ? 's' : ''}',
+                        Text(
+                            l.librarySearchResultsBookCount(numBooks),
                             style: tt.bodySmall
                                 ?.copyWith(color: cs.onSurfaceVariant)),
                     ],
@@ -539,31 +498,6 @@ class _AuthorResultTileState extends State<AuthorResultTile> {
 
   void _showAuthorBooks(
       BuildContext context, String authorId, String authorName) {
-    FocusManager.instance.primaryFocus?.unfocus();
-    final auth = context.read<AuthProvider>();
-    final lib = context.read<LibraryProvider>();
-    final api = auth.apiService;
-    if (api == null || lib.selectedLibraryId == null) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.05,
-        snap: true,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (ctx, scrollController) => AuthorBooksSheet(
-          libraryId: lib.selectedLibraryId!,
-          authorId: authorId,
-          authorName: authorName,
-          serverUrl: auth.serverUrl,
-          token: auth.token,
-          scrollController: scrollController,
-        ),
-      ),
-    );
+    showAuthorDetailSheet(context, authorId: authorId, authorName: authorName);
   }
 }

@@ -1,27 +1,35 @@
 import 'package:flutter/foundation.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 
 class SocketService {
   static final SocketService _instance = SocketService._();
   factory SocketService() => _instance;
   SocketService._();
 
-  IO.Socket? _socket;
+  io.Socket? _socket;
   String? _token;
   String? _serverUrl;
+  DateTime? _connectedAt;
 
   bool get isConnected => _socket?.connected ?? false;
   bool get hasSocket => _socket != null;
 
+  Map<String, String> _customHeaders = {};
+
   /// Build socket.io options with capped reconnection to avoid
   /// hammering an unreachable server (and draining battery).
-  Map<String, dynamic> _buildOptions() => IO.OptionBuilder()
-      .setTransports(['websocket'])
-      .enableReconnection()
-      .setReconnectionDelay(1000)
-      .setReconnectionDelayMax(30000)
-      .setReconnectionAttempts(5)
-      .build();
+  Map<String, dynamic> _buildOptions() {
+    final builder = io.OptionBuilder()
+        .setTransports(['websocket'])
+        .enableReconnection()
+        .setReconnectionDelay(1000)
+        .setReconnectionDelayMax(30000)
+        .setReconnectionAttempts(5);
+    if (_customHeaders.isNotEmpty) {
+      builder.setExtraHeaders(_customHeaders);
+    }
+    return builder.build();
+  }
 
   /// Called when the server pushes a progress update (cross-device sync).
   void Function(Map<String, dynamic> progress)? onProgressUpdated;
@@ -44,17 +52,28 @@ class SocketService {
   /// Called when socket.io exhausts all reconnection attempts.
   VoidCallback? onReconnectFailed;
 
-  void connect(String serverUrl, String token) {
+  /// Update the stored token (e.g. after a JWT refresh) and re-auth if connected.
+  void updateToken(String newToken) {
+    _token = newToken;
+    if (_socket?.connected == true) {
+      debugPrint('[Socket] Re-authenticating with refreshed token');
+      _socket!.emit('auth', _token);
+    }
+  }
+
+  void connect(String serverUrl, String token, {Map<String, String> customHeaders = const {}}) {
     if (_socket != null) disconnect();
 
     _token = token;
     _serverUrl = serverUrl;
+    _customHeaders = customHeaders;
 
     try {
-      _socket = IO.io(serverUrl, _buildOptions());
+      _socket = io.io(serverUrl, _buildOptions());
 
       // onConnect fires on initial connect AND every reconnect
       _socket!.onConnect((_) {
+        _connectedAt = DateTime.now();
         debugPrint('[Socket] Connected, sending auth');
         _socket!.emit('auth', _token);
       });
@@ -126,8 +145,12 @@ class SocketService {
         if (data is Map<String, dynamic>) onUserUpdated?.call(data);
       });
 
-      _socket!.onDisconnect((_) {
-        debugPrint('[Socket] Disconnected');
+      _socket!.onDisconnect((reason) {
+        final duration = _connectedAt != null
+            ? DateTime.now().difference(_connectedAt!).inSeconds
+            : 0;
+        debugPrint('[Socket] Disconnected after ${duration}s (Reason: $reason)');
+        _connectedAt = null;
       });
 
       _socket!.onConnectError((err) {
@@ -167,7 +190,7 @@ class SocketService {
   /// cheaply reconnect later without re-wiring everything.
   void softDisconnect() {
     if (_socket == null) return;
-    debugPrint('[Socket] Soft disconnect (battery saving)');
+    debugPrint('[Battery] Socket DISCONNECTED (soft, battery saving)');
     _socket!.dispose();
     _socket = null;
   }
@@ -191,12 +214,13 @@ class SocketService {
     final url = _serverUrl;
     final token = _token;
     if (url == null || token == null) return;
-    debugPrint('[Socket] Soft reconnect');
+    debugPrint('[Battery] Socket RECONNECTED (soft)');
 
     try {
-      _socket = IO.io(url, _buildOptions());
+      _socket = io.io(url, _buildOptions());
 
       _socket!.onConnect((_) {
+        _connectedAt = DateTime.now();
         debugPrint('[Socket] Connected, sending auth');
         _socket!.emit('auth', _token);
       });
@@ -239,8 +263,12 @@ class SocketService {
         if (data is Map<String, dynamic>) onUserUpdated?.call(data);
       });
 
-      _socket!.onDisconnect((_) {
-        debugPrint('[Socket] Disconnected');
+      _socket!.onDisconnect((reason) {
+        final duration = _connectedAt != null
+            ? DateTime.now().difference(_connectedAt!).inSeconds
+            : 0;
+        debugPrint('[Socket] Disconnected after ${duration}s (Reason: $reason)');
+        _connectedAt = null;
       });
 
       _socket!.onConnectError((err) {

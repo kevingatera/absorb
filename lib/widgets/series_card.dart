@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import 'series_books_sheet.dart';
@@ -16,10 +17,11 @@ class SeriesCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
     final lib = context.watch<LibraryProvider>();
     final auth = context.read<AuthProvider>();
 
-    final name = series['name'] as String? ?? 'Unknown Series';
+    final name = series['name'] as String? ?? l.seriesCardUnknownSeries;
     final seriesId = series['id'] as String? ?? '';
     final books = series['books'] as List<dynamic>? ?? [];
     final bookCount = books.length;
@@ -76,6 +78,7 @@ class SeriesCard extends StatelessWidget {
               cs: cs,
               seriesProgress: seriesProgress,
               booksFinished: finished,
+              coverAspectRatio: coverAspectRatio,
             ),
           ),
           const SizedBox(height: 5),
@@ -95,7 +98,7 @@ class SeriesCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2),
             child: Text(
-              '$bookCount book${bookCount != 1 ? 's' : ''}',
+              l.seriesCardBookCount(bookCount),
               style: tt.labelSmall?.copyWith(
                 color: cs.onSurfaceVariant,
                 fontSize: 10,
@@ -116,6 +119,7 @@ class _StackedCovers extends StatelessWidget {
   final ColorScheme cs;
   final double seriesProgress;
   final int booksFinished;
+  final double coverAspectRatio;
 
   const _StackedCovers({
     required this.coverUrls,
@@ -124,10 +128,12 @@ class _StackedCovers extends StatelessWidget {
     required this.cs,
     this.seriesProgress = 0,
     this.booksFinished = 0,
+    this.coverAspectRatio = 1.0,
   });
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
     final count = coverUrls.length.clamp(1, 4);
     const inset = 5.0;
     final totalOffset = count > 1 ? inset * (count - 1) : 0.0;
@@ -210,7 +216,7 @@ class _StackedCovers extends StatelessWidget {
                             Icon(Icons.check_circle_rounded, size: 10,
                                 color: Colors.greenAccent),
                             const SizedBox(width: 3),
-                            Text('Finished',
+                            Text(l.finished,
                               style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600,
                                 color: Colors.white.withValues(alpha: 0.9))),
                           ],
@@ -250,17 +256,14 @@ class _StackedCovers extends StatelessWidget {
 
   Widget _coverImage(String? url) {
     if (url == null) return _placeholder();
+    // Series stacked covers are always cropped to fit - no blur padding needed
     if (url.startsWith('/')) {
       return Image.file(File(url), fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => _placeholder());
     }
-    return CachedNetworkImage(
-      imageUrl: url,
-      fit: BoxFit.cover,
-      httpHeaders: mediaHeaders,
-      placeholder: (_, __) => _placeholder(),
-      errorWidget: (_, __, ___) => _placeholder(),
-    );
+    return CachedNetworkImage(imageUrl: url, fit: BoxFit.cover,
+        httpHeaders: mediaHeaders, placeholder: (_, __) => _placeholder(),
+        errorWidget: (_, __, ___) => _placeholder());
   }
 
   Widget _placeholder() {

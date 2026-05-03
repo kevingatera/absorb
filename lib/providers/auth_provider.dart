@@ -4,13 +4,20 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/android_auto_service.dart';
+import '../services/carplay_service.dart';
 import '../services/audio_player_service.dart';
+import '../services/equalizer_service.dart';
+import '../services/session_cache.dart';
 import '../services/socket_service.dart';
 import '../services/user_account_service.dart';
-import '../main.dart' show scaffoldMessengerKey;
+import '../services/home_widget_service.dart';
+import '../l10n/app_localizations.dart';
+import '../main.dart' show scaffoldMessengerKey, rootNavigatorKey;
 
 class AuthProvider extends ChangeNotifier {
-  String? _token;
+  String? _accessToken;
+  String? _refreshToken;
+  bool _isLegacyToken = false;
   String? _serverUrl;
   String? _username;
   String? _userId;
@@ -18,7 +25,17 @@ class AuthProvider extends ChangeNotifier {
   Map<String, dynamic>? _userJson;
   Map<String, dynamic>? _serverSettings;
   String? _serverVersion;
-  bool _serverReachable = true;
+  bool __serverReachable = true;
+  bool get _serverReachable => __serverReachable;
+  set _serverReachable(bool value) {
+    if (__serverReachable == value) return;
+    __serverReachable = value;
+    // Mirror the offline state into AudioPlayerService so it can short-
+    // circuit pre-play server calls (e.g. session creation) without
+    // waiting on a network timeout. Lets downloaded books start playing
+    // instantly when we already know we're offline.
+    AudioPlayerService().setKnownOffline(!value);
+  }
   Map<String, String> _customHeaders = {};
 
   // Local server auto-switch
@@ -30,10 +47,11 @@ class AuthProvider extends ChangeNotifier {
   String? _errorMessage;
 
   // Getters
-  bool get isAuthenticated => _token != null && _serverUrl != null;
+  bool get isAuthenticated => _accessToken != null && _serverUrl != null;
   bool get isLoading => _isLoading;
   bool get serverReachable => _serverReachable;
-  String? get token => _token;
+  /// Current access token (or legacy token for old servers).
+  String? get token => _accessToken;
   String? get serverUrl => _serverUrl;
   String? get activeServerUrl => (_useLocalServer && _localServerUrl.isNotEmpty) ? _localServerUrl : _serverUrl;
   bool get useLocalServer => _useLocalServer;
@@ -56,10 +74,47 @@ class AuthProvider extends ChangeNotifier {
 
   ApiService? get apiService {
     final url = activeServerUrl;
-    if (url != null && _token != null) {
-      return ApiService(baseUrl: url, token: _token!, customHeaders: _customHeaders);
+    if (url != null && _accessToken != null) {
+      return ApiService(
+        baseUrl: url,
+        token: _accessToken!,
+        refreshToken: _refreshToken,
+        isLegacyToken: _isLegacyToken,
+        customHeaders: _customHeaders,
+        onTokensRefreshed: _onTokensRefreshed,
+        onAuthExpired: _onAuthExpired,
+      );
     }
     return null;
+  }
+
+  void _onTokensRefreshed(String newAccessToken, String? newRefreshToken) {
+    _accessToken = newAccessToken;
+    if (newRefreshToken != null) _refreshToken = newRefreshToken;
+    // Persist updated tokens
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('token', _accessToken!);
+      if (_refreshToken != null) prefs.setString('refresh_token', _refreshToken!);
+    });
+    // Update saved account
+    if (_serverUrl != null && _username != null) {
+      UserAccountService().updateTokens(_serverUrl!, _username!, _accessToken!, refreshToken: _refreshToken);
+    }
+    // Push new token to socket
+    SocketService().updateToken(_accessToken!);
+    notifyListeners();
+  }
+
+  void _onAuthExpired() {
+    debugPrint('[Auth] Token refresh failed, forcing re-login');
+    // Show a message to the user
+    final ctx = rootNavigatorKey.currentContext;
+    final l = ctx != null ? AppLocalizations.of(ctx) : null;
+    final msg = l?.authSessionExpired ?? 'Session expired. Please log in again.';
+    scaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(content: Text(msg)),
+    );
+    logout();
   }
 
   /// Try to restore a saved session from SharedPreferences.
@@ -77,15 +132,19 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('[Auth] SharedPreferences loaded (${sw.elapsedMilliseconds}ms)');
       final savedUrl = prefs.getString('server_url');
       final savedToken = prefs.getString('token');
+      final savedRefreshToken = prefs.getString('refresh_token');
       final savedUsername = prefs.getString('username');
       final savedLibraryId = prefs.getString('default_library_id');
 
-      debugPrint('[Auth] saved credentials: url=${savedUrl != null}, token=${savedToken != null}');
+      debugPrint('[Auth] saved credentials: url=${savedUrl != null}, token=${savedToken != null}, refreshToken=${savedRefreshToken != null}');
 
       if (savedUrl != null && savedToken != null) {
         // Always restore credentials so we can at least go offline
         _serverUrl = savedUrl;
-        _token = savedToken;
+        _accessToken = savedToken;
+        _refreshToken = savedRefreshToken;
+        _isLegacyToken = savedRefreshToken == null;
+        debugPrint('[Auth] Restored token: ${savedToken.substring(0, savedToken.length.clamp(0, 20))}... (${savedToken.length} chars, isLegacy=$_isLegacyToken)');
         _username = savedUsername;
         _userId = prefs.getString('user_id');
         _defaultLibraryId = savedLibraryId;
@@ -110,7 +169,7 @@ class AuthProvider extends ChangeNotifier {
           if (connectivity.contains(ConnectivityResult.wifi)) {
             debugPrint('[Auth] On WiFi with local server enabled, trying local first... (${sw.elapsedMilliseconds}ms)');
             final localReachable = await ApiService.pingServer(_localServerUrl, customHeaders: _customHeaders)
-                .timeout(const Duration(seconds: 3), onTimeout: () => false);
+                .timeout(const Duration(seconds: 2), onTimeout: () => false);
             if (localReachable) {
               debugPrint('[Auth] Local server reachable - using local (${sw.elapsedMilliseconds}ms)');
               _useLocalServer = true;
@@ -120,7 +179,12 @@ class AuthProvider extends ChangeNotifier {
         }
         if (!reachable) {
           debugPrint('[Auth] pinging remote server... (${sw.elapsedMilliseconds}ms)');
-          reachable = await ApiService.pingServer(savedUrl, customHeaders: _customHeaders);
+          // Cap at 5s so a silently-dropping reverse proxy or dead network
+          // path doesn't hold up app launch. The health-check timer will
+          // re-probe every 60s once we're past startup, so a transient
+          // false-offline self-corrects quickly.
+          reachable = await ApiService.pingServer(savedUrl, customHeaders: _customHeaders)
+              .timeout(const Duration(seconds: 5), onTimeout: () => false);
           debugPrint('[Auth] remote ping result: reachable=$reachable (${sw.elapsedMilliseconds}ms)');
         }
         _serverReachable = reachable;
@@ -129,14 +193,25 @@ class AuthProvider extends ChangeNotifier {
         if (reachable) {
           try {
             debugPrint('[Auth] fetching /me... (${sw.elapsedMilliseconds}ms)');
-            final api = ApiService(baseUrl: activeServerUrl!, token: savedToken, customHeaders: _customHeaders);
+            final api = ApiService(
+              baseUrl: activeServerUrl!,
+              token: savedToken,
+              refreshToken: savedRefreshToken,
+              isLegacyToken: _isLegacyToken,
+              customHeaders: _customHeaders,
+              onTokensRefreshed: _onTokensRefreshed,
+              onAuthExpired: _onAuthExpired,
+            );
             final me = await api.getMe();
             if (me != null) {
               _userJson = me;
               _userId = me['id'] as String?;
+            } else {
+              debugPrint('[Auth] /me returned null (token may be invalid)');
             }
             debugPrint('[Auth] /me done (${sw.elapsedMilliseconds}ms)');
           } catch (_) {}
+          _fetchServerVersion(activeServerUrl!);
         }
       }
     } catch (e) {
@@ -151,11 +226,15 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Login with username/password.
+  ///
+  /// [l] is used to localize error messages stored in [errorMessage]. If null,
+  /// English fallbacks are used (e.g. when called from a non-UI context).
   Future<bool> login({
     required String serverUrl,
     required String username,
     required String password,
     Map<String, String> customHeaders = const {},
+    AppLocalizations? l,
   }) async {
     _errorMessage = null;
 
@@ -171,7 +250,7 @@ class AuthProvider extends ChangeNotifier {
     // Check server reachability
     final reachable = await ApiService.pingServer(url, customHeaders: customHeaders);
     if (!reachable) {
-      _errorMessage = 'Cannot reach server at $url';
+      _errorMessage = l?.authCannotReachServer(url) ?? 'Cannot reach server at $url';
       return false;
     }
 
@@ -185,20 +264,29 @@ class AuthProvider extends ChangeNotifier {
 
     if (result == null) {
       _errorMessage = statusCode == 401
-          ? 'Invalid username or password'
-          : 'Login failed - check your server address and credentials';
+          ? (l?.authInvalidUsernameOrPassword ?? 'Invalid username or password')
+          : (l?.authLoginFailedDetail ?? 'Login failed - check your server address and credentials');
       return false;
     }
 
     // Extract user info
     final user = result['user'] as Map<String, dynamic>?;
     if (user == null) {
-      _errorMessage = 'Unexpected server response';
+      _errorMessage = l?.authUnexpectedServerResponse ?? 'Unexpected server response';
       return false;
     }
 
     _serverUrl = url;
-    _token = user['token'] as String?;
+    // Prefer new JWT accessToken, fall back to legacy user.token for old servers
+    final newAccessToken = result['accessToken'] as String?;
+    final newRefreshToken = result['refreshToken'] as String?;
+    _isLegacyToken = newAccessToken == null;
+    _accessToken = newAccessToken ?? user['token'] as String?;
+    _refreshToken = newRefreshToken;
+    debugPrint('[Auth] Login response keys: ${result.keys.toList()}');
+    debugPrint('[Auth] Login user keys: ${user.keys.toList()}');
+    debugPrint('[Auth] accessToken=${newAccessToken != null}, refreshToken=${newRefreshToken != null}, legacyToken=${user['token'] != null}, isLegacy=$_isLegacyToken');
+    debugPrint('[Auth] Token being used: ${_accessToken != null ? '${_accessToken!.substring(0, _accessToken!.length.clamp(0, 20))}... (${_accessToken!.length} chars)' : 'null'}');
     _username = user['username'] as String?;
     _userId = user['id'] as String?;
     _defaultLibraryId = result['userDefaultLibraryId'] as String?;
@@ -219,13 +307,13 @@ class AuthProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('server_url', _serverUrl!);
-      if (_token != null) await prefs.setString('token', _token!);
+      if (_accessToken != null) await prefs.setString('token', _accessToken!);
+      if (_refreshToken != null) await prefs.setString('refresh_token', _refreshToken!);
       if (_username != null) await prefs.setString('username', _username!);
       if (_userId != null) await prefs.setString('user_id', _userId!);
       if (_defaultLibraryId != null) {
         await prefs.setString('default_library_id', _defaultLibraryId!);
       }
-      // Persist custom headers as JSON
       if (customHeaders.isNotEmpty) {
         await prefs.setString('custom_headers', jsonEncode(customHeaders));
       } else {
@@ -238,10 +326,104 @@ class AuthProvider extends ChangeNotifier {
       await UserAccountService().saveAccount(SavedAccount(
         serverUrl: _serverUrl!,
         username: _username ?? '',
-        token: _token ?? '',
+        token: _accessToken ?? '',
+        refreshToken: _refreshToken,
         userId: _userId,
+        isLegacyToken: _isLegacyToken,
       ));
     } catch (_) {}
+
+    await _onAccountActivated();
+
+    // Wipe any previous user's stats from the widget and pull this user's.
+    await HomeWidgetService().clearStats();
+    HomeWidgetService().refreshStats(force: true);
+
+    _isLoading = false;
+    notifyListeners();
+    return true;
+  }
+
+  /// Login with an admin-generated API key. Skips `/login` entirely - the key
+  /// is just a bearer token. Treated as a legacy token (no refresh) since API
+  /// keys don't expire and don't have a refresh-token counterpart.
+  Future<bool> loginWithApiKey({
+    required String serverUrl,
+    required String apiKey,
+    Map<String, String> customHeaders = const {},
+    AppLocalizations? l,
+  }) async {
+    _errorMessage = null;
+
+    String url = serverUrl.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'http://$url';
+    }
+    if (url.endsWith('/')) {
+      url = url.substring(0, url.length - 1);
+    }
+
+    final reachable = await ApiService.pingServer(url, customHeaders: customHeaders);
+    if (!reachable) {
+      _errorMessage = l?.authCannotReachServer(url) ?? 'Cannot reach server at $url';
+      return false;
+    }
+
+    final (user, statusCode) = await ApiService.loginWithApiKey(
+      serverUrl: url,
+      apiKey: apiKey,
+      customHeaders: customHeaders,
+    );
+
+    if (user == null) {
+      _errorMessage = statusCode == 401
+          ? (l?.authInvalidApiKey ?? 'Invalid API key')
+          : (l?.authLoginFailedDetail ?? 'Login failed - check your server address and API key');
+      return false;
+    }
+
+    _serverUrl = url;
+    _accessToken = apiKey;
+    _refreshToken = null;
+    _isLegacyToken = true;
+    _username = user['username'] as String?;
+    _userId = user['id'] as String?;
+    _defaultLibraryId = null;
+    _userJson = user;
+    _serverSettings = null;
+    _customHeaders = customHeaders;
+
+    _fetchServerVersion(url);
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('server_url', _serverUrl!);
+      await prefs.setString('token', _accessToken!);
+      await prefs.remove('refresh_token');
+      if (_username != null) await prefs.setString('username', _username!);
+      if (_userId != null) await prefs.setString('user_id', _userId!);
+      if (customHeaders.isNotEmpty) {
+        await prefs.setString('custom_headers', jsonEncode(customHeaders));
+      } else {
+        await prefs.remove('custom_headers');
+      }
+    } catch (_) {}
+
+    try {
+      await UserAccountService().saveAccount(SavedAccount(
+        serverUrl: _serverUrl!,
+        username: _username ?? '',
+        token: _accessToken!,
+        refreshToken: null,
+        userId: _userId,
+        isLegacyToken: true,
+      ));
+    } catch (_) {}
+
+    await _onAccountActivated();
+
+    await HomeWidgetService().clearStats();
+    HomeWidgetService().refreshStats(force: true);
 
     _isLoading = false;
     notifyListeners();
@@ -250,9 +432,13 @@ class AuthProvider extends ChangeNotifier {
 
   /// Login using OIDC callback response data.
   /// [result] is the JSON from /auth/openid/callback — same shape as /login response.
+  ///
+  /// [l] is used to localize error messages stored in [errorMessage]. If null,
+  /// English fallbacks are used.
   Future<bool> loginWithOidc({
     required String serverUrl,
     required Map<String, dynamic> result,
+    AppLocalizations? l,
   }) async {
     _errorMessage = null;
 
@@ -261,13 +447,21 @@ class AuthProvider extends ChangeNotifier {
 
     final user = result['user'] as Map<String, dynamic>?;
     if (user == null) {
-      _errorMessage = 'SSO returned an unexpected response';
+      _errorMessage = l?.authSsoUnexpectedResponse ?? 'SSO returned an unexpected response';
       notifyListeners();
       return false;
     }
 
     _serverUrl = url;
-    _token = user['token'] as String?;
+    final newAccessToken = result['accessToken'] as String?;
+    final newRefreshToken = result['refreshToken'] as String?;
+    _isLegacyToken = newAccessToken == null;
+    _accessToken = newAccessToken ?? user['token'] as String?;
+    _refreshToken = newRefreshToken;
+    debugPrint('[Auth] OIDC response keys: ${result.keys.toList()}');
+    debugPrint('[Auth] OIDC user keys: ${user.keys.toList()}');
+    debugPrint('[Auth] accessToken=${newAccessToken != null}, refreshToken=${newRefreshToken != null}, legacyToken=${user['token'] != null}, isLegacy=$_isLegacyToken');
+    debugPrint('[Auth] Token being used: ${_accessToken != null ? '${_accessToken!.substring(0, _accessToken!.length.clamp(0, 20))}... (${_accessToken!.length} chars)' : 'null'}');
     _username = user['username'] as String?;
     _userId = user['id'] as String?;
     _defaultLibraryId = result['userDefaultLibraryId'] as String?;
@@ -288,7 +482,8 @@ class AuthProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('server_url', _serverUrl!);
-      if (_token != null) await prefs.setString('token', _token!);
+      if (_accessToken != null) await prefs.setString('token', _accessToken!);
+      if (_refreshToken != null) await prefs.setString('refresh_token', _refreshToken!);
       if (_username != null) await prefs.setString('username', _username!);
       if (_userId != null) await prefs.setString('user_id', _userId!);
       if (_defaultLibraryId != null) {
@@ -301,10 +496,18 @@ class AuthProvider extends ChangeNotifier {
       await UserAccountService().saveAccount(SavedAccount(
         serverUrl: _serverUrl!,
         username: _username ?? '',
-        token: _token ?? '',
+        token: _accessToken ?? '',
+        refreshToken: _refreshToken,
         userId: _userId,
+        isLegacyToken: _isLegacyToken,
       ));
     } catch (_) {}
+
+    await _onAccountActivated();
+
+    // Wipe any previous user's stats from the widget and pull this user's.
+    await HomeWidgetService().clearStats();
+    HomeWidgetService().refreshStats(force: true);
 
     _isLoading = false;
     notifyListeners();
@@ -315,6 +518,34 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _loadLocalServerSettings() async {
     _localServerEnabled = await PlayerSettings.getLocalServerEnabled();
     _localServerUrl = await PlayerSettings.getLocalServerUrl();
+    if (_localServerEnabled) {
+      debugPrint('[Auth] Local server config loaded: enabled=$_localServerEnabled, url=${_localServerUrl.isNotEmpty ? "(set)" : "(empty)"}');
+    }
+  }
+
+  /// Refresh in-memory state to match the now-active account's scope. Call
+  /// after `UserAccountService.saveAccount()` so settings cached from the
+  /// previous account don't leak across. The big one is the local-server
+  /// override: if left stale, API calls route to the previous account's
+  /// local URL with the new account's token, producing 401s.
+  Future<void> _onAccountActivated() async {
+    PlayerSettings.notifySettingsChanged();
+    await EqualizerService().reloadForActiveAccount();
+
+    await _loadLocalServerSettings();
+    _useLocalServer = false;
+    if (_localServerEnabled && _localServerUrl.isNotEmpty) {
+      final connectivity = await Connectivity().checkConnectivity();
+      if (connectivity.contains(ConnectivityResult.wifi)) {
+        final localReachable = await ApiService.pingServer(
+                _localServerUrl, customHeaders: _customHeaders)
+            .timeout(const Duration(seconds: 2), onTimeout: () => false);
+        if (localReachable) {
+          debugPrint('[Auth] Local server reachable - using local');
+          _useLocalServer = true;
+        }
+      }
+    }
   }
 
   /// Check if the configured local server is reachable.
@@ -333,9 +564,11 @@ class AuthProvider extends ChangeNotifier {
     if (_useLocalServer != wasLocal) {
       debugPrint('[Auth] Local server switch: useLocal=$_useLocalServer');
       SocketService().switchServer(activeServerUrl!);
+      final ctx = rootNavigatorKey.currentContext;
+      final l = ctx != null ? AppLocalizations.of(ctx) : null;
       _showServerToast(_useLocalServer
-          ? 'Switched to local server'
-          : 'Switched to remote server');
+          ? (l?.authSwitchedToLocalServer ?? 'Switched to local server')
+          : (l?.authSwitchedToRemoteServer ?? 'Switched to remote server'));
       notifyListeners();
     }
   }
@@ -348,7 +581,9 @@ class AuthProvider extends ChangeNotifier {
     if (_serverUrl != null) {
       SocketService().switchServer(_serverUrl!);
     }
-    _showServerToast('Switched to remote server');
+    final ctx = rootNavigatorKey.currentContext;
+    final l = ctx != null ? AppLocalizations.of(ctx) : null;
+    _showServerToast(l?.authSwitchedToRemoteServer ?? 'Switched to remote server');
     notifyListeners();
   }
 
@@ -398,14 +633,24 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (_) {}
 
-    // Clear Android Auto browse tree cache so it doesn't show stale data
+    // Clear Android Auto / CarPlay browse tree cache so it doesn't show stale data
     AndroidAutoService().clearCache();
+    CarPlayService().clearAndRefresh();
+
+    // Clear the stats widget so the previous user's numbers don't linger.
+    await HomeWidgetService().clearStats();
+
+    // Clear cached session metadata for this user (track URLs would be invalid
+    // on next login anyway)
+    await SessionCache.clearAll();
 
     // Remove account from saved accounts list
     final logoutServer = _serverUrl;
     final logoutUser = _username;
 
-    _token = null;
+    _accessToken = null;
+    _refreshToken = null;
+    _isLegacyToken = false;
     _serverUrl = null;
     _username = null;
     _userId = null;
@@ -422,6 +667,7 @@ class AuthProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('server_url');
       await prefs.remove('token');
+      await prefs.remove('refresh_token');
       await prefs.remove('username');
       await prefs.remove('user_id');
       await prefs.remove('default_library_id');
@@ -443,15 +689,28 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (_) {}
 
-    // Clear Android Auto browse tree cache so it refreshes for the new user
+    // Clear Android Auto / CarPlay browse tree cache so it refreshes for the new user
     AndroidAutoService().clearCache();
+    CarPlayService().clearAndRefresh();
 
     // Set the new account as active in the account service
     UserAccountService().switchTo(account.serverUrl, account.username);
 
+    // Notify widgets that read scoped settings (e.g. card button layout) so
+    // they reload from the new account's ScopedPrefs instead of keeping the
+    // previous account's values cached in widget state.
+    PlayerSettings.notifySettingsChanged();
+
+    // Reload EQ settings from the new account's scope. Without this the
+    // EqualizerService singleton keeps the previous account's in-memory
+    // state and would write it back into the new scope on any change.
+    await EqualizerService().reloadForActiveAccount();
+
     // Set credentials
     _serverUrl = account.serverUrl;
-    _token = account.token;
+    _accessToken = account.token;
+    _refreshToken = account.refreshToken;
+    _isLegacyToken = account.isLegacyToken;
     _username = account.username;
     _userId = account.userId;
     _defaultLibraryId = null;
@@ -465,10 +724,15 @@ class AuthProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('server_url', _serverUrl!);
-      if (_token != null) await prefs.setString('token', _token!);
+      if (_accessToken != null) await prefs.setString('token', _accessToken!);
       if (_username != null) await prefs.setString('username', _username!);
       if (_userId != null) await prefs.setString('user_id', _userId!);
     } catch (_) {}
+
+    // Clear the stats widget so the previous account's numbers don't linger
+    // while the new user's data is fetched, then force a refresh.
+    await HomeWidgetService().clearStats();
+    HomeWidgetService().refreshStats(force: true);
 
     // Restore custom headers for this session
     try {
@@ -489,7 +753,15 @@ class AuthProvider extends ChangeNotifier {
 
     // Verify the token still works and get user info
     try {
-      final api = ApiService(baseUrl: _serverUrl!, token: _token!, customHeaders: _customHeaders);
+      final api = ApiService(
+        baseUrl: _serverUrl!,
+        token: _accessToken!,
+        refreshToken: _refreshToken,
+        isLegacyToken: _isLegacyToken,
+        customHeaders: _customHeaders,
+        onTokensRefreshed: _onTokensRefreshed,
+        onAuthExpired: _onAuthExpired,
+      );
       final me = await api.getMe();
       if (me != null) {
         _userJson = me;
@@ -499,7 +771,21 @@ class AuthProvider extends ChangeNotifier {
       _serverReachable = false;
     }
 
-    _fetchServerVersion(_serverUrl!);
+    await _loadLocalServerSettings();
+    _useLocalServer = false;
+    // Check if local server should be active (same logic as tryRestoreSession)
+    if (_localServerEnabled && _localServerUrl.isNotEmpty) {
+      final connectivity = await Connectivity().checkConnectivity();
+      if (connectivity.contains(ConnectivityResult.wifi)) {
+        final localReachable = await ApiService.pingServer(_localServerUrl, customHeaders: _customHeaders)
+            .timeout(const Duration(seconds: 2), onTimeout: () => false);
+        if (localReachable) {
+          debugPrint('[Auth] switchToAccount: local server reachable - using local');
+          _useLocalServer = true;
+        }
+      }
+    }
+    _fetchServerVersion(activeServerUrl!);
     notifyListeners();
     return true;
   }
