@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
+import '../services/download_service.dart';
 import '../widgets/home_section.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/shimmer.dart';
@@ -311,6 +312,31 @@ class _HomeScreenState extends State<HomeScreen> {
                 SliverToBoxAdapter(
                   child: AbsorbPageHeader(
                     title: 'Home',
+                    trailing: GestureDetector(
+                      onTap: () {
+                        final newVal = !lib.isManualOffline;
+                        lib.setManualOffline(newVal);
+                        if (newVal) {
+                          final dl = DownloadService();
+                          final player = AudioPlayerService();
+                          final itemId = player.currentItemId;
+                          final epId = player.currentEpisodeId;
+                          final dlKey = epId != null && itemId != null
+                              ? '$itemId-$epId'
+                              : itemId;
+                          if (dlKey == null || !dl.isDownloaded(dlKey)) {
+                            player.stop();
+                          }
+                        }
+                      },
+                      child: Icon(
+                        lib.isOffline
+                            ? Icons.cloud_off_rounded
+                            : Icons.cloud_done_rounded,
+                        size: 20,
+                        color: lib.isOffline ? Colors.orange : Colors.green,
+                      ),
+                    ),
                     actions: [
                       if (!lib.isOffline && allLibraries.length > 1)
                         Material(
@@ -337,7 +363,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       lib.isPodcastLibrary
                                           ? Icons.podcasts_rounded
                                           : Icons.auto_stories_rounded,
-                                      size: 14,
+                                      size: 18,
                                       color: cs.onSurfaceVariant),
                                   const SizedBox(width: 6),
                                   ConstrainedBox(
@@ -345,7 +371,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         const BoxConstraints(maxWidth: 140),
                                     child: Text(libraryName,
                                         style: TextStyle(
-                                            fontSize: 12,
+                                            fontSize: 13,
                                             fontWeight: FontWeight.w600,
                                             color: cs.onSurfaceVariant),
                                         overflow: TextOverflow.ellipsis,
@@ -353,7 +379,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   const SizedBox(width: 4),
                                   Icon(Icons.unfold_more_rounded,
-                                      size: 14, color: cs.onSurfaceVariant),
+                                      size: 18, color: cs.onSurfaceVariant),
                                 ],
                               ),
                             ),

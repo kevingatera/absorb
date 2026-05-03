@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
@@ -100,21 +101,27 @@ class AuthProvider extends ChangeNotifier {
         // Load local server config
         await _loadLocalServerSettings();
 
-        // Check if server is actually reachable
-        debugPrint('[Auth] pinging server... (${sw.elapsedMilliseconds}ms)');
-        var reachable = await ApiService.pingServer(savedUrl, customHeaders: _customHeaders);
-        debugPrint('[Auth] ping result: reachable=$reachable (${sw.elapsedMilliseconds}ms)');
-
-        // If remote URL failed and local server is enabled, try local URL
-        if (!reachable && _localServerEnabled && _localServerUrl.isNotEmpty) {
-          debugPrint('[Auth] Remote unreachable, trying local server... (${sw.elapsedMilliseconds}ms)');
-          final localReachable = await ApiService.pingServer(_localServerUrl, customHeaders: _customHeaders)
-              .timeout(const Duration(seconds: 3), onTimeout: () => false);
-          if (localReachable) {
-            debugPrint('[Auth] Local server reachable - switching (${sw.elapsedMilliseconds}ms)');
-            _useLocalServer = true;
-            reachable = true;
+        // Check if server is actually reachable.
+        // If local server is enabled and we're on WiFi, try local first
+        // (lower latency) and only fall back to remote if local fails.
+        var reachable = false;
+        if (_localServerEnabled && _localServerUrl.isNotEmpty) {
+          final connectivity = await Connectivity().checkConnectivity();
+          if (connectivity.contains(ConnectivityResult.wifi)) {
+            debugPrint('[Auth] On WiFi with local server enabled, trying local first... (${sw.elapsedMilliseconds}ms)');
+            final localReachable = await ApiService.pingServer(_localServerUrl, customHeaders: _customHeaders)
+                .timeout(const Duration(seconds: 3), onTimeout: () => false);
+            if (localReachable) {
+              debugPrint('[Auth] Local server reachable - using local (${sw.elapsedMilliseconds}ms)');
+              _useLocalServer = true;
+              reachable = true;
+            }
           }
+        }
+        if (!reachable) {
+          debugPrint('[Auth] pinging remote server... (${sw.elapsedMilliseconds}ms)');
+          reachable = await ApiService.pingServer(savedUrl, customHeaders: _customHeaders);
+          debugPrint('[Auth] remote ping result: reachable=$reachable (${sw.elapsedMilliseconds}ms)');
         }
         _serverReachable = reachable;
 
@@ -199,8 +206,14 @@ class AuthProvider extends ChangeNotifier {
     _serverSettings = result['serverSettings'] as Map<String, dynamic>?;
     _customHeaders = customHeaders;
 
-    // Fetch server version from /status endpoint (fire and forget)
-    _fetchServerVersion(url);
+    // Try to get version from login response first, fall back to /status
+    final loginVersion = result['serverVersion'] as String?
+        ?? (_serverSettings?['version'] as String?);
+    if (loginVersion != null && loginVersion.isNotEmpty) {
+      _serverVersion = loginVersion;
+    } else {
+      _fetchServerVersion(url);
+    }
 
     // Persist session
     try {
@@ -262,8 +275,14 @@ class AuthProvider extends ChangeNotifier {
     _serverSettings = result['serverSettings'] as Map<String, dynamic>?;
     _serverReachable = true;
 
-    // Fetch server version
-    _fetchServerVersion(url);
+    // Try to get version from response first, fall back to /status
+    final oidcVersion = result['serverVersion'] as String?
+        ?? (_serverSettings?['version'] as String?);
+    if (oidcVersion != null && oidcVersion.isNotEmpty) {
+      _serverVersion = oidcVersion;
+    } else {
+      _fetchServerVersion(url);
+    }
 
     // Persist session
     try {

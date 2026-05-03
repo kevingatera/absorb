@@ -226,9 +226,9 @@ class ApiService {
   }
 
   /// Build a cover image URL for a library item.
-  String getCoverUrl(String itemId, {int width = 400, int? updatedAt}) {
-    var url =
-        '$_cleanBaseUrl/api/items/$itemId/cover?width=$width&token=$token';
+  String getCoverUrl(String itemId, {int? width = 400, int? updatedAt}) {
+    var url = '$_cleanBaseUrl/api/items/$itemId/cover?token=$token';
+    if (width != null) url += '&width=$width';
     if (updatedAt != null) url += '&ts=$updatedAt';
     return url;
   }
@@ -929,7 +929,7 @@ class ApiService {
     return null;
   }
 
-  /// Get a single series with its books.
+  /// Get a single series with its books (paginated).
   Future<Map<String, dynamic>?> getSeries(String seriesId,
       {String? libraryId}) async {
     try {
@@ -949,31 +949,41 @@ class ApiService {
         }
       }
 
-      // Get books in the series via library items filter
+      // Get all books in the series, paginating if needed.
       // ABS filter format: series.<base64(seriesId)>
       if (libraryId != null) {
         final filterValue = base64Encode(utf8.encode(seriesId));
-        final url =
-            '$_cleanBaseUrl/api/libraries/$libraryId/items?filter=series.$filterValue&sort=media.metadata.series.sequence&limit=100&collapseseries=0';
-        final itemsResp = await http
-            .get(
-              Uri.parse(url),
-              headers: _headers,
-            )
-            .timeout(const Duration(seconds: 15));
-        if (itemsResp.statusCode == 200) {
+        const pageSize = 500;
+        final allResults = <dynamic>[];
+        int total = 0;
+        int page = 0;
+        while (true) {
+          final url =
+              '$_cleanBaseUrl/api/libraries/$libraryId/items?filter=series.$filterValue&sort=media.metadata.series.sequence&limit=$pageSize&page=$page&collapseseries=0';
+          final itemsResp = await http
+              .get(
+                Uri.parse(url),
+                headers: _headers,
+              )
+              .timeout(const Duration(seconds: 15));
+          if (itemsResp.statusCode != 200) break;
           final data = jsonDecode(itemsResp.body) as Map<String, dynamic>;
           final results = data['results'] as List<dynamic>? ?? [];
+          total = (data['total'] as num?)?.toInt() ?? results.length;
+          allResults.addAll(results);
+          if (allResults.length >= total || results.isEmpty) break;
+          page++;
+        }
+        if (allResults.isNotEmpty) {
           return {
             'id': seriesId,
             'name': seriesMeta?['name'] ?? '',
-            'books': results,
+            'books': allResults,
+            'total': total,
           };
         }
       }
-    } catch (_) {
-      return null;
-    }
+    } catch (_) {}
     return null;
   }
 

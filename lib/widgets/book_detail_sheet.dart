@@ -1,30 +1,36 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
-import 'dart:ui';
+import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import 'card_buttons.dart';
 import '../services/api_service.dart';
 import '../services/download_service.dart';
-import 'author_name_link.dart';
 import '../services/progress_sync_service.dart';
 import '../services/metadata_override_service.dart';
 import '../services/scoped_prefs.dart';
-import 'status_message_view.dart';
 import '../screens/app_shell.dart';
+import 'author_name_link.dart';
 import 'series_books_sheet.dart';
 import 'absorbing_shared.dart';
 import 'html_description.dart';
 import 'metadata_lookup_sheet.dart';
+import 'playlist_picker_sheet.dart';
+import 'collection_picker_sheet.dart';
+import 'absorb_wave_icon.dart';
+import 'edit_metadata_sheet.dart';
 
 // ─── BOOK DETAIL BOTTOM SHEET ───────────────────────────────
 
@@ -59,12 +65,14 @@ class _BookDetailSheetContent extends StatefulWidget {
 class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   Map<String, dynamic>? _item;
   Map<String, dynamic>? _rating;
+  String? _asin;
   bool _isLoading = true;
   bool _chaptersExpanded = false;
   bool _isAbsorbing = false;
   bool _hasLocalOverride = false;
   bool _showGoodreads = false;
   bool _ebookSaved = false;
+  ColorScheme? _coverScheme;
 
   @override
   void initState() {
@@ -103,6 +111,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             _item = finalItem;
             _isLoading = false;
           });
+          _deriveCoverScheme();
 
           // Fetch Audible rating
           final media = finalItem['media'] as Map<String, dynamic>? ?? {};
@@ -124,7 +133,10 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             }
           }
           if (rating != null && mounted) {
-            setState(() => _rating = rating);
+            setState(() {
+              _rating = rating;
+              _asin = rating?['asin'] as String? ?? asin;
+            });
           }
           return;
         }
@@ -138,12 +150,32 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     if (dl.sessionData != null) {
       try {
         final session = jsonDecode(dl.sessionData!) as Map<String, dynamic>;
+        // Prefer full libraryItem if it wasn't stripped
         final localItem = session['libraryItem'] as Map<String, dynamic>?;
         if (localItem != null && mounted) {
           setState(() {
             _item = localItem;
             _isLoading = false;
           });
+          _deriveCoverScheme();
+          return;
+        }
+        // Build a synthetic item from session-level fields (mediaMetadata,
+        // chapters, duration) which survive the libraryItem strip.
+        final meta = session['mediaMetadata'] as Map<String, dynamic>?;
+        if (meta != null && mounted) {
+          setState(() {
+            _item = {
+              'id': widget.itemId,
+              'media': {
+                'metadata': meta,
+                'duration': session['duration'],
+                'chapters': session['chapters'],
+              },
+            };
+            _isLoading = false;
+          });
+          _deriveCoverScheme();
           return;
         }
       } catch (_) {}
@@ -162,18 +194,51 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         };
         _isLoading = false;
       });
+      _deriveCoverScheme();
       return;
     }
 
     if (mounted) setState(() => _isLoading = false);
   }
 
+  void _deriveCoverScheme() {
+    final url = _coverUrl;
+    if (url == null) return;
+    final brightness = Theme.of(context).brightness;
+    final ImageProvider provider;
+    if (url.startsWith('/')) {
+      provider = FileImage(File(url));
+    } else {
+      final lib = context.read<LibraryProvider>();
+      provider = CachedNetworkImageProvider(url, headers: lib.mediaHeaders);
+    }
+    ColorScheme.fromImageProvider(provider: provider, brightness: brightness)
+        .then((s) {
+      if (mounted) setState(() => _coverScheme = s);
+    }).catchError((_) {});
+  }
+
   String? get _coverUrl {
-    // Check for local override cover first
     final localCover = _item?['_localCoverUrl'] as String?;
     if (localCover != null && localCover.isNotEmpty) return localCover;
     final auth = context.read<AuthProvider>();
     return auth.apiService?.getCoverUrl(widget.itemId, width: 800);
+  }
+
+  /// Full-res cover for the viewer and sharing.
+  String? get _fullResCoverUrl {
+    final localCover = _item?['_localCoverUrl'] as String?;
+    if (localCover != null && localCover.isNotEmpty) return localCover;
+    final auth = context.read<AuthProvider>();
+    return auth.apiService?.getCoverUrl(widget.itemId, width: 4000);
+  }
+
+  /// Low-res cover for the blurred background - saves GPU work.
+  String? get _blurCoverUrl {
+    final localCover = _item?['_localCoverUrl'] as String?;
+    if (localCover != null && localCover.isNotEmpty) return localCover;
+    final auth = context.read<AuthProvider>();
+    return auth.apiService?.getCoverUrl(widget.itemId, width: 200);
   }
 
   @override
@@ -186,48 +251,53 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           color: Theme.of(context).scaffoldBackgroundColor,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24))),
       child: Stack(children: [
-        if (_coverUrl != null)
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: CachedNetworkImage(
-                imageUrl: _coverUrl!,
-                fit: BoxFit.cover,
-                httpHeaders: context.read<LibraryProvider>().mediaHeaders,
-                imageBuilder: (_, p) => ImageFiltered(
-                    imageFilter: ImageFilter.blur(
-                        sigmaX: 50, sigmaY: 50, tileMode: TileMode.decal),
-                    child: Image(image: p, fit: BoxFit.cover)),
-                placeholder: (_, __) => const SizedBox(),
-                errorWidget: (_, __, ___) => const SizedBox(),
+        // Blurred cover + gradient scrim as a single cached layer to avoid
+        // expensive re-compositing of ImageFilter.blur during sheet drag.
+        RepaintBoundary(
+          child: Stack(children: [
+            if (_blurCoverUrl != null)
+              Positioned.fill(
+                child: CachedNetworkImage(
+                  imageUrl: _blurCoverUrl!,
+                  fit: BoxFit.cover,
+                  httpHeaders: context.read<LibraryProvider>().mediaHeaders,
+                  imageBuilder: (_, p) => ImageFiltered(
+                      imageFilter: ui.ImageFilter.blur(
+                          sigmaX: 25, sigmaY: 25, tileMode: TileMode.decal),
+                      child: Image(image: p, fit: BoxFit.cover)),
+                  placeholder: (_, __) => const SizedBox(),
+                  errorWidget: (_, __, ___) => const SizedBox(),
+                ),
               ),
-            ),
-          ),
-        Positioned.fill(
-            child: DecoratedBox(
-                decoration: BoxDecoration(
-                    gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.6),
-            Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85),
-            Theme.of(context).scaffoldBackgroundColor
-          ],
-        )))),
-        _isLoading
+            Positioned.fill(
+                child: DecoratedBox(
+                    decoration: BoxDecoration(
+                        gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Theme.of(context)
+                    .scaffoldBackgroundColor
+                    .withValues(alpha: 0.6),
+                Theme.of(context)
+                    .scaffoldBackgroundColor
+                    .withValues(alpha: 0.85),
+                Theme.of(context).scaffoldBackgroundColor
+              ],
+            )))),
+          ]),
+        ),
+        _isLoading ||
+                (_item != null && _coverUrl != null && _coverScheme == null)
             ? Center(
                 child: CircularProgressIndicator(
                     strokeWidth: 2,
                     color: cs.onSurface.withValues(alpha: 0.24)))
             : _item == null
-                ? StatusMessageView(
-                    icon: Icons.error_outline_rounded,
-                    title: 'Book details could not load',
-                    message:
-                        'Absorb could not fetch this item from Audiobookshelf. Close this sheet and try again.',
-                    actionLabel: 'Retry',
-                    onAction: _loadItem,
-                  )
+                ? Center(
+                    child: Text('Failed to load',
+                        style: tt.bodyMedium
+                            ?.copyWith(color: cs.onSurfaceVariant)))
                 : AnimatedOpacity(
                     opacity: 1.0,
                     duration: const Duration(milliseconds: 300),
@@ -237,6 +307,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   }
 
   Widget _buildContent(BuildContext context, ColorScheme cs, TextTheme tt) {
+    final accent = _coverScheme?.primary ?? cs.primary;
     final media = _item!['media'] as Map<String, dynamic>? ?? {};
     final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
     final chapters = media['chapters'] as List<dynamic>? ?? [];
@@ -273,17 +344,46 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                   decoration: BoxDecoration(
                       color: cs.onSurface.withValues(alpha: 0.24),
                       borderRadius: BorderRadius.circular(2)))),
+          if (_coverUrl != null) ...[
+            Center(
+                child: GestureDetector(
+              onTap: () => _showFullCover(context,
+                  _fullResCoverUrl ?? _coverUrl!, lib.mediaHeaders, title),
+              child: Container(
+                height: 240,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4))
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: CachedNetworkImage(
+                  imageUrl: _coverUrl!,
+                  fit: BoxFit.contain,
+                  httpHeaders: lib.mediaHeaders,
+                  placeholder: (_, __) => const SizedBox(),
+                  errorWidget: (_, __, ___) => const SizedBox(),
+                ),
+              ),
+            )),
+            const SizedBox(height: 16),
+          ],
           Text(title,
               textAlign: TextAlign.center,
               style: tt.headlineSmall
                   ?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
           const SizedBox(height: 4),
           AuthorNameLink(
-              item: _item!,
-              authorName: authorName,
-              textAlign: TextAlign.center,
-              style: tt.bodyMedium
-                  ?.copyWith(color: cs.onSurface.withValues(alpha: 0.6))),
+            item: _item!,
+            authorName: authorName,
+            textAlign: TextAlign.center,
+            style: tt.bodyMedium
+                ?.copyWith(color: cs.onSurface.withValues(alpha: 0.6)),
+          ),
           if (narrator.isNotEmpty) ...[
             const SizedBox(height: 2),
             Wrap(
@@ -300,28 +400,43 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                   style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                 ),
               ],
-            )
+            ),
           ],
           // ─── AUDIBLE RATING (space always reserved) ─────────
           const SizedBox(height: 8),
-          SizedBox(
-            height: 20,
-            child: (_rating != null &&
-                    (_rating!['rating'] as num).toDouble() > 0)
-                ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    ..._buildStars((_rating!['rating'] as num).toDouble(), cs),
+          if (_rating != null && (_rating!['rating'] as num).toDouble() > 0)
+            Center(
+              child: GestureDetector(
+                onTap:
+                    _asin != null ? () => _showAudibleReviews(context) : null,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: cs.onSurface.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(20),
+                    border:
+                        Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    ..._buildStars(
+                        (_rating!['rating'] as num).toDouble(), accent),
                     const SizedBox(width: 6),
                     Text((_rating!['rating'] as num).toStringAsFixed(1),
-                        style: tt.labelLarge?.copyWith(
+                        style: TextStyle(
+                            fontSize: 11,
                             fontWeight: FontWeight.w600,
-                            color: cs.onSurface.withValues(alpha: 0.7))),
+                            color: cs.onSurfaceVariant)),
                     const SizedBox(width: 4),
                     Text('on Audible',
-                        style: tt.labelSmall
-                            ?.copyWith(color: cs.onSurfaceVariant)),
-                  ])
-                : null,
-          ),
+                        style: TextStyle(
+                            fontSize: 11, color: cs.onSurfaceVariant)),
+                  ]),
+                ),
+              ),
+            )
+          else
+            const SizedBox(height: 20),
           const SizedBox(height: 12),
           if (progress > 0 && !isFinished) ...[
             ClipRRect(
@@ -330,7 +445,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                     value: progress.clamp(0.0, 1.0),
                     minHeight: 4,
                     backgroundColor: cs.onSurface.withValues(alpha: 0.1),
-                    valueColor: AlwaysStoppedAnimation(cs.primary))),
+                    valueColor: AlwaysStoppedAnimation(accent))),
             const SizedBox(height: 4),
             Text('${(progress * 100).toStringAsFixed(1)}% complete',
                 textAlign: TextAlign.center,
@@ -363,7 +478,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
 
                   return FilledButton.icon(
                     onPressed: showAbsorbingState
-                        ? null
+                        ? () {}
                         : () {
                             setState(() => _isAbsorbing = true);
                             _startAbsorb(
@@ -380,14 +495,16 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                         ? SizedBox(
                             width: 24,
                             height: 24,
-                            child: AbsorbingWave(color: cs.onPrimary),
+                            child: AbsorbingWave(
+                                color: _coverScheme?.onPrimary ?? cs.onPrimary),
                           )
-                        : Icon(
-                            isFinished
-                                ? Icons.replay_rounded
-                                : Icons.waves_rounded,
-                            size: 24,
-                          ),
+                        : isFinished
+                            ? AbsorbReplayIcon(
+                                size: 24,
+                                color: _coverScheme?.onPrimary ?? cs.onPrimary)
+                            : Icon(Icons.waves_rounded,
+                                size: 24,
+                                color: _coverScheme?.onPrimary ?? cs.onPrimary),
                     label: Text(
                       showAbsorbingState
                           ? 'Absorbing…'
@@ -395,9 +512,11 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                               ? 'Absorb Again'
                               : 'Absorb',
                       style: tt.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600, color: cs.onPrimary),
+                          fontWeight: FontWeight.w600,
+                          color: _coverScheme?.onPrimary ?? cs.onPrimary),
                     ),
                     style: FilledButton.styleFrom(
+                      backgroundColor: accent,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16)),
                     ),
@@ -405,59 +524,19 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                 },
               ),
             ),
+          // ─── Action row: Download | Finished | More ─────────────────
           const SizedBox(height: 12),
-          if (isEbookOnly && ebookFile != null) ...[
-            GestureDetector(
-              onTap: () => _saveEbook(context, auth, ebookFile, title),
-              child: Container(
-                height: 36,
-                decoration: BoxDecoration(
-                  color: cs.onSurface.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(14),
-                  border:
-                      Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
-                ),
-                child:
-                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  _ebookSaving
-                      ? SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: cs.onSurfaceVariant))
-                      : Icon(
-                          _ebookSaved
-                              ? Icons.download_done_rounded
-                              : Icons.save_alt_rounded,
-                          size: 16,
-                          color: cs.onSurfaceVariant),
-                  const SizedBox(width: 6),
-                  Text(
-                    _ebookSaving
-                        ? 'Saving…'
-                        : _ebookSaved
-                            ? 'Download eBook Again'
-                            : 'Download eBook',
-                    style: TextStyle(
-                        color: cs.onSurfaceVariant,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500),
-                  ),
-                ]),
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
           Row(children: [
-            if (!isEbookOnly)
+            if (!isEbookOnly) ...[
               Expanded(
                   child: DownloadWideButton(
                       itemId: widget.itemId,
                       coverUrl: _coverUrl,
                       title: title,
                       author: authorName,
-                      accent: cs.primary)),
-            if (!isEbookOnly) const SizedBox(width: 10),
+                      accent: accent)),
+              const SizedBox(width: 8),
+            ],
             Expanded(
                 child: GestureDetector(
               onTap: () => isFinished
@@ -496,94 +575,25 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                 ]),
               ),
             )),
-          ]),
-          if (ebookFile != null && !isEbookOnly) ...[
-            const SizedBox(height: 8),
+            const SizedBox(width: 8),
+            // More button - opens styled bottom sheet with secondary actions
             GestureDetector(
-              onTap: () => _saveEbook(context, auth, ebookFile, title),
+              onTap: () => _showMoreSheet(context, auth, lib, title, authorName,
+                  progress, isFinished, duration, ebookFile, isEbookOnly),
               child: Container(
                 height: 36,
+                width: 44,
                 decoration: BoxDecoration(
                   color: cs.onSurface.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(14),
                   border:
-                      Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+                      Border.all(color: cs.onSurface.withValues(alpha: 0.1)),
                 ),
-                child:
-                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  _ebookSaving
-                      ? SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: cs.onSurfaceVariant))
-                      : Icon(
-                          _ebookSaved
-                              ? Icons.download_done_rounded
-                              : Icons.save_alt_rounded,
-                          size: 16,
-                          color: cs.onSurfaceVariant),
-                  const SizedBox(width: 6),
-                  Text(
-                    _ebookSaving
-                        ? 'Saving…'
-                        : _ebookSaved
-                            ? 'Download eBook Again'
-                            : 'Download eBook',
-                    style: TextStyle(
-                        color: cs.onSurfaceVariant,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500),
-                  ),
-                ]),
+                child: Icon(Icons.more_horiz_rounded,
+                    size: 18, color: cs.onSurfaceVariant),
               ),
             ),
-          ],
-          if (progress > 0 || isFinished) ...[
-            const SizedBox(height: 8),
-            _sheetBtn(
-                icon: Icons.restart_alt_rounded,
-                label: 'Reset Progress',
-                onTap: () => _resetProgress(context, auth, duration)),
-          ],
-          const SizedBox(height: 8),
-          _sheetBtn(
-            icon: lib.isOnAbsorbingList(widget.itemId)
-                ? Icons.remove_circle_outline_rounded
-                : Icons.add_circle_outline_rounded,
-            label: lib.isOnAbsorbingList(widget.itemId)
-                ? 'Remove from Absorbing'
-                : 'Add to Absorbing',
-            onTap: () async {
-              if (lib.isOnAbsorbingList(widget.itemId)) {
-                await lib.removeFromAbsorbing(widget.itemId);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      duration: const Duration(seconds: 3),
-                      content: const Text('Removed from Absorbing'),
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12))));
-                }
-              } else {
-                await lib.addToAbsorbingQueue(widget.itemId);
-                // Populate cache so the absorbing card can render immediately
-                if (_item != null) {
-                  final cached = Map<String, dynamic>.from(_item!);
-                  cached['_absorbingKey'] = widget.itemId;
-                  lib.absorbingItemCache[widget.itemId] = cached;
-                }
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      duration: const Duration(seconds: 3),
-                      content: const Text('Added to Absorbing'),
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12))));
-                }
-              }
-            },
-          ),
+          ]),
           const SizedBox(height: 16),
           Wrap(spacing: 8, runSpacing: 8, children: [
             if (year.isNotEmpty) _chip(Icons.calendar_today_rounded, year),
@@ -614,23 +624,23 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: cs.primary.withValues(alpha: 0.08),
+                        color: accent.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                            color: cs.primary.withValues(alpha: 0.15)),
+                        border:
+                            Border.all(color: accent.withValues(alpha: 0.15)),
                       ),
                       child: Row(children: [
                         Icon(Icons.auto_stories_rounded,
-                            size: 16, color: cs.primary.withValues(alpha: 0.7)),
+                            size: 16, color: accent.withValues(alpha: 0.7)),
                         const SizedBox(width: 8),
                         Expanded(
                             child: Text(
                                 '$name${seq.isNotEmpty ? ' #$seq' : ''}',
                                 style: tt.bodySmall?.copyWith(
-                                    color: cs.primary.withValues(alpha: 0.9),
+                                    color: accent.withValues(alpha: 0.9),
                                     fontWeight: FontWeight.w500))),
                         Icon(Icons.chevron_right_rounded,
-                            size: 18, color: cs.primary.withValues(alpha: 0.5)),
+                            size: 18, color: accent.withValues(alpha: 0.5)),
                       ]),
                     ),
                   ));
@@ -647,7 +657,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
               maxLines: 6,
               style: tt.bodySmall?.copyWith(
                   color: cs.onSurface.withValues(alpha: 0.7), height: 1.5),
-              linkColor: cs.primary,
+              linkColor: accent,
             )
           ],
           if (chapters.isNotEmpty) ...[
@@ -694,58 +704,176 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
               })
             ]
           ],
-          // ─── Metadata lookup (bottom of sheet) ─────────────────
-          if (_showGoodreads) ...[
-            const SizedBox(height: 8),
-            _sheetBtn(
-              icon: Icons.local_library_rounded,
-              label: 'Search on Goodreads',
-              onTap: () => _openGoodreads(title, authorName),
-            ),
-          ],
-          if (auth.apiService != null && !lib.isOffline) ...[
-            const SizedBox(height: 20),
-            _sheetBtn(
-              icon: Icons.manage_search_rounded,
-              label:
-                  _hasLocalOverride ? 'Re-Lookup Metadata' : 'Lookup Metadata',
-              onTap: () =>
-                  _openMetadataLookup(context, auth, title, authorName),
-            ),
-          ],
-          if (_hasLocalOverride) ...[
-            const SizedBox(height: 8),
-            _sheetBtn(
-              icon: Icons.layers_clear_rounded,
-              label: 'Clear Local Metadata',
-              onTap: () => _clearOverride(context),
-            ),
-          ],
+          // Secondary actions are in the More sheet now.
         ]);
   }
 
-  Widget _sheetBtn(
-      {required IconData icon,
-      required String label,
-      required VoidCallback onTap}) {
+  void _showMoreSheet(
+      BuildContext context,
+      AuthProvider auth,
+      LibraryProvider lib,
+      String title,
+      String authorName,
+      double progress,
+      bool isFinished,
+      double duration,
+      Map<String, dynamic>? ebookFile,
+      bool isEbookOnly) {
     final cs = Theme.of(context).colorScheme;
-    return GestureDetector(
-        onTap: onTap,
-        child: Container(
-            height: 44,
-            decoration: BoxDecoration(
-                color: cs.onSurface.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: cs.onSurface.withValues(alpha: 0.1))),
-            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(icon, size: 16, color: cs.onSurfaceVariant),
-              const SizedBox(width: 6),
-              Text(label,
-                  style: TextStyle(
-                      color: cs.onSurfaceVariant,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500))
-            ])));
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Center(
+                  child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                          color: cs.onSurface.withValues(alpha: 0.24),
+                          borderRadius: BorderRadius.circular(2)))),
+              _moreItem(
+                  cs,
+                  lib.isOnAbsorbingList(widget.itemId)
+                      ? Icons.remove_circle_outline_rounded
+                      : Icons.add_circle_outline_rounded,
+                  lib.isOnAbsorbingList(widget.itemId)
+                      ? 'Remove from Absorbing'
+                      : 'Add to Absorbing', onTap: () async {
+                Navigator.pop(ctx);
+                if (lib.isOnAbsorbingList(widget.itemId)) {
+                  await lib.removeFromAbsorbing(widget.itemId);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        duration: const Duration(seconds: 3),
+                        content: const Text('Removed from Absorbing'),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12))));
+                  }
+                } else {
+                  await lib.addToAbsorbingQueue(widget.itemId);
+                  if (_item != null) {
+                    final cached = Map<String, dynamic>.from(_item!);
+                    cached['_absorbingKey'] = widget.itemId;
+                    lib.absorbingItemCache[widget.itemId] = cached;
+                  }
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        duration: const Duration(seconds: 3),
+                        content: const Text('Added to Absorbing'),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12))));
+                  }
+                }
+              }),
+              if (!lib.isOffline)
+                _moreItem(cs, Icons.playlist_add_rounded, 'Add to Playlist',
+                    onTap: () {
+                  Navigator.pop(ctx);
+                  PlaylistPickerSheet.show(context, widget.itemId);
+                }),
+              if (!lib.isOffline && !lib.isPodcastLibrary && auth.isRoot)
+                _moreItem(
+                    cs, Icons.collections_bookmark_rounded, 'Add to Collection',
+                    onTap: () {
+                  Navigator.pop(ctx);
+                  CollectionPickerSheet.show(context, widget.itemId);
+                }),
+              if (ebookFile != null)
+                _moreItem(
+                    cs,
+                    _ebookSaved
+                        ? Icons.download_done_rounded
+                        : Icons.save_alt_rounded,
+                    _ebookSaved ? 'Download eBook Again' : 'Download eBook',
+                    onTap: () {
+                  Navigator.pop(ctx);
+                  _saveEbook(context, auth, ebookFile, title);
+                }),
+              if (progress > 0 || isFinished)
+                _moreItem(cs, Icons.restart_alt_rounded, 'Reset Progress',
+                    onTap: () {
+                  Navigator.pop(ctx);
+                  _resetProgress(context, auth, duration);
+                }),
+              if (auth.apiService != null && !lib.isOffline)
+                _moreItem(
+                    cs,
+                    Icons.manage_search_rounded,
+                    _hasLocalOverride
+                        ? 'Re-Lookup Local Metadata'
+                        : 'Lookup Local Metadata', onTap: () {
+                  Navigator.pop(ctx);
+                  _openMetadataLookup(context, auth, title, authorName);
+                }),
+              if (_hasLocalOverride)
+                _moreItem(
+                    cs, Icons.layers_clear_rounded, 'Clear Local Metadata',
+                    onTap: () {
+                  Navigator.pop(ctx);
+                  _clearOverride(context);
+                }),
+              _moreItem(cs, Icons.recommend_rounded, 'Recommend Book',
+                  onTap: () {
+                Navigator.pop(ctx);
+                _recommendBook(context, title, authorName);
+              }),
+              if (_showGoodreads)
+                _moreItem(
+                    cs, Icons.local_library_rounded, 'Search on Goodreads',
+                    onTap: () {
+                  Navigator.pop(ctx);
+                  _openGoodreads(title, authorName);
+                }),
+              if (auth.isRoot && !lib.isOffline)
+                _moreItem(cs, Icons.edit_rounded, 'Edit Server Details',
+                    onTap: () {
+                  Navigator.pop(ctx);
+                  final media = _item!['media'] as Map<String, dynamic>? ?? {};
+                  final meta = media['metadata'] as Map<String, dynamic>? ?? {};
+                  showEditMetadataSheet(context,
+                      itemId: widget.itemId, metadata: meta);
+                }),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _moreItem(ColorScheme cs, IconData icon, String label,
+      {required VoidCallback onTap}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+              height: 44,
+              decoration: BoxDecoration(
+                  color: cs.onSurface.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(14),
+                  border:
+                      Border.all(color: cs.onSurface.withValues(alpha: 0.1))),
+              child:
+                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(icon, size: 16, color: cs.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Text(label,
+                    style: TextStyle(
+                        color: cs.onSurfaceVariant,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500))
+              ]))),
+    );
   }
 
   List<Widget> _audioInfoChips(Map<String, dynamic> media) {
@@ -754,12 +882,28 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final first = audioFiles.first as Map<String, dynamic>;
     final codec = (first['codec'] as String?)?.toUpperCase();
     final bitRate = (first['bitRate'] as num?)?.toInt();
+    // Sum size across all audio files
+    int totalSize = 0;
+    for (final af in audioFiles) {
+      if (af is Map<String, dynamic>) {
+        final meta = af['metadata'] as Map<String, dynamic>?;
+        totalSize += (meta?['size'] as num?)?.toInt() ?? 0;
+      }
+    }
     return [
       if (codec != null && codec.isNotEmpty)
         _chip(Icons.audio_file_rounded, codec),
       if (bitRate != null && bitRate > 0)
         _chip(Icons.speed_rounded, '${(bitRate / 1000).round()} kbps'),
+      if (totalSize > 0) _chip(Icons.storage_rounded, _fmtSize(totalSize)),
     ];
+  }
+
+  String _fmtSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1048576) return '${(bytes / 1024).round()} KB';
+    if (bytes < 1073741824) return '${(bytes / 1048576).toStringAsFixed(1)} MB';
+    return '${(bytes / 1073741824).toStringAsFixed(2)} GB';
   }
 
   Widget _chip(IconData icon, String text) {
@@ -808,15 +952,16 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     return '${m}m';
   }
 
-  List<Widget> _buildStars(double rating, ColorScheme cs) {
+  List<Widget> _buildStars(double rating, Color accent) {
+    final cs = Theme.of(context).colorScheme;
     final stars = <Widget>[];
     final fullStars = rating.floor();
     final hasHalf = (rating - fullStars) >= 0.4;
     for (int i = 0; i < 5; i++) {
       if (i < fullStars) {
-        stars.add(Icon(Icons.star_rounded, size: 16, color: cs.primary));
+        stars.add(Icon(Icons.star_rounded, size: 16, color: accent));
       } else if (i == fullStars && hasHalf) {
-        stars.add(Icon(Icons.star_half_rounded, size: 16, color: cs.primary));
+        stars.add(Icon(Icons.star_half_rounded, size: 16, color: accent));
       } else {
         stars.add(Icon(Icons.star_outline_rounded,
             size: 16, color: cs.onSurface.withValues(alpha: 0.24)));
@@ -825,17 +970,108 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     return stars;
   }
 
+  static String get _audibleDomain {
+    final code = (ui.PlatformDispatcher.instance.locale.countryCode ?? 'US')
+        .toUpperCase();
+    const domains = {
+      'US': 'audible.com',
+      'GB': 'audible.co.uk',
+      'AU': 'audible.com.au',
+      'CA': 'audible.ca',
+      'DE': 'audible.de',
+      'FR': 'audible.fr',
+      'IT': 'audible.it',
+      'ES': 'audible.es',
+      'JP': 'audible.co.jp',
+      'IN': 'audible.in',
+      'BR': 'audible.com.br',
+    };
+    return domains[code] ?? 'audible.com';
+  }
+
+  void _showAudibleReviews(BuildContext context) {
+    final asin = _asin;
+    if (asin == null) return;
+    final url = 'https://www.$_audibleDomain/pd/$asin#customer-reviews';
+    final cs = Theme.of(context).colorScheme;
+
+    final controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(cs.surface)
+      ..loadRequest(Uri.parse(url));
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      enableDrag: true,
+      builder: (ctx) => FractionallySizedBox(
+        heightFactor: 0.92,
+        child: Container(
+          clipBehavior: Clip.hardEdge,
+          decoration: BoxDecoration(
+            color: cs.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+              child: Column(
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                      width: 32,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: cs.onSurface.withValues(alpha: 0.24),
+                          borderRadius: BorderRadius.circular(2))),
+                  Row(
+                    children: [
+                      const Spacer(),
+                      IconButton(
+                        icon: Icon(Icons.close_rounded,
+                            color: cs.onSurfaceVariant),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SizedBox.expand(
+                child: WebViewWidget(
+                  controller: controller,
+                  gestureRecognizers: {
+                    Factory<VerticalDragGestureRecognizer>(
+                      () => VerticalDragGestureRecognizer(),
+                    ),
+                  },
+                ),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openSeries(
       BuildContext context, String? seriesId, String seriesName) async {
     if (seriesId == null) return;
     final auth = context.read<AuthProvider>();
-    // Show series sheet on top of the detail sheet (don't close detail)
+    final itemLibraryId = _item?['libraryId'] as String?;
+    // Close current sheet before opening series to prevent infinite stacking
+    final nav = Navigator.of(context);
+    nav.pop();
     showSeriesBooksSheet(
-      context,
+      nav.context,
       seriesName: seriesName,
       seriesId: seriesId,
       serverUrl: auth.serverUrl,
       token: auth.token,
+      libraryId: itemLibraryId,
     );
   }
 
@@ -1225,6 +1461,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           api: api,
           initialTitle: title,
           initialAuthor: author,
+          currentMetadata: (_item?['media']
+              as Map<String, dynamic>?)?['metadata'] as Map<String, dynamic>?,
           onApplied: () {
             // Reload the item to show the new override
             _loadItem();
@@ -1266,5 +1504,304 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         ));
       }
     }
+  }
+
+  /// Build an Audible URL for the book, using ASIN if available, otherwise search.
+  String _buildAudibleUrl(String title, String author) {
+    // Map device locale to Audible domain
+    final locale = ui.PlatformDispatcher.instance.locale;
+    final country = locale.countryCode?.toUpperCase() ?? '';
+    final lang = locale.languageCode;
+    String domain;
+    switch (country) {
+      case 'GB':
+        domain = 'audible.co.uk';
+        break;
+      case 'AU':
+        domain = 'audible.com.au';
+        break;
+      case 'DE':
+      case 'AT':
+      case 'CH':
+        domain = 'audible.de';
+        break;
+      case 'FR':
+        domain = 'audible.fr';
+        break;
+      case 'IT':
+        domain = 'audible.it';
+        break;
+      case 'ES':
+        domain = 'audible.es';
+        break;
+      case 'JP':
+        domain = 'audible.co.jp';
+        break;
+      case 'IN':
+        domain = 'audible.in';
+        break;
+      case 'CA':
+        domain = 'audible.ca';
+        break;
+      case 'BR':
+        domain = 'audible.com.br';
+        break;
+      default:
+        if (lang == 'de') {
+          domain = 'audible.de';
+        } else if (lang == 'fr') {
+          domain = 'audible.fr';
+        } else if (lang == 'ja') {
+          domain = 'audible.co.jp';
+        } else {
+          domain = 'audible.com';
+        }
+    }
+
+    if (_asin != null && _asin!.isNotEmpty) {
+      return 'https://www.$domain/pd/$_asin';
+    }
+    final query = Uri.encodeComponent('$title $author'.trim());
+    return 'https://www.$domain/search?keywords=$query';
+  }
+
+  Future<void> _recommendBook(
+      BuildContext context, String title, String author) async {
+    final lib = context.read<LibraryProvider>();
+    final coverUrl = _fullResCoverUrl ?? _coverUrl;
+    if (coverUrl == null) return;
+
+    // Show a loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      // Download cover
+      final response =
+          await http.get(Uri.parse(coverUrl), headers: lib.mediaHeaders);
+      if (response.statusCode != 200)
+        throw Exception('Failed to download cover');
+      final coverBytes = response.bodyBytes;
+
+      // Decode the cover image
+      final codec = await ui.instantiateImageCodec(coverBytes);
+      final frame = await codec.getNextFrame();
+      final coverImage = frame.image;
+
+      // Build poster: cover image with a gradient bar at the bottom for title/author
+      final coverW = coverImage.width.toDouble();
+      final coverH = coverImage.height.toDouble();
+      final barHeight = coverH * 0.18;
+      final posterH = coverH + barHeight;
+
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, coverW, posterH));
+
+      // Dark background for the bar area
+      canvas.drawRect(Rect.fromLTWH(0, 0, coverW, posterH),
+          Paint()..color = const Color(0xFF1A1A1A));
+
+      // Draw cover
+      canvas.drawImage(coverImage, Offset.zero, Paint());
+
+      // Title text
+      final titleFontSize = coverW * 0.045;
+      final authorFontSize = coverW * 0.035;
+      final padding = coverW * 0.04;
+
+      final titleBuilder = ui.ParagraphBuilder(ui.ParagraphStyle(
+        textAlign: TextAlign.left,
+        maxLines: 2,
+        ellipsis: '...',
+      ))
+        ..pushStyle(ui.TextStyle(
+          color: const Color(0xFFFFFFFF),
+          fontSize: titleFontSize,
+          fontWeight: FontWeight.w700,
+        ))
+        ..addText(title);
+      final titleParagraph = titleBuilder.build()
+        ..layout(ui.ParagraphConstraints(width: coverW - padding * 2));
+
+      canvas.drawParagraph(
+          titleParagraph, Offset(padding, coverH + padding * 0.5));
+
+      // Author text
+      final authorBuilder = ui.ParagraphBuilder(ui.ParagraphStyle(
+        textAlign: TextAlign.left,
+        maxLines: 1,
+        ellipsis: '...',
+      ))
+        ..pushStyle(ui.TextStyle(
+          color: const Color(0xFFAAAAAA),
+          fontSize: authorFontSize,
+          fontWeight: FontWeight.w400,
+        ))
+        ..addText(author);
+      final authorParagraph = authorBuilder.build()
+        ..layout(ui.ParagraphConstraints(width: coverW - padding * 2));
+
+      canvas.drawParagraph(
+          authorParagraph,
+          Offset(padding,
+              coverH + padding * 0.5 + titleParagraph.height + padding * 0.25));
+
+      // Convert to image
+      final picture = recorder.endRecording();
+      final posterImage =
+          await picture.toImage(coverW.toInt(), posterH.toInt());
+      final byteData =
+          await posterImage.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) throw Exception('Failed to encode poster');
+
+      // Save to temp file
+      final safeTitle = title.replaceAll(RegExp(r'[^\w\s-]'), '').trim();
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/${safeTitle}_recommend.png');
+      await file.writeAsBytes(byteData.buffer.asUint8List());
+
+      // Build Audible link
+      final audibleUrl = _buildAudibleUrl(title, author);
+
+      if (!mounted) return;
+      Navigator.pop(context); // dismiss loading
+
+      final box = context.findRenderObject() as RenderBox?;
+      final origin =
+          box != null ? box.localToGlobal(Offset.zero) & box.size : null;
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: audibleUrl,
+        sharePositionOrigin: origin,
+      );
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // dismiss loading
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to create recommendation: $e'),
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+    }
+  }
+
+  void _showFullCover(BuildContext context, String url,
+      Map<String, String> headers, String title) {
+    Navigator.of(context).push(PageRouteBuilder(
+      opaque: false,
+      barrierColor: Colors.black87,
+      pageBuilder: (_, __, ___) =>
+          _FullCoverViewer(url: url, headers: headers, title: title),
+      transitionsBuilder: (_, anim, __, child) =>
+          FadeTransition(opacity: anim, child: child),
+    ));
+  }
+}
+
+class _FullCoverViewer extends StatefulWidget {
+  final String url;
+  final Map<String, String> headers;
+  final String title;
+  const _FullCoverViewer(
+      {required this.url, required this.headers, required this.title});
+  @override
+  State<_FullCoverViewer> createState() => _FullCoverViewerState();
+}
+
+class _FullCoverViewerState extends State<_FullCoverViewer> {
+  bool _saving = false;
+
+  Future<void> _saveAndShare() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      final response =
+          await http.get(Uri.parse(widget.url), headers: widget.headers);
+      if (response.statusCode != 200) throw Exception('Download failed');
+      final ext = widget.url.contains('.png') ? '.png' : '.jpg';
+      final safeTitle = widget.title.replaceAll(RegExp(r'[^\w\s-]'), '').trim();
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/$safeTitle$ext');
+      await file.writeAsBytes(response.bodyBytes);
+      if (!mounted) return;
+      final box = context.findRenderObject() as RenderBox?;
+      final origin =
+          box != null ? box.localToGlobal(Offset.zero) & box.size : null;
+      await Share.shareXFiles([XFile(file.path)], sharePositionOrigin: origin);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to save: $e'),
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(children: [
+        // Dismiss on tap outside image
+        GestureDetector(onTap: () => Navigator.pop(context)),
+        // Zoomable cover — fills screen so zoomed content can pan freely
+        Positioned.fill(
+          child: InteractiveViewer(
+            clipBehavior: Clip.none,
+            minScale: 1.0,
+            maxScale: 5.0,
+            child: Center(
+              child: CachedNetworkImage(
+                imageUrl: widget.url,
+                httpHeaders: widget.headers,
+                fit: BoxFit.contain,
+                placeholder: (_, __) =>
+                    const CircularProgressIndicator(strokeWidth: 2),
+                errorWidget: (_, __, ___) => const Icon(
+                    Icons.broken_image_rounded,
+                    size: 48,
+                    color: Colors.white54),
+              ),
+            ),
+          ),
+        ),
+        // Close button
+        Positioned(
+          top: MediaQuery.of(context).viewPadding.top + 8,
+          left: 8,
+          child: IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.close_rounded, color: Colors.white),
+            style: IconButton.styleFrom(backgroundColor: Colors.black45),
+          ),
+        ),
+        // Save/share button
+        Positioned(
+          top: MediaQuery.of(context).viewPadding.top + 8,
+          right: 8,
+          child: IconButton(
+            onPressed: _saving ? null : _saveAndShare,
+            icon: _saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.save_alt_rounded, color: Colors.white),
+            style: IconButton.styleFrom(backgroundColor: Colors.black45),
+          ),
+        ),
+      ]),
+    );
   }
 }

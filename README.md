@@ -74,6 +74,7 @@ If any of these aren't working as expected, please [open an issue](../../issues)
 - [x] Downloads (app sandbox storage)
 - [x] Podcast support
 - [x] Sleep timer, bookmarks, chapter navigation
+      - Shake to add or reset wil be fixed soon
 - [x] Playback speed with per-book memory
 - [x] Auto-rewind after pause
 - [x] Bluetooth media controls (play/pause, skip, rewind)

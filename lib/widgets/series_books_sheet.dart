@@ -73,6 +73,8 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
 
   bool _didAutoScroll = false;
 
+  int _totalBooks = 0;
+
   @override
   void initState() {
     super.initState();
@@ -223,12 +225,14 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     final data = await api.getSeries(seriesId, libraryId: widget.libraryId ?? lib.selectedLibraryId);
     if (data != null && mounted) {
       final rawBooks = data['books'] ?? data['libraryItems'] ?? [];
+      final total = (data['total'] as num?)?.toInt() ?? 0;
       if (rawBooks is List && rawBooks.isNotEmpty) {
         final fetched = _unwrapBooks(rawBooks);
         setState(() {
           _books = fetched;
           _sortBooks();
           _isLoading = false;
+          _totalBooks = total;
         });
         _scrollToUpNext();
         return;
@@ -236,6 +240,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     }
     if (mounted) setState(() => _isLoading = false);
   }
+
 
   bool get _allFinished {
     final lib = context.read<LibraryProvider>();
@@ -544,7 +549,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
           TextSpan(
             children: [
               TextSpan(
-                text: '${_books.length} book${_books.length != 1 ? 's' : ''} in this series'
+                text: '${_totalBooks > 0 ? _totalBooks : _books.length} book${(_totalBooks > 0 ? _totalBooks : _books.length) != 1 ? 's' : ''} in this series'
                     '${totalDuration > 0 ? ' · ${_formatDuration(totalDuration)}' : ''}',
               ),
               if (_autoDownloadEnabled) ...[
@@ -639,9 +644,35 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                       '$cleanUrl/api/items/$bookId/cover?width=400&token=${widget.token}&u=$updatedAt';
                 }
 
+                final isOnAbsorbing = lib.isOnAbsorbingList(bookId);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: Card(
+                  child: Dismissible(
+                    key: ValueKey('absorb-$bookId'),
+                    direction: isOnAbsorbing ? DismissDirection.none : DismissDirection.startToEnd,
+                    confirmDismiss: (_) async {
+                      await lib.addToAbsorbingQueue(bookId);
+                      lib.absorbingItemCache[bookId] = Map<String, dynamic>.from(book);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text('Added "$bookTitle" to Absorbing'),
+                          behavior: SnackBarBehavior.floating,
+                          duration: const Duration(seconds: 2),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ));
+                      }
+                      return false; // keep item in list
+                    },
+                    background: Container(
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.only(left: 20),
+                      decoration: BoxDecoration(
+                        color: cs.primary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(Icons.add_circle_outline_rounded, color: cs.primary),
+                    ),
+                    child: Card(
                     elevation: 0,
                     color: cs.surfaceContainerHigh,
                     shape: RoundedRectangleBorder(
@@ -862,6 +893,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                       ),
                     ),
                     ),
+                  ),
                   ),
                 );
               },

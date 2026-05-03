@@ -367,7 +367,8 @@ class ProgressSyncService {
     await ScopedPrefs.setInt(key, existing + seconds);
 
     // Track which items have pending offline time
-    final pending = await ScopedPrefs.getStringList('pending_offline_listening');
+    final pending =
+        await ScopedPrefs.getStringList('pending_offline_listening');
     if (!pending.contains(itemId)) {
       pending.add(itemId);
       await ScopedPrefs.setStringList('pending_offline_listening', pending);
@@ -384,7 +385,8 @@ class ProgressSyncService {
     if (pending.isEmpty) return;
     final flushed = <String>{};
 
-    debugPrint('[Sync] Flushing offline listening time for ${pending.length} item(s)');
+    debugPrint(
+        '[Sync] Flushing offline listening time for ${pending.length} item(s)');
 
     for (final itemId in pending) {
       final key = 'offline_listening_$itemId';
@@ -417,7 +419,8 @@ class ProgressSyncService {
               timeListened: seconds,
             );
             await api.closePlaybackSession(sid);
-            debugPrint('[Sync] Flushed ${seconds}s offline listening for $itemId');
+            debugPrint(
+                '[Sync] Flushed ${seconds}s offline listening for $itemId');
           }
         }
         // Only remove after successful sync

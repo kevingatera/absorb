@@ -31,6 +31,8 @@ class ChromecastService extends ChangeNotifier {
   ApiService? _api;
   Duration _castPosition = Duration.zero;
   String? _connectedDeviceName;
+  String? _playbackSessionId;
+  DateTime _lastSyncTime = DateTime.now();
 
   // Multi-track fallback state (when queueLoadItems fails)
   List<dynamic>? _fallbackTracks;
@@ -260,6 +262,10 @@ class ChromecastService extends ChangeNotifier {
       await _saveProgressLocal();
       await _syncProgressToServer();
     }
+    if (_playbackSessionId != null && _api != null) {
+      try { await _api!.closePlaybackSession(_playbackSessionId!); } catch (_) {}
+      _playbackSessionId = null;
+    }
     try {
       await GoogleCastSessionManager.instance.endSessionAndStopCasting();
     } catch (e) { debugPrint('[Cast] Disconnect error: $e'); }
@@ -337,8 +343,8 @@ class ChromecastService extends ChangeNotifier {
         _playbackState = CastPlaybackState.idle; notifyListeners(); return false;
       }
 
-      final sid = sessionData['id'] as String?;
-      if (sid != null) try { await api.closePlaybackSession(sid); } catch (_) {}
+      _playbackSessionId = sessionData['id'] as String?;
+      _lastSyncTime = DateTime.now();
 
       // Load per-book speed (or global default)
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
@@ -640,6 +646,12 @@ class ChromecastService extends ChangeNotifier {
     try { await GoogleCastRemoteMediaClient.instance.stop(); } catch (_) {}
 
 
+    // Close the playback session so stats are finalized
+    if (_playbackSessionId != null && _api != null) {
+      try { await _api!.closePlaybackSession(_playbackSessionId!); } catch (_) {}
+      _playbackSessionId = null;
+    }
+
     _playbackState = CastPlaybackState.idle;
     _castingItemId = _castingEpisodeId = _castingTitle = _castingAuthor = _castingCoverUrl = null;
     _castingDuration = 0; _castingChapters = [];
@@ -697,8 +709,13 @@ class ChromecastService extends ChangeNotifier {
       _onBookFinishedCallback?.call(key);
     }
 
-    // Clear casting state but keep connection
+    // Close playback session
+    if (_playbackSessionId != null && _api != null) {
+      try { await _api!.closePlaybackSession(_playbackSessionId!); } catch (_) {}
+      _playbackSessionId = null;
+    }
 
+    // Clear casting state but keep connection
     _syncTimer?.cancel();
     _castingItemId = _castingEpisodeId = _castingTitle = _castingAuthor = _castingCoverUrl = null;
     _castingDuration = 0;
@@ -721,10 +738,25 @@ class ChromecastService extends ChangeNotifier {
     final ct = _castPosition.inMilliseconds / 1000.0;
     if (ct <= 0) return;
     try {
-      final progressId = _castingEpisodeId != null
-          ? '$_castingItemId-$_castingEpisodeId'
-          : _castingItemId!;
-      await _api!.updateProgress(progressId, currentTime: ct, duration: _castingDuration);
+      final now = DateTime.now();
+      final elapsed = now.difference(_lastSyncTime).inSeconds.clamp(0, 300);
+      _lastSyncTime = now;
+
+      if (_playbackSessionId != null) {
+        // Sync via playback session so timeListened is tracked in stats
+        await _api!.syncPlaybackSession(
+          _playbackSessionId!,
+          currentTime: ct,
+          duration: _castingDuration,
+          timeListened: elapsed,
+        );
+      } else {
+        // Fallback to progress update if no session
+        final progressId = _castingEpisodeId != null
+            ? '$_castingItemId-$_castingEpisodeId'
+            : _castingItemId!;
+        await _api!.updateProgress(progressId, currentTime: ct, duration: _castingDuration);
+      }
     } catch (e) {
       debugPrint('[Cast] Server sync error: $e');
     }

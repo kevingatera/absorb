@@ -89,6 +89,8 @@
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSMotionUsageDescription</key>
+		<string>Absorb uses motion to detect shaking, which can reset or extend your sleep timer.</string>
 		<key>NSMicrophoneUsageDescription</key>
 		<string>Absorb may use the microphone for audio features.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
