@@ -125,6 +125,35 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   String? _lastLoggedActiveKey;
   bool? _lastLoggedHasBook;
   bool? _lastLoggedIsCasting;
+  int? _lastIndicatorSelection;
+
+  Future<void> _switchToAbsorbingPage(int index, {bool animate = true}) async {
+    if (!_pageController.hasClients) return;
+
+    final target = index < 0 ? 0 : index;
+    final currentPage =
+        (_pageController.page ?? _pageController.initialPage.toDouble())
+            .round();
+    if (target == currentPage) return;
+    if (_lastIndicatorSelection == target) return;
+
+    _lastIndicatorSelection = target;
+    unawaited(HapticFeedback.selectionClick());
+
+    if (animate) {
+      await _pageController.animateToPage(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _pageController.jumpToPage(target);
+    }
+
+    if (_lastIndicatorSelection == target) {
+      _lastIndicatorSelection = null;
+    }
+  }
 
   void _rebuild() {
     if (!mounted) return;
@@ -670,7 +699,13 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             if (books.length > 1)
               Padding(
                 padding: const EdgeInsets.only(top: 4, bottom: 2),
-                child: _PageDots(count: books.length, controller: _pageController),
+                child: _PageDots(
+                  count: books.length,
+                  controller: _pageController,
+                  onSelected: (index) => _switchToAbsorbingPage(index),
+                  onScrubSelected: (index) =>
+                      _switchToAbsorbingPage(index, animate: false),
+                ),
               ),
             // ── Cards (refreshable) ──
             Expanded(
@@ -819,7 +854,22 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 class _PageDots extends StatelessWidget {
   final int count;
   final PageController controller;
-  const _PageDots({required this.count, required this.controller});
+  final ValueChanged<int> onSelected;
+  final ValueChanged<int> onScrubSelected;
+
+  const _PageDots({
+    required this.count,
+    required this.controller,
+    required this.onSelected,
+    required this.onScrubSelected,
+  });
+
+  int _indexForPosition(double dx, double width) {
+    if (count <= 1 || width <= 0) return 0;
+    final clampedDx = dx.clamp(0.0, width);
+    final ratio = (clampedDx / width).clamp(0.0, 0.999999);
+    return (ratio * count).floor().clamp(0, count - 1);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -839,30 +889,36 @@ class _PageDots extends StatelessWidget {
         listenable: controller,
         builder: (_, __) {
           final page = controller.hasClients && controller.positions.length == 1 ? (controller.page ?? 0).round() : 0;
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(count, (i) {
-              final active = i == page;
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => controller.animateToPage(i,
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.easeOutCubic),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 12),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutCubic,
-                    width: active ? activeDotWidth : dotSize,
-                    height: dotSize,
-                    decoration: BoxDecoration(
-                      color: active ? cs.onSurface.withValues(alpha: 0.54) : cs.onSurface.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(3),
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (details) =>
+                onSelected(_indexForPosition(details.localPosition.dx, maxWidth)),
+            onHorizontalDragStart: (details) => onScrubSelected(
+                _indexForPosition(details.localPosition.dx, maxWidth)),
+            onHorizontalDragUpdate: (details) => onScrubSelected(
+                _indexForPosition(details.localPosition.dx, maxWidth)),
+            child: SizedBox(
+              width: maxWidth,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(count, (i) {
+                  final active = i == page;
+                  return Padding(
+                    padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 12),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOutCubic,
+                      width: active ? activeDotWidth : dotSize,
+                      height: dotSize,
+                      decoration: BoxDecoration(
+                        color: active ? cs.onSurface.withValues(alpha: 0.54) : cs.onSurface.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
                     ),
-                  ),
-                ),
-              );
-            }),
+                  );
+                }),
+              ),
+            ),
           );
         },
       );
