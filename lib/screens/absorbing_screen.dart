@@ -72,6 +72,40 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
   final _cast = ChromecastService();
   String _queueMode = 'off';
+  // Guards the indicator switch path so rapid tap/drag events can't stack
+  // multiple animations for the same target page.
+  int? _lastIndicatorSelection;
+
+  /// Switch cards via the page dots. Rapid repeat selections of the same
+  /// target are ignored, and each accepted change gets a selection haptic.
+  Future<void> _switchToAbsorbingPage(int index, {bool animate = true}) async {
+    if (!_pageController.hasClients) return;
+
+    final target = index < 0 ? 0 : index;
+    final currentPage =
+        (_pageController.page ?? _pageController.initialPage.toDouble())
+            .round();
+    if (target == currentPage) return;
+    if (_lastIndicatorSelection == target) return;
+
+    _lastIndicatorSelection = target;
+    unawaited(HapticFeedback.selectionClick());
+
+    if (animate) {
+      await _pageController.animateToPage(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _pageController.jumpToPage(target);
+    }
+
+    if (_lastIndicatorSelection == target) {
+      _lastIndicatorSelection = null;
+    }
+  }
+
   // Raw per-type modes behind the derived _queueMode. peekUpNext keys off these
   // (and the merge flag) directly, so the Up Next stamp must too - otherwise a
   // change to the podcast mode that leaves the derived mode unchanged (e.g. the
@@ -761,7 +795,13 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
           ];
 
           final pageDots = books.length > 1
-              ? _PageDots(count: books.length, controller: _pageController)
+              ? _PageDots(
+                  count: books.length,
+                  controller: _pageController,
+                  onSelected: (index) => _switchToAbsorbingPage(index),
+                  onScrubSelected: (index) =>
+                      _switchToAbsorbingPage(index, animate: false),
+                )
               : null;
 
           // Compact phone header: one row containing the ABSORB branding,
@@ -1014,7 +1054,21 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 class _PageDots extends StatelessWidget {
   final int count;
   final PageController controller;
-  const _PageDots({required this.count, required this.controller});
+  final ValueChanged<int> onSelected;
+  final ValueChanged<int> onScrubSelected;
+  const _PageDots({
+    required this.count,
+    required this.controller,
+    required this.onSelected,
+    required this.onScrubSelected,
+  });
+
+  int _indexForPosition(double dx, double stripWidth) {
+    if (count <= 1 || stripWidth <= 0) return 0;
+    final clampedDx = dx.clamp(0.0, stripWidth);
+    final ratio = (clampedDx / stripWidth).clamp(0.0, 0.999999);
+    return (ratio * count).floor().clamp(0, count - 1);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1029,6 +1083,10 @@ class _PageDots extends StatelessWidget {
       final extraActive = activeDotWidth - dotSize;
       final available = maxWidth - extraActive - count * dotSize;
       final hPad = (available / (count * 2)).clamp(1.5, 8.0);
+      // Natural width of the strip (dots + padding + the extra active width).
+      // The FittedBox keeps the strip compact and centered, so gesture
+      // positions must map against this width, not the layout maxWidth.
+      final stripWidth = count * (dotSize + 2 * hPad) + extraActive;
 
       return ListenableBuilder(
         listenable: controller,
@@ -1040,30 +1098,35 @@ class _PageDots extends StatelessWidget {
           // instead when it genuinely doesn't fit.
           return FittedBox(
             fit: BoxFit.scaleDown,
-            child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: List.generate(count, (i) {
-              final active = i == page;
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => controller.animateToPage(i,
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.easeOutCubic),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 12),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutCubic,
-                    width: active ? activeDotWidth : dotSize,
-                    height: dotSize,
-                    decoration: BoxDecoration(
-                      color: active ? cs.onSurface.withValues(alpha: 0.54) : cs.onSurface.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(3),
+            // Gestures live on the whole strip so dragging across the dots
+            // scrubs between cards, not just tapping a single dot.
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (details) => onSelected(
+                  _indexForPosition(details.localPosition.dx, stripWidth)),
+              onHorizontalDragStart: (details) => onScrubSelected(
+                  _indexForPosition(details.localPosition.dx, stripWidth)),
+              onHorizontalDragUpdate: (details) => onScrubSelected(
+                  _indexForPosition(details.localPosition.dx, stripWidth)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(count, (i) {
+                  final active = i == page;
+                  return Padding(
+                    padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 12),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOutCubic,
+                      width: active ? activeDotWidth : dotSize,
+                      height: dotSize,
+                      decoration: BoxDecoration(
+                        color: active ? cs.onSurface.withValues(alpha: 0.54) : cs.onSurface.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
                     ),
-                  ),
-                ),
-              );
-            }),
+                  );
+                }),
+              ),
             ),
           );
         },
