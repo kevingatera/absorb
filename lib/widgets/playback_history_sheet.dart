@@ -349,6 +349,14 @@ class _PlaybackHistorySheetState extends State<PlaybackHistorySheet> {
         return Icons.replay_10_rounded;
       case PlaybackEventType.speedChange:
         return Icons.speed_rounded;
+      case PlaybackEventType.bookFinished:
+        return Icons.flag_rounded;
+      case PlaybackEventType.sessionStart:
+        return Icons.play_circle_outline_rounded;
+      case PlaybackEventType.sessionEnd:
+        return Icons.stop_circle_outlined;
+      case PlaybackEventType.clickDebounce:
+        return Icons.touch_app_rounded;
     }
   }
 

@@ -175,6 +175,86 @@ class ProgressSyncService {
     }
   }
 
+  Future<Map<String, dynamic>?> reconcileItemWithServer({
+    required ApiService api,
+    required String itemId,
+  }) async {
+    if (!_isOnline) {
+      return await api.getItemProgress(itemId);
+    }
+
+    final local = await getLocal(itemId);
+    final serverProgress = await api.getItemProgress(itemId);
+    if (local == null) return serverProgress;
+
+    final localTime = (local['currentTime'] as num?)?.toDouble() ?? 0;
+    final localDuration = (local['duration'] as num?)?.toDouble() ?? 0;
+    final localTimestamp = (local['timestamp'] as num?)?.toInt() ?? 0;
+    final localFinished = local['isFinished'] as bool? ?? false;
+    if (localTime <= 0) return serverProgress;
+
+    final serverTimestamp =
+        (serverProgress?['lastUpdate'] as num?)?.toInt() ?? 0;
+    final serverTime =
+        (serverProgress?['currentTime'] as num?)?.toDouble() ?? 0;
+    final hasOfflineListening =
+        (await ScopedPrefs.getInt('offline_listening_$itemId') ?? 0) > 0;
+
+    if (serverProgress != null &&
+        SyncLogic.shouldPullServer(
+          serverTimestamp: serverTimestamp,
+          serverTime: serverTime,
+          localTimestamp: localTimestamp,
+          localTime: localTime,
+          hasOfflineListening: hasOfflineListening,
+        )) {
+      await cacheServerProgress(
+        itemId: itemId,
+        currentTime: serverTime,
+        duration:
+            (serverProgress['duration'] as num?)?.toDouble() ?? localDuration,
+        isFinished: serverProgress['isFinished'] as bool? ?? false,
+      );
+      final pendingList = await ScopedPrefs.getStringList('pending_syncs');
+      pendingList.remove(itemId);
+      await ScopedPrefs.setStringList('pending_syncs', pendingList);
+      return serverProgress;
+    }
+
+    final isCompound = itemId.length > 36;
+    final apiItemId = isCompound ? itemId.substring(0, 36) : itemId;
+    final episodeId = isCompound ? itemId.substring(37) : null;
+
+    if (episodeId != null) {
+      await api.updateEpisodeProgress(
+        apiItemId,
+        episodeId,
+        currentTime: localTime,
+        duration: localDuration,
+        isFinished: localFinished,
+      );
+    } else {
+      await api.updateProgress(
+        apiItemId,
+        currentTime: localTime,
+        duration: localDuration,
+        isFinished: localFinished,
+      );
+    }
+
+    final pendingList = await ScopedPrefs.getStringList('pending_syncs');
+    pendingList.remove(itemId);
+    await ScopedPrefs.setStringList('pending_syncs', pendingList);
+
+    return await api.getItemProgress(itemId) ??
+        {
+          'currentTime': localTime,
+          'duration': localDuration,
+          'lastUpdate': localTimestamp,
+          'isFinished': localFinished,
+        };
+  }
+
   /// Flush all pending syncs (call when coming back online).
   /// Compares local vs server timestamps — last-write-wins.
   Future<void> flushPendingSync({ApiService? api, int maxItems = 5}) async {

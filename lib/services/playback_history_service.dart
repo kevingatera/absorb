@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'api_service.dart';
+import 'progress_sync_service.dart';
 import 'scoped_prefs.dart';
 
 /// Types of playback events we track.
@@ -28,18 +30,24 @@ const Set<PlaybackEventType> kAdvancedHistoryEvents = {
   PlaybackEventType.clickDebounce,
 };
 
+enum PlaybackEventSource { local, server, both }
+
 /// A single playback event entry.
 class PlaybackEvent {
   final PlaybackEventType type;
   final double positionSeconds;
   final DateTime timestamp;
   final String? detail;
+  final PlaybackEventSource source;
+  final bool synthetic;
 
   PlaybackEvent({
     required this.type,
     required this.positionSeconds,
     required this.timestamp,
     this.detail,
+    this.source = PlaybackEventSource.local,
+    this.synthetic = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -47,6 +55,8 @@ class PlaybackEvent {
         'pos': positionSeconds,
         'ts': timestamp.millisecondsSinceEpoch,
         if (detail != null) 'detail': detail,
+        'source': source.name,
+        if (synthetic) 'synthetic': true,
       };
 
   factory PlaybackEvent.fromJson(Map<String, dynamic> json) {
@@ -58,6 +68,11 @@ class PlaybackEvent {
       positionSeconds: (json['pos'] as num).toDouble(),
       timestamp: DateTime.fromMillisecondsSinceEpoch(json['ts'] as int),
       detail: json['detail'] as String?,
+      source: PlaybackEventSource.values.firstWhere(
+        (e) => e.name == json['source'],
+        orElse: () => PlaybackEventSource.local,
+      ),
+      synthetic: json['synthetic'] == true,
     );
   }
 
@@ -73,8 +88,10 @@ class PlaybackEvent {
         if (detail != null && detail!.isNotEmpty) return 'Seeked $detail';
         return 'Seeked';
       case PlaybackEventType.syncLocal:
+        if (detail != null && detail!.isNotEmpty) return detail!;
         return 'Saved locally';
       case PlaybackEventType.syncServer:
+        if (detail != null && detail!.isNotEmpty) return detail!;
         return 'Synced to server';
       case PlaybackEventType.autoRewind:
         if (detail != null && detail!.isNotEmpty) return 'Auto-rewound $detail';
@@ -132,6 +149,17 @@ class PlaybackEvent {
         return '🖲';
     }
   }
+
+  String get sourceLabel {
+    switch (source) {
+      case PlaybackEventSource.local:
+        return 'This device';
+      case PlaybackEventSource.server:
+        return 'Web/server';
+      case PlaybackEventSource.both:
+        return 'Both';
+    }
+  }
 }
 
 /// Stores per-book playback history in SharedPreferences.
@@ -184,6 +212,85 @@ class PlaybackHistoryService {
     }
 
     return events.reversed.toList(); // newest first
+  }
+
+  Future<List<PlaybackEvent>> getMergedHistory(
+    String itemId, {
+    ApiService? api,
+    bool syncWithServer = false,
+    double? livePositionSeconds,
+  }) async {
+    final events = await getHistory(itemId);
+    final merged = List<PlaybackEvent>.from(events);
+    final sync = ProgressSyncService();
+
+    final localProgress = await sync.getLocal(itemId);
+    final serverProgress = api == null
+        ? null
+        : syncWithServer
+            ? await sync.reconcileItemWithServer(api: api, itemId: itemId)
+            : await api.getItemProgress(itemId);
+
+    final localTimestamp = (localProgress?['timestamp'] as num?)?.toInt() ?? 0;
+    final localPosition = livePositionSeconds ??
+        (localTimestamp > 0
+            ? (localProgress?['currentTime'] as num?)?.toDouble()
+            : null);
+
+    final serverTimestamp =
+        (serverProgress?['lastUpdate'] as num?)?.toInt() ?? 0;
+    final serverPosition = (serverProgress?['currentTime'] as num?)?.toDouble();
+
+    if (localPosition != null &&
+        serverPosition != null &&
+        (localPosition - serverPosition).abs() < 1.5) {
+      merged.add(PlaybackEvent(
+        type: PlaybackEventType.syncServer,
+        positionSeconds: localPosition,
+        timestamp: DateTime.fromMillisecondsSinceEpoch([
+          DateTime.now().millisecondsSinceEpoch,
+          localTimestamp,
+          serverTimestamp,
+        ].reduce((a, b) => a > b ? a : b)),
+        detail: 'Device + server in sync',
+        source: PlaybackEventSource.both,
+        synthetic: true,
+      ));
+    } else {
+      if (localPosition != null) {
+        merged.add(PlaybackEvent(
+          type: PlaybackEventType.syncLocal,
+          positionSeconds: localPosition,
+          timestamp: DateTime.fromMillisecondsSinceEpoch(
+            livePositionSeconds != null
+                ? DateTime.now().millisecondsSinceEpoch
+                : localTimestamp,
+          ),
+          detail: livePositionSeconds != null
+              ? 'Current device state'
+              : 'Local saved state',
+          source: PlaybackEventSource.local,
+          synthetic: true,
+        ));
+      }
+      if (serverPosition != null) {
+        merged.add(PlaybackEvent(
+          type: PlaybackEventType.syncServer,
+          positionSeconds: serverPosition,
+          timestamp: DateTime.fromMillisecondsSinceEpoch(
+            serverTimestamp > 0
+                ? serverTimestamp
+                : DateTime.now().millisecondsSinceEpoch,
+          ),
+          detail: 'Server / web state',
+          source: PlaybackEventSource.server,
+          synthetic: true,
+        ));
+      }
+    }
+
+    merged.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return merged;
   }
 
   /// Clear history for a book.

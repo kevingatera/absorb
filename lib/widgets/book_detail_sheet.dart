@@ -27,6 +27,7 @@ import '../services/progress_sync_service.dart';
 import '../services/metadata_override_service.dart';
 import '../services/scoped_prefs.dart';
 import '../screens/app_shell.dart';
+import 'author_name_link.dart';
 import 'author_books_sheet.dart';
 import 'series_books_sheet.dart';
 import 'absorbing_shared.dart';
@@ -406,7 +407,15 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       const SizedBox(height: 4),
       _buildAuthorLinks(context, metadata, cs, tt, accent),
       if (narrator.isNotEmpty) ...[const SizedBox(height: 2),
-        Text(l.narratedBy(narrator), textAlign: TextAlign.center, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant))],
+        Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
+          Text(l.narratedBy(''), style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+          NarratorNameLink(
+            item: _item!,
+            narratorName: narrator,
+            textAlign: TextAlign.center,
+            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+          ),
+        ])],
       // ─── AUDIBLE RATING (space always reserved) ─────────
       const SizedBox(height: 8),
       if (_rating != null && (_rating!['rating'] as num).toDouble() > 0)
@@ -910,7 +919,12 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     if (authors.isEmpty) {
       final name = metadata['authorName'] as String? ?? '';
       if (name.isEmpty) return const SizedBox.shrink();
-      return Text(name, textAlign: TextAlign.center, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant));
+      return AuthorNameLink(
+        item: _item!,
+        authorName: name,
+        textAlign: TextAlign.center,
+        style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+      );
     }
 
     const int collapsedCount = 3;
@@ -1436,4 +1450,3 @@ class _FullCoverViewerState extends State<_FullCoverViewer> {
     );
   }
 }
-

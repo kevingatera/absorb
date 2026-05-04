@@ -14,6 +14,7 @@ import 'absorbing_shared.dart';
 import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
 import 'card_buttons.dart';
+import 'cover_art_viewer.dart';
 
 // ─── Custom route: slide-up + fade ────────────────────────────
 
@@ -156,6 +157,12 @@ class _ExpandedCardState extends State<ExpandedCard> {
     final lib = context.read<LibraryProvider>();
     return lib.getCoverUrl(_itemId, width: 800);
   }
+
+  String? get _viewerCoverUrl {
+    final lib = context.read<LibraryProvider>();
+    return lib.getCoverUrl(_itemId, width: 2400);
+  }
+
   bool get _isLocalCover => _coverUrl != null && _coverUrl!.startsWith('/');
 
   @override
@@ -664,6 +671,13 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                       _startPlayback();
                                     }
                                   } : null,
+                                  onLongPress: () => showCoverArtViewer(
+                                    context,
+                                    title: _title,
+                                    coverUrl: _coverUrl,
+                                    hiResCoverUrl: _viewerCoverUrl,
+                                    httpHeaders: mediaHeaders,
+                                  ),
                                   child: Container(
                                   width: coverW,
                                   height: coverH,
@@ -1025,4 +1039,3 @@ class _ExpandedCardState extends State<ExpandedCard> {
 
   void _showMoreMenu(BuildContext context, Color accent, TextTheme tt) => _makeActions().showMoreMenu(accent, tt);
 }
-
