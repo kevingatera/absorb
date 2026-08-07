@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, lxc]
     env:
       JAVA_VERSION: "21"
     steps:
@@ -82,7 +82,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, lxc]
     needs: build
     environment: homelab-release
     steps:
