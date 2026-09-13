@@ -167,6 +167,20 @@ flutter {
     source = "../.."
 }
 
+// The whisper engine subproject packages every ABI regardless of Flutter's
+// --target-platform filter (the Flutter plugin resets defaultConfig
+// abiFilters, so an ndk block in the flavor can't win). The homelab APK is
+// arm64-only, so drop the dead x86_64/armeabi-v7a libs (~4 MB) at packaging.
+androidComponents {
+    onVariants { variant ->
+        if (variant.flavorName == "homelab") {
+            variant.packaging.jniLibs.excludes.addAll(
+                listOf("lib/x86_64/**", "lib/armeabi-v7a/**")
+            )
+        }
+    }
+}
+
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     testImplementation("junit:junit:4.13.2")
