@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
+import '../services/oidc_service.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/overlay_toast.dart';
 
@@ -20,7 +21,8 @@ class AdminAuthSettingsScreen extends StatefulWidget {
 class _AdminAuthSettingsScreenState extends State<AdminAuthSettingsScreen> {
   // The server's default ROUTER_BASE_PATH. The real one isn't exposed to apps.
   static const _defaultSubfolder = '/audiobookshelf';
-  static const _absorbRedirect = 'absorb://oauth';
+  // Same scheme the sign-in flow sends, so the homelab build adds its own URI.
+  static const _absorbRedirect = OidcService.redirectUri;
   static const _guideUrl =
       'https://audiobookshelf.org/docs/documentation/server-management/oidc-authentication';
   // Same checks the server and the web page apply.
