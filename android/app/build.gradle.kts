@@ -169,21 +169,32 @@ flutter {
 }
 
 // The whisper subprojects package every ABI, and a flavor ndk block cannot
-// narrow them. Drop the x86, x86_64 and armeabi-v7a libs from the homelab APK.
-// arm64 keeps libwhisper.so and libwhisper_compat.so.
+// narrow them, so the homelab APK drops the x86, x86_64 and armeabi-v7a libs
+// here. arm64 keeps libwhisper.so and libwhisper_compat.so.
+//
+// Homelab is one arm64-only APK, built without --split-per-abi:
+//   flutter build apk --release --flavor homelab --target-platform android-arm64
+// Then run scripts/check-homelab-apk on the output. The guard below runs when
+// a homelab packaging task executes, not at configuration, so other flavors
+// still build without the properties.
 androidComponents {
     onVariants { variant ->
         if (variant.flavorName == "homelab") {
             variant.packaging.jniLibs.excludes.addAll(
                 listOf("lib/x86/**", "lib/x86_64/**", "lib/armeabi-v7a/**")
             )
-            // --split-per-abi still emits one APK per ABI. Keep only arm64.
-            variant.outputs.forEach { output ->
-                val abi = output.filters
-                    .find { it.filterType.name == "ABI" }?.identifier
-                if (abi != null && abi != "arm64-v8a") {
-                    output.enabled.set(false)
-                }
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name.contains("Homelab") && listOf("assemble", "bundle", "package").any { name.startsWith(it) }) {
+        doFirst {
+            check(project.findProperty("target-platform") == "android-arm64") {
+                "The homelab flavor builds only with --target-platform android-arm64."
+            }
+            check(project.findProperty("split-per-abi") != "true") {
+                "The homelab flavor is one APK. Drop --split-per-abi."
             }
         }
     }
