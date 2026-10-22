@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Release check for the homelab APK. Fails unless every lib/ entry is
+# lib/arm64-v8a/ and both whisper engines are present.
+# Usage: scripts/check-homelab-apk <path-to-apk>
+set -euo pipefail
+
+apk="${1:?usage: scripts/check-homelab-apk <path-to-apk>}"
+[ -f "$apk" ] || { echo "No such APK: $apk" >&2; exit 1; }
+
+entries="$(unzip -Z1 "$apk" | grep -v '/$' || true)"
+
+extra="$(grep '^lib/' <<<"$entries" | grep -v '^lib/arm64-v8a/' || true)"
+if [ -n "$extra" ]; then
+  echo "Non-arm64 native libs in $apk:" >&2
+  echo "$extra" >&2
+  exit 1
+fi
+
+for lib in libwhisper.so libwhisper_compat.so; do
+  if ! grep -qx "lib/arm64-v8a/$lib" <<<"$entries"; then
+    echo "Missing lib/arm64-v8a/$lib in $apk" >&2
+    exit 1
+  fi
+done
+
+echo "OK: $apk ships only lib/arm64-v8a/ natives, both whisper engines included"
