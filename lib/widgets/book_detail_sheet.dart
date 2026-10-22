@@ -2128,6 +2128,11 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           add(Icons.delete_outline_rounded, l.deleteFromServerAction,
             () => _deleteFromServer(context, auth, lib, title), tint: cs.error);
         }
+        // Quick sheet only: the detail sheet already opens the cover on tap.
+        if (widget.quick && _fullResCoverUrl != null) {
+          add(Icons.fullscreen_rounded, l.viewCover, () => showFullCoverViewer(context,
+            source: CoverImageSource.fromUrl(_fullResCoverUrl!, lib.mediaHeaders), title: title));
+        }
         if (includeOpenDetails) {
           add(Icons.open_in_full_rounded, l.bookDetailsLabel, () {
             final rc = rootNavigatorKey.currentContext;
