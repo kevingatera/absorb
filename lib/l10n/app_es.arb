@@ -81,7 +81,7 @@
   "loginApiKey": "Llave API",
   "loginApiKeyDescription": "Utilice una clave API generada por el administrador en lugar de nombre de usuario/contraseña. Útil cuando la actualización de token falla para su cuenta.",
   "loginWaitingForSso": "Esperando al SSO...",
-  "loginRedirectUri": "URI de redireccionado: absorb://oauth",
+  "loginRedirectUri": "URI de redireccionado: {redirectUri}",
   "loginOrSignInManually": "o inicia sesión manualmente",
   "loginUsername": "Nombre de usuario",
   "loginUsernameRequired": "Por favor introduce tu nombre de usuario",

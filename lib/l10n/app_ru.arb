@@ -75,7 +75,7 @@
   "loginApiKey": "Ключ API",
   "loginApiKeyDescription": "Использовать созданный администратором API ключ вместо имени пользователя/пароля. Полезно при сбое обновления токена для вашей учетной записи.",
   "loginWaitingForSso": "Ожидаем SSO...",
-  "loginRedirectUri": "Редирект URI: absorb://oauth",
+  "loginRedirectUri": "Редирект URI: {redirectUri}",
   "loginOrSignInManually": "или войти вручную",
   "loginUsername": "Логин",
   "loginUsernameRequired": "Пожалуйста, введите логин",

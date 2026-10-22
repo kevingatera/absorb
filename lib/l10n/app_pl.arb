@@ -74,7 +74,7 @@
   "loginApiKey": "Klucz API",
   "loginApiKeyDescription": "Użyj klucza API wygenerowanego przez administratora zamiast nazwy użytkownika i hasła. Przydatne, gdy odświeżanie tokenu nie działa dla Twojego konta.",
   "loginWaitingForSso": "Oczekiwanie na SSO...",
-  "loginRedirectUri": "Redirect URI: absorb://oauth",
+  "loginRedirectUri": "Redirect URI: {redirectUri}",
   "loginOrSignInManually": "lub zaloguj się ręcznie",
   "loginUsername": "Nazwa użytkownika",
   "loginUsernameRequired": "Podaj nazwę użytkownika",

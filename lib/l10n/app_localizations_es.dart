@@ -247,7 +247,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get loginWaitingForSso => 'Esperando al SSO...';
 
   @override
-  String get loginRedirectUri => 'URI de redireccionado: absorb://oauth';
+  String loginRedirectUri(String redirectUri) {
+    return 'URI de redireccionado: $redirectUri';
+  }
 
   @override
   String get loginOrSignInManually => 'o inicia sesión manualmente';
@@ -9809,14 +9811,17 @@ class AppLocalizationsEs extends AppLocalizations {
   String get authSetRedirectUris => 'Allowed mobile redirect URIs';
 
   @override
-  String get authSetRedirectUrisInfo =>
-      'Apps can only return to these addresses after sign-in. Absorb uses absorb://oauth. An asterisk (*) as the only entry allows any address.';
+  String authSetRedirectUrisInfo(String redirectUri) {
+    return 'Apps can only return to these addresses after sign-in. Absorb uses $redirectUri. An asterisk (*) as the only entry allows any address.';
+  }
 
   @override
   String get authSetAddRedirectUri => 'Add URI';
 
   @override
-  String get authSetAddAbsorbRedirect => 'Add absorb://oauth';
+  String authSetAddAbsorbRedirect(String redirectUri) {
+    return 'Add $redirectUri';
+  }
 
   @override
   String get authSetSubfolder => 'Subfolder for redirect URLs';

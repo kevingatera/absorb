@@ -246,7 +246,9 @@ class AppLocalizationsPl extends AppLocalizations {
   String get loginWaitingForSso => 'Oczekiwanie na SSO...';
 
   @override
-  String get loginRedirectUri => 'Redirect URI: absorb://oauth';
+  String loginRedirectUri(String redirectUri) {
+    return 'Redirect URI: $redirectUri';
+  }
 
   @override
   String get loginOrSignInManually => 'lub zaloguj się ręcznie';
@@ -10012,14 +10014,17 @@ class AppLocalizationsPl extends AppLocalizations {
   String get authSetRedirectUris => 'Dozwolone mobilne URI przekierowania';
 
   @override
-  String get authSetRedirectUrisInfo =>
-      'Aplikacje mogą wracać po zalogowaniu tylko pod te adresy. Absorb używa absorb://oauth. Gwiazdka (*) jako jedyny wpis zezwala na dowolny adres.';
+  String authSetRedirectUrisInfo(String redirectUri) {
+    return 'Aplikacje mogą wracać po zalogowaniu tylko pod te adresy. Absorb używa absorb://oauth. Gwiazdka (*) jako jedyny wpis zezwala na dowolny adres.';
+  }
 
   @override
   String get authSetAddRedirectUri => 'Dodaj URI';
 
   @override
-  String get authSetAddAbsorbRedirect => 'Dodaj absorb://oauth';
+  String authSetAddAbsorbRedirect(String redirectUri) {
+    return 'Dodaj absorb://oauth';
+  }
 
   @override
   String get authSetSubfolder => 'Podfolder dla adresów przekierowania';
