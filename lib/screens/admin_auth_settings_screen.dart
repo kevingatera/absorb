@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
+import '../services/oidc_service.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/overlay_toast.dart';
 
@@ -20,7 +21,8 @@ class AdminAuthSettingsScreen extends StatefulWidget {
 class _AdminAuthSettingsScreenState extends State<AdminAuthSettingsScreen> {
   // The server's default ROUTER_BASE_PATH. The real one isn't exposed to apps.
   static const _defaultSubfolder = '/audiobookshelf';
-  static const _absorbRedirect = 'absorb://oauth';
+  // Same scheme the sign-in flow sends, so the homelab build adds its own URI.
+  static const _absorbRedirect = OidcService.redirectUri;
   static const _guideUrl =
       'https://audiobookshelf.org/docs/documentation/server-management/oidc-authentication';
   // Same checks the server and the web page apply.
@@ -383,7 +385,7 @@ class _AdminAuthSettingsScreenState extends State<AdminAuthSettingsScreen> {
               if (!_redirectUris.contains(_absorbRedirect) && !_redirectUris.contains('*'))
                 ActionChip(
                   avatar: const Icon(Icons.add_rounded, size: 18),
-                  label: Text(l.authSetAddAbsorbRedirect),
+                  label: Text(l.authSetAddAbsorbRedirect(_absorbRedirect)),
                   onPressed: _saving ? null : () => setState(() => _redirectUris = [..._redirectUris, _absorbRedirect]),
                 ),
             ]),
@@ -394,7 +396,7 @@ class _AdminAuthSettingsScreenState extends State<AdminAuthSettingsScreen> {
               const SizedBox(width: 8),
               IconButton(onPressed: _saving ? null : _addRedirect, icon: const Icon(Icons.add_rounded)),
             ]),
-            _info(cs, tt, l.authSetRedirectUrisInfo),
+            _info(cs, tt, l.authSetRedirectUrisInfo(_absorbRedirect)),
             const SizedBox(height: 8),
             _dropdown<String>(tt, l.authSetSubfolder, _subfolder, subfolderOptions,
                 (v) => setState(() {

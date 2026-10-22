@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show PlatformException;
+import 'package:flutter/services.dart' show PlatformException, appFlavor;
 import 'package:http/http.dart' as http;
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'dart:io' show HttpClient, HttpHeaders;
@@ -45,7 +45,12 @@ class OidcService {
   // was shared with it before, and Android hands a shared scheme to whichever
   // app answers first. A server allows this one under Settings > Authentication
   // > Mobile redirect URIs, so a rejection gets its own message below.
-  static const _redirectUri = 'absorb://oauth';
+  // The homelab flavor keeps its own scheme so it can install beside the stable
+  // app. appFlavor carries the --flavor name, which is also the Gradle flavor
+  // that sets the manifest's webAuthScheme, so the two cannot disagree.
+  static const _webAuthScheme =
+      appFlavor == 'homelab' ? 'audiobookshelfhomelab' : 'absorb';
+  static const _redirectUri = '$_webAuthScheme://oauth';
   static const redirectUri = _redirectUri;
   static const _clientId = 'Audiobookshelf-App';
 
@@ -159,7 +164,7 @@ class OidcService {
     }
 
     debugPrint('[OIDC] Opening Custom Tab for: $providerUrl');
-    return _openBrowser(providerUrl, 'absorb');
+    return _openBrowser(providerUrl, _webAuthScheme);
   }
 
   /// BookOrbit only takes this return address from an app (unless its admin

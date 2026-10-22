@@ -73,7 +73,10 @@
   "loginApiKey": "API Key",
   "loginApiKeyDescription": "Use an admin-generated API key instead of username/password. Useful when token refresh fails for your account.",
   "loginWaitingForSso": "Waiting for SSO...",
-  "loginRedirectUri": "Redirect URI: absorb://oauth",
+  "loginRedirectUri": "Redirect URI: {redirectUri}",
+  "@loginRedirectUri": {
+    "placeholders": { "redirectUri": { "type": "String" } }
+  },
   "loginOrSignInManually": "or sign in manually",
   "loginUsername": "Username",
   "loginUsernameRequired": "Please enter your username",
@@ -5442,9 +5445,15 @@
   "authSetClientSecret": "Client secret",
   "authSetSigningAlgorithm": "Signing algorithm",
   "authSetRedirectUris": "Allowed mobile redirect URIs",
-  "authSetRedirectUrisInfo": "Apps can only return to these addresses after sign-in. Absorb uses absorb://oauth. An asterisk (*) as the only entry allows any address.",
+  "authSetRedirectUrisInfo": "Apps can only return to these addresses after sign-in. Absorb uses {redirectUri}. An asterisk (*) as the only entry allows any address.",
+  "@authSetRedirectUrisInfo": {
+    "placeholders": { "redirectUri": { "type": "String" } }
+  },
   "authSetAddRedirectUri": "Add URI",
-  "authSetAddAbsorbRedirect": "Add absorb://oauth",
+  "authSetAddAbsorbRedirect": "Add {redirectUri}",
+  "@authSetAddAbsorbRedirect": {
+    "placeholders": { "redirectUri": { "type": "String" } }
+  },
   "authSetSubfolder": "Subfolder for redirect URLs",
   "authSetSubfolderNone": "None",
   "authSetWebRedirectInfo": "Allow these URLs in your OAuth provider so sign-in can return to the web app:",
