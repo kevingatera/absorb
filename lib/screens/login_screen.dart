@@ -1446,7 +1446,9 @@ class _LoginScreenState extends State<LoginScreen>
         ),
         const SizedBox(height: 6),
         Text(
-          _backend.isBookOrbit ? l.loginRedirectUriBookOrbit : l.loginRedirectUri,
+          _backend.isBookOrbit
+              ? l.loginRedirectUriBookOrbit
+              : l.loginRedirectUri(OidcService.redirectUri),
           style: tt.labelSmall?.copyWith(
             color: cs.onSurfaceVariant.withValues(alpha: 0.4),
             letterSpacing: 0.3,

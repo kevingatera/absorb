@@ -529,8 +529,8 @@ abstract class AppLocalizations {
   /// No description provided for @loginRedirectUri.
   ///
   /// In en, this message translates to:
-  /// **'Redirect URI: absorb://oauth'**
-  String get loginRedirectUri;
+  /// **'Redirect URI: {redirectUri}'**
+  String loginRedirectUri(String redirectUri);
 
   /// No description provided for @loginOrSignInManually.
   ///
@@ -16494,8 +16494,8 @@ abstract class AppLocalizations {
   /// No description provided for @authSetRedirectUrisInfo.
   ///
   /// In en, this message translates to:
-  /// **'Apps can only return to these addresses after sign-in. Absorb uses absorb://oauth. An asterisk (*) as the only entry allows any address.'**
-  String get authSetRedirectUrisInfo;
+  /// **'Apps can only return to these addresses after sign-in. Absorb uses {redirectUri}. An asterisk (*) as the only entry allows any address.'**
+  String authSetRedirectUrisInfo(String redirectUri);
 
   /// No description provided for @authSetAddRedirectUri.
   ///
@@ -16506,8 +16506,8 @@ abstract class AppLocalizations {
   /// No description provided for @authSetAddAbsorbRedirect.
   ///
   /// In en, this message translates to:
-  /// **'Add absorb://oauth'**
-  String get authSetAddAbsorbRedirect;
+  /// **'Add {redirectUri}'**
+  String authSetAddAbsorbRedirect(String redirectUri);
 
   /// No description provided for @authSetSubfolder.
   ///

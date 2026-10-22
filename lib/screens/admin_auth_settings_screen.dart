@@ -385,7 +385,7 @@ class _AdminAuthSettingsScreenState extends State<AdminAuthSettingsScreen> {
               if (!_redirectUris.contains(_absorbRedirect) && !_redirectUris.contains('*'))
                 ActionChip(
                   avatar: const Icon(Icons.add_rounded, size: 18),
-                  label: Text(l.authSetAddAbsorbRedirect),
+                  label: Text(l.authSetAddAbsorbRedirect(_absorbRedirect)),
                   onPressed: _saving ? null : () => setState(() => _redirectUris = [..._redirectUris, _absorbRedirect]),
                 ),
             ]),
@@ -396,7 +396,7 @@ class _AdminAuthSettingsScreenState extends State<AdminAuthSettingsScreen> {
               const SizedBox(width: 8),
               IconButton(onPressed: _saving ? null : _addRedirect, icon: const Icon(Icons.add_rounded)),
             ]),
-            _info(cs, tt, l.authSetRedirectUrisInfo),
+            _info(cs, tt, l.authSetRedirectUrisInfo(_absorbRedirect)),
             const SizedBox(height: 8),
             _dropdown<String>(tt, l.authSetSubfolder, _subfolder, subfolderOptions,
                 (v) => setState(() {
