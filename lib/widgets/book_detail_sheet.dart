@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'overlay_toast.dart';
+import 'name_links.dart';
 import 'narration_download_dialog.dart';
 import '../services/media_overlay.dart';
 import '../services/narration_service.dart';
@@ -3098,102 +3099,30 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     );
   }
 
-  // The name and its comma are one Wrap child so the comma can never start
-  // the next line. Padding makes the tap target the full line height, not
-  // just the glyphs, so a thumb between two stacked links lands on one.
-  Widget _nameLink(String name, TextStyle? linkStyle, TextStyle? commaStyle,
-      {required bool comma, required VoidCallback onTap}) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Flexible(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onTap,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(2, 6, comma ? 0 : 2, 6),
-              child: Text(name, style: linkStyle),
-            ),
-          ),
-        ),
-        if (comma)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text(', ', style: commaStyle),
-          ),
-      ],
-    );
-  }
-
   Widget _buildAuthorLinks(BuildContext context, Map<String, dynamic> metadata, ColorScheme cs, TextTheme tt, Color accent) {
-    final authors = metadata['authors'] as List<dynamic>? ?? [];
+    final authors = authorTargets(metadata);
     // Fall back to authorName string if no structured authors array
     if (authors.isEmpty) {
       final name = metadata['authorName'] as String? ?? '';
       if (name.isEmpty) return const SizedBox.shrink();
       return Text(name, textAlign: TextAlign.center, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant));
     }
-
-    const int collapsedCount = 3;
-    final showAll = _authorsExpanded || authors.length <= collapsedCount;
-    final visible = showAll ? authors : authors.sublist(0, collapsedCount);
-    final remaining = authors.length - collapsedCount;
-
-    final linkStyle = tt.bodyMedium?.copyWith(
-      color: accent,
-      decoration: TextDecoration.underline,
-      decorationColor: accent.withValues(alpha: 0.4),
-    );
-    final commaStyle = tt.bodyMedium?.copyWith(color: accent);
-
-    return Wrap(
-      alignment: WrapAlignment.center,
-      children: [
-        for (int i = 0; i < visible.length; i++)
-          _nameLink(
-            (visible[i] as Map<String, dynamic>?)?['name'] as String? ?? '',
-            linkStyle,
-            commaStyle,
-            comma: i < visible.length - 1 || (!showAll && remaining > 0),
-            onTap: () {
-              final a = visible[i] as Map<String, dynamic>? ?? {};
-              final id = a['id'] as String? ?? '';
-              final name = a['name'] as String? ?? '';
-              if (id.isEmpty || name.isEmpty) return;
-              showAuthorDetailSheet(context, authorId: id, authorName: name);
-            },
-          ),
-        if (!showAll)
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _authorsExpanded = true),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
-              child: Text(AppLocalizations.of(context)!.andCountMore(remaining), style: tt.bodyMedium?.copyWith(
-                color: accent.withValues(alpha: 0.7),
-              )),
-            ),
-          ),
-      ],
+    return NameLinks(
+      targets: authors,
+      style: tt.bodyMedium,
+      accent: accent,
+      mutedColor: cs.onSurfaceVariant,
+      expanded: _authorsExpanded,
+      onExpand: () => setState(() => _authorsExpanded = true),
+      onTap: (a) {
+        if (!a.hasId || a.name.isEmpty) return;
+        showAuthorDetailSheet(context, authorId: a.id, authorName: a.name);
+      },
     );
   }
 
   Widget _buildNarratorLinks(BuildContext context, Map<String, dynamic> metadata, ColorScheme cs, TextTheme tt, Color accent) {
-    final raw = metadata['narrators'] as List<dynamic>? ?? [];
-    final names = <String>[
-      for (final n in raw)
-        if (n is String && n.trim().isNotEmpty)
-          n.trim()
-        else if (n is Map<String, dynamic>)
-          (n['name'] as String? ?? '').trim()
-    ].where((s) => s.isNotEmpty).toList();
-
-    if (names.isEmpty) {
-      final fallback = (metadata['narratorName'] as String? ?? '').trim();
-      if (fallback.isEmpty) return const SizedBox.shrink();
-      names.addAll(fallback.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty));
-    }
+    final names = narratorTargets(metadata);
     if (names.isEmpty) return const SizedBox.shrink();
 
     final l = AppLocalizations.of(context)!;
@@ -3201,57 +3130,18 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     // the prefix (and append any suffix, e.g. Chinese colon) around clickable
     // narrator links.
     final parts = l.narratedBy('||X||').split('||X||');
-    final prefix = parts.isNotEmpty ? parts[0] : '';
-    final suffix = parts.length > 1 ? parts[1] : '';
-
-    const int collapsedCount = 3;
-    final showAll = _narratorsExpanded || names.length <= collapsedCount;
-    final visible = showAll ? names : names.sublist(0, collapsedCount);
-    final remaining = names.length - collapsedCount;
-
-    final baseStyle = tt.bodySmall?.copyWith(color: cs.onSurfaceVariant);
-    final linkStyle = tt.bodySmall?.copyWith(
-      color: accent,
-      decoration: TextDecoration.underline,
-      decorationColor: accent.withValues(alpha: 0.4),
-    );
-    final commaStyle = tt.bodySmall?.copyWith(color: accent);
-
     return Padding(
       padding: const EdgeInsets.only(top: 2),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        children: [
-          if (prefix.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Text(prefix, style: baseStyle),
-            ),
-          for (int i = 0; i < visible.length; i++)
-            _nameLink(
-              visible[i],
-              linkStyle,
-              commaStyle,
-              comma: i < visible.length - 1 || (!showAll && remaining > 0),
-              onTap: () => showNarratorBooksSheet(context, narratorName: visible[i]),
-            ),
-          if (!showAll)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _narratorsExpanded = true),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
-                child: Text(l.andCountMore(remaining), style: tt.bodySmall?.copyWith(
-                  color: accent.withValues(alpha: 0.7),
-                )),
-              ),
-            ),
-          if (suffix.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Text(suffix, style: baseStyle),
-            ),
-        ],
+      child: NameLinks(
+        targets: names,
+        style: tt.bodySmall,
+        accent: accent,
+        mutedColor: cs.onSurfaceVariant,
+        prefix: parts.isNotEmpty ? parts[0] : '',
+        suffix: parts.length > 1 ? parts[1] : '',
+        expanded: _narratorsExpanded,
+        onExpand: () => setState(() => _narratorsExpanded = true),
+        onTap: (n) => showNarratorBooksSheet(context, narratorName: n.name),
       ),
     );
   }
