@@ -7643,5 +7643,9 @@
   "boUserKeyLinkSubtitle": "Makes a key with everything this person has and shows a QR code that signs them in to Absorb",
   "boApiKeyLinkName": "Absorb sign-in",
   "boApiKeyLinkFor": "Sign-in link for {name}",
-  "@boApiKeyLinkFor": {"placeholders": {"name": {"type": "String"}}}
+  "@boApiKeyLinkFor": {"placeholders": {"name": {"type": "String"}}},
+  "chooseAuthor": "Choose an author",
+  "loadingAuthors": "Loading authors...",
+  "authorLookupFailed": "Couldn't load author details",
+  "authorLookupNone": "No author details for this book"
 }
