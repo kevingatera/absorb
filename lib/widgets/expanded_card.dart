@@ -19,6 +19,7 @@ import 'ebook_router.dart';
 import '../services/lyrics_service.dart';
 import 'lyrics_overlay.dart';
 import 'overlay_toast.dart';
+import 'full_cover_viewer.dart';
 import '../services/ebook_cache.dart';
 import '../services/find_in_ebook.dart';
 import '../main.dart' show colorSourceNotifier, useColorEverywhereNotifier, manualSeedNotifier, manualColorScheme;
@@ -803,6 +804,11 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                       _startPlayback();
                                     }
                                   } : null,
+                                  onLongPress: _coverUrl == null ? null : () => showFullCoverViewer(
+                                    context,
+                                    source: CoverImageSource.fromUrl(_coverUrl!, mediaHeaders),
+                                    title: _title,
+                                  ),
                                   child: Container(
                                   width: coverW,
                                   height: coverH,

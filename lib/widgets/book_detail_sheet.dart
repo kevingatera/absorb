@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'overlay_toast.dart';
+import 'full_cover_viewer.dart';
 import 'narration_download_dialog.dart';
 import '../services/media_overlay.dart';
 import '../services/narration_service.dart';
@@ -22,7 +23,6 @@ import '../utils/cover_accent.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:intl/intl.dart';
@@ -62,7 +62,6 @@ import 'absorb_wave_icon.dart';
 import 'stackable_sheet.dart';
 import 'ebook_router.dart';
 import '../utils/duration_format.dart';
-import '../utils/share_origin.dart';
 
 // ─── BOOK DETAIL BOTTOM SHEET ───────────────────────────────
 
@@ -905,7 +904,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
       if (_coverUrl != null) ...[
         Center(child: GestureDetector(
-          onTap: () => _showFullCover(context, _fullResCoverUrl ?? _coverUrl!, lib.mediaHeaders, title),
+          onTap: () => showFullCoverViewer(context, source: CoverImageSource.network(_fullResCoverUrl ?? _coverUrl!, headers: lib.mediaHeaders), title: title),
           child: Container(
             height: 240,
             width: _squareCovers ? 240 : null,
@@ -2128,6 +2127,11 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         if (auth.canDelete && !lib.isOffline) {
           add(Icons.delete_outline_rounded, l.deleteFromServerAction,
             () => _deleteFromServer(context, auth, lib, title), tint: cs.error);
+        }
+        // Quick sheet only: the detail sheet already opens the cover on tap.
+        if (widget.quick && _fullResCoverUrl != null) {
+          add(Icons.fullscreen_rounded, l.viewCover, () => showFullCoverViewer(context,
+            source: CoverImageSource.fromUrl(_fullResCoverUrl!, lib.mediaHeaders), title: title));
         }
         if (includeOpenDetails) {
           add(Icons.open_in_full_rounded, l.bookDetailsLabel, () {
@@ -4050,148 +4054,6 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         );
       }
     }
-  }
-
-  void _showFullCover(BuildContext context, String url, Map<String, String> headers, String title) {
-    Navigator.of(context).push(PageRouteBuilder(
-      opaque: false,
-      barrierColor: Colors.black87,
-      pageBuilder: (_, __, ___) => _FullCoverViewer(url: url, headers: headers, title: title),
-      transitionsBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
-    ));
-  }
-}
-
-class _FullCoverViewer extends StatefulWidget {
-  final String url;
-  final Map<String, String> headers;
-  final String title;
-  const _FullCoverViewer({required this.url, required this.headers, required this.title});
-  @override State<_FullCoverViewer> createState() => _FullCoverViewerState();
-}
-
-class _FullCoverViewerState extends State<_FullCoverViewer> {
-  bool _saving = false;
-  final _transform = TransformationController();
-
-  // How far a one-finger drag has pulled the (unzoomed) cover, so it follows
-  // the finger and a flick dismisses like every other sheet in the app.
-  double _dragY = 0;
-
-  bool get _zoomed => _transform.value.getMaxScaleOnAxis() > 1.05;
-
-  @override
-  void dispose() {
-    _transform.dispose();
-    super.dispose();
-  }
-
-  Future<void> _saveAndShare() async {
-    if (_saving) return;
-    setState(() => _saving = true);
-    try {
-      final response = await http.get(Uri.parse(widget.url), headers: widget.headers);
-      if (response.statusCode != 200) throw Exception('Download failed');
-      final ext = widget.url.contains('.png') ? '.png' : '.jpg';
-      final safeTitle = widget.title.replaceAll(RegExp(r'[^\w\s-]'), '').trim();
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/$safeTitle$ext');
-      await file.writeAsBytes(response.bodyBytes);
-      if (!mounted) return;
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        sharePositionOrigin: shareOriginFor(context),
-      );
-    } catch (e) {
-      if (mounted) {
-        final l = AppLocalizations.of(context)!;
-        showOverlayToast(
-          context,
-          l.failedToSaveError(e.toString()),
-          icon: Icons.error_outline_rounded,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(children: [
-        // Tap closes (a tap on a zoomed cover just zooms it back out first).
-        // A one-finger swipe drags the unzoomed cover along and dismisses -
-        // tracked through the viewer's own callbacks, because the viewer
-        // claims every gesture and a competing detector would never win.
-        Positioned.fill(
-          child: GestureDetector(
-            onTap: () {
-              if (_zoomed) {
-                setState(() => _transform.value = Matrix4.identity());
-              } else {
-                Navigator.pop(context);
-              }
-            },
-            child: Transform.translate(
-              offset: Offset(0, _dragY),
-              child: InteractiveViewer(
-                transformationController: _transform,
-                clipBehavior: Clip.none,
-                minScale: 1.0,
-                maxScale: 5.0,
-                onInteractionUpdate: (d) {
-                  if (!_zoomed && d.pointerCount == 1) {
-                    setState(() => _dragY += d.focalPointDelta.dy);
-                  }
-                },
-                onInteractionEnd: (d) {
-                  if (_zoomed) return;
-                  if (_dragY.abs() > 120 ||
-                      d.velocity.pixelsPerSecond.dy.abs() > 800) {
-                    Navigator.pop(context);
-                  } else if (_dragY != 0) {
-                    setState(() => _dragY = 0);
-                  }
-                },
-                child: Center(
-                  child: CachedNetworkImage(
-                    imageUrl: widget.url,
-                    httpHeaders: widget.headers,
-                    fit: BoxFit.contain,
-                    placeholder: (_, __) => const CircularProgressIndicator(strokeWidth: 2),
-                    errorWidget: (_, __, ___) => const Icon(Icons.broken_image_rounded, size: 48, color: Colors.white54),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        // Close button
-        Positioned(
-          top: MediaQuery.of(context).viewPadding.top + 8,
-          left: 8,
-          child: IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.close_rounded, color: Colors.white),
-            style: IconButton.styleFrom(backgroundColor: Colors.black45),
-          ),
-        ),
-        // Save/share button
-        Positioned(
-          top: MediaQuery.of(context).viewPadding.top + 8,
-          right: 8,
-          child: IconButton(
-            onPressed: _saving ? null : _saveAndShare,
-            icon: _saving
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.save_alt_rounded, color: Colors.white),
-            style: IconButton.styleFrom(backgroundColor: Colors.black45),
-          ),
-        ),
-      ]),
-    );
   }
 }
 
