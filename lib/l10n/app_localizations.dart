@@ -9748,6 +9748,12 @@ abstract class AppLocalizations {
   /// **'Book Details'**
   String get bookDetailsLabel;
 
+  /// No description provided for @viewCover.
+  ///
+  /// In en, this message translates to:
+  /// **'View cover'**
+  String get viewCover;
+
   /// No description provided for @equalizerShort.
   ///
   /// In en, this message translates to:

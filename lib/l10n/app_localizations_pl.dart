@@ -5588,6 +5588,9 @@ class AppLocalizationsPl extends AppLocalizations {
   String get bookDetailsLabel => 'Szczegóły książki';
 
   @override
+  String get viewCover => 'View cover';
+
+  @override
   String get equalizerShort => 'EQ';
 
   @override
