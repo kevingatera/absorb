@@ -150,8 +150,9 @@ android {
             // built before 1.9.3+228 just take the first .apk they find, so the
             // one that installs anywhere has to be the one they land on. The
             // word "universal" stays in the name because newer updaters match it
-            // as a token when no per-ABI build fits.
-            val packageKind = abi ?: "all-universal"
+            // as a token when no per-ABI build fits. Homelab is arm64-only.
+            val packageKind = abi
+                ?: if (variant.flavorName == "homelab") "arm64-v8a" else "all-universal"
             val flavorTag = when (variant.flavorName) {
                 "dev" -> "-dev"
                 "homelab" -> "-homelab"
@@ -167,16 +168,23 @@ flutter {
     source = "../.."
 }
 
-// The whisper engine subproject packages every ABI regardless of Flutter's
-// --target-platform filter (the Flutter plugin resets defaultConfig
-// abiFilters, so an ndk block in the flavor can't win). The homelab APK is
-// arm64-only, so drop the dead x86_64/armeabi-v7a libs (~4 MB) at packaging.
+// The whisper subprojects package every ABI, and a flavor ndk block cannot
+// narrow them. Drop the x86, x86_64 and armeabi-v7a libs from the homelab APK.
+// arm64 keeps libwhisper.so and libwhisper_compat.so.
 androidComponents {
     onVariants { variant ->
         if (variant.flavorName == "homelab") {
             variant.packaging.jniLibs.excludes.addAll(
-                listOf("lib/x86_64/**", "lib/armeabi-v7a/**")
+                listOf("lib/x86/**", "lib/x86_64/**", "lib/armeabi-v7a/**")
             )
+            // --split-per-abi still emits one APK per ABI. Keep only arm64.
+            variant.outputs.forEach { output ->
+                val abi = output.filters
+                    .find { it.filterType.name == "ABI" }?.identifier
+                if (abi != null && abi != "arm64-v8a") {
+                    output.enabled.set(false)
+                }
+            }
         }
     }
 }
