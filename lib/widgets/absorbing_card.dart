@@ -14,6 +14,7 @@ import '../services/download_service.dart';
 import 'absorbing_shared.dart';
 import 'ebook_router.dart';
 import 'overlay_toast.dart';
+import 'full_cover_viewer.dart';
 import '../services/ebook_cache.dart';
 import '../services/find_in_ebook.dart';
 import '../services/lyrics_service.dart';
@@ -914,6 +915,11 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                             _startPlayback();
                           }
                         } : null,
+                        onLongPress: _coverUrl == null ? null : () => showFullCoverViewer(
+                          context,
+                          source: CoverImageSource.fromUrl(_coverUrl!, mediaHeaders),
+                          title: _title,
+                        ),
                         child: Container(
                           width: coverW,
                           height: coverH,

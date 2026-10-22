@@ -13,6 +13,7 @@ import 'absorbing_shared.dart';
 import 'book_detail_sheet.dart';
 import 'books_sheet_shared.dart' show coverGridTextScale, coverGridDecodeWidth;
 import 'episode_list_sheet.dart';
+import 'full_cover_viewer.dart';
 import '../services/upcoming_releases_service.dart';
 import 'series_books_sheet.dart';
 import 'author_books_sheet.dart';
@@ -117,156 +118,167 @@ class _GridBookTileState extends State<GridBookTile> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Cover
-          AspectRatio(
-            aspectRatio: widget.coverAspectRatio,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Cover image
-                  coverUrl != null
-                      ? _blurCover(coverUrl, lib.mediaHeaders, cs, widget.coverAspectRatio, title, author)
-                      : CoverPlaceholder(title: title, author: author),
+          // Long-press the cover for the full-screen viewer. The rest of the
+          // tile keeps its quick-actions long-press.
+          GestureDetector(
+            onLongPress: widget.selectionMode || coverUrl == null ? null : () => showFullCoverViewer(
+              context,
+              // The same size the cards open, so the viewer reuses that image.
+              source: CoverImageSource.fromUrl(
+                  lib.getCoverUrl(itemId, width: 1200) ?? coverUrl, lib.mediaHeaders),
+              title: title,
+            ),
+            child: AspectRatio(
+              aspectRatio: widget.coverAspectRatio,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // Cover image
+                    coverUrl != null
+                        ? _blurCover(coverUrl, lib.mediaHeaders, cs, widget.coverAspectRatio, title, author)
+                        : CoverPlaceholder(title: title, author: author),
 
-                  // Progress bar at bottom of cover
-                  if (progress > 0 && !isFinished)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: LinearProgressIndicator(
-                        value: progress.clamp(0.0, 1.0),
-                        minHeight: 3,
-                        backgroundColor: Colors.black38,
-                        valueColor: AlwaysStoppedAnimation(cs.primary),
-                      ),
-                    ),
-
-                  // Unplayed-episode count badge (podcasts only)
-                  if (unfinishedCount > 0)
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: cs.primary,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '$unfinishedCount',
-                          style: TextStyle(
-                            color: cs.onPrimary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
+                    // Progress bar at bottom of cover
+                    if (progress > 0 && !isFinished)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: LinearProgressIndicator(
+                          value: progress.clamp(0.0, 1.0),
+                          minHeight: 3,
+                          backgroundColor: Colors.black38,
+                          valueColor: AlwaysStoppedAnimation(cs.primary),
                         ),
                       ),
-                    ),
 
-                  // Subscribed bell (sits below unplayed badge when both show)
-                  if (isSubscribed)
-                    Positioned(
-                      top: unfinishedCount > 0 ? 26 : 4,
-                      right: 4,
-                      child: Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.6),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.notifications_rounded,
-                            size: 11, color: Colors.white),
-                      ),
-                    ),
-
-                  // Explicit badge
-                  if (isExplicit)
-                    Positioned(
-                      top: (unfinishedCount > 0 ? 26 : 4) + (isSubscribed ? 22 : 0),
-                      right: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.85),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(l.libraryGridTilesExplicitBadge, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
-                      ),
-                    ),
-
-                  if (hasEbook && !widget.selectionMode)
-                    Positioned(
-                      top: widget.sequenceBadge != null ? 24 : 4, left: 4,
-                      child: const EbookCoverBadge(),
-                    ),
-
-                  // Sequence badge
-                  if (widget.sequenceBadge != null)
-                    Positioned(
-                      top: 4, left: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.7),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(l.libraryGridTilesSequence(widget.sequenceBadge!),
-                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
-                      ),
-                    ),
-
-                  // ── State badges (downloaded / finished) ──
-                  if (isFinished || isDownloaded)
-                    Positioned(
-                      left: 0, right: 0, bottom: 0,
-                      child: CoverStateBadges(
-                        isDownloaded: isDownloaded,
-                        isFinished: isFinished,
-                        isSkimmed: isSkimmed,
-                      ),
-                    ),
-
-                  // ── Batch selection ──
-                  if (widget.selectionMode) ...[
-                    if (widget.selected)
-                      Positioned.fill(
-                        child: DecoratedBox(
+                    // Unplayed-episode count badge (podcasts only)
+                    if (unfinishedCount > 0)
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            border: Border.all(color: cs.primary, width: 3),
+                            color: cs.primary,
                             borderRadius: BorderRadius.circular(10),
-                            color: cs.primary.withValues(alpha: 0.18),
+                          ),
+                          child: Text(
+                            '$unfinishedCount',
+                            style: TextStyle(
+                              color: cs.onPrimary,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ),
-                    Positioned(
-                      top: 4,
-                      left: 4,
-                      child: Container(
-                        width: 26,
-                        height: 26,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: widget.selected
-                              ? cs.primary
-                              : Colors.black.withValues(alpha: 0.55),
-                          border: Border.all(
-                            color: widget.selected ? cs.primary : Colors.white70,
+
+                    // Subscribed bell (sits below unplayed badge when both show)
+                    if (isSubscribed)
+                      Positioned(
+                        top: unfinishedCount > 0 ? 26 : 4,
+                        right: 4,
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            shape: BoxShape.circle,
                           ),
-                        ),
-                        child: Icon(
-                          widget.selected
-                              ? Icons.check_rounded
-                              : Icons.circle_outlined,
-                          size: 17,
-                          color: widget.selected ? cs.onPrimary : Colors.white70,
+                          child: const Icon(Icons.notifications_rounded,
+                              size: 11, color: Colors.white),
                         ),
                       ),
-                    ),
+
+                    // Explicit badge
+                    if (isExplicit)
+                      Positioned(
+                        top: (unfinishedCount > 0 ? 26 : 4) + (isSubscribed ? 22 : 0),
+                        right: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(l.libraryGridTilesExplicitBadge, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                        ),
+                      ),
+
+                    if (hasEbook && !widget.selectionMode)
+                      Positioned(
+                        top: widget.sequenceBadge != null ? 24 : 4, left: 4,
+                        child: const EbookCoverBadge(),
+                      ),
+
+                    // Sequence badge
+                    if (widget.sequenceBadge != null)
+                      Positioned(
+                        top: 4, left: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(l.libraryGridTilesSequence(widget.sequenceBadge!),
+                            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+
+                    // ── State badges (downloaded / finished) ──
+                    if (isFinished || isDownloaded)
+                      Positioned(
+                        left: 0, right: 0, bottom: 0,
+                        child: CoverStateBadges(
+                          isDownloaded: isDownloaded,
+                          isFinished: isFinished,
+                          isSkimmed: isSkimmed,
+                        ),
+                      ),
+
+                    // ── Batch selection ──
+                    if (widget.selectionMode) ...[
+                      if (widget.selected)
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: cs.primary, width: 3),
+                              borderRadius: BorderRadius.circular(10),
+                              color: cs.primary.withValues(alpha: 0.18),
+                            ),
+                          ),
+                        ),
+                      Positioned(
+                        top: 4,
+                        left: 4,
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: widget.selected
+                                ? cs.primary
+                                : Colors.black.withValues(alpha: 0.55),
+                            border: Border.all(
+                              color: widget.selected ? cs.primary : Colors.white70,
+                            ),
+                          ),
+                          child: Icon(
+                            widget.selected
+                                ? Icons.check_rounded
+                                : Icons.circle_outlined,
+                            size: 17,
+                            color: widget.selected ? cs.onPrimary : Colors.white70,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
