@@ -5465,6 +5465,9 @@ class AppLocalizationsEl extends AppLocalizations {
   String get bookDetailsLabel => 'Book Details';
 
   @override
+  String get viewCover => 'View cover';
+
+  @override
   String get equalizerShort => 'EQ';
 
   @override
