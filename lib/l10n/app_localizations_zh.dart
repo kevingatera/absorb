@@ -14082,4 +14082,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String boActivityHours(double count) {
     return '$count h';
   }
+
+  @override
+  String get chooseAuthor => 'Choose an author';
+
+  @override
+  String get loadingAuthors => 'Loading authors...';
+
+  @override
+  String get authorLookupFailed => 'Couldn\'t load author details';
+
+  @override
+  String get authorLookupNone => 'No author details for this book';
 }

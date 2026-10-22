@@ -7495,5 +7495,9 @@
   "boActivityMinutes": "{count} min",
   "@boActivityMinutes": {"placeholders": {"count": {"type": "int"}}},
   "boActivityHours": "{count} h",
-  "@boActivityHours": {"placeholders": {"count": {"type": "double"}}}
+  "@boActivityHours": {"placeholders": {"count": {"type": "double"}}},
+  "chooseAuthor": "Choose an author",
+  "loadingAuthors": "Loading authors...",
+  "authorLookupFailed": "Couldn't load author details",
+  "authorLookupNone": "No author details for this book"
 }
