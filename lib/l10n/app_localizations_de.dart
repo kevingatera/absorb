@@ -11261,4 +11261,16 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get comicNoPages => 'No pages found in this comic.';
+
+  @override
+  String get chooseAuthor => 'Choose an author';
+
+  @override
+  String get loadingAuthors => 'Loading authors...';
+
+  @override
+  String get authorLookupFailed => 'Couldn\'t load author details';
+
+  @override
+  String get authorLookupNone => 'No author details for this book';
 }

@@ -16,6 +16,7 @@ import 'episode_list_sheet.dart';
 import '../services/upcoming_releases_service.dart';
 import 'series_books_sheet.dart';
 import 'author_books_sheet.dart';
+import 'item_author_links.dart';
 
 // ═══════════════════════════════════════════════════════════════
 // Grid book tile (cover + title + author)
@@ -296,12 +297,11 @@ class _GridBookTileState extends State<GridBookTile> {
             ),
           // Author
           if (author.isNotEmpty)
-            Text(
-              author,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            ItemAuthorLine(
+              itemId: itemId,
+              metadata: metadata,
+              enabled: !widget.selectionMode,
               style: tt.labelSmall?.copyWith(
-                color: cs.onSurfaceVariant,
                 fontSize: 10 * coverGridTextScale(context),
               ),
             ),
@@ -599,12 +599,10 @@ class GridSeriesTile extends StatelessWidget {
             ),
           ),
           if (author.isNotEmpty)
-            Text(
-              author,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            ItemAuthorLine(
+              itemId: item['id'] as String? ?? '',
+              metadata: metadata,
               style: tt.labelSmall?.copyWith(
-                color: cs.onSurfaceVariant,
                 fontSize: 10 * coverGridTextScale(context),
               ),
             ),
@@ -655,10 +653,14 @@ class GridSeriesTileDirect extends StatelessWidget {
 
     // Get author from first book
     String author = '';
+    String firstBookId = '';
+    Map<String, dynamic> firstBookMetadata = const {};
     if (books.isNotEmpty) {
       final firstBook = books.first as Map<String, dynamic>? ?? {};
+      firstBookId = firstBook['id'] as String? ?? '';
       final media = firstBook['media'] as Map<String, dynamic>? ?? {};
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+      firstBookMetadata = metadata;
       author = metadata['authorName'] as String? ?? '';
     }
 
@@ -721,12 +723,10 @@ class GridSeriesTileDirect extends StatelessWidget {
             ),
           ),
           if (author.isNotEmpty)
-            Text(
-              author,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            ItemAuthorLine(
+              itemId: firstBookId,
+              metadata: firstBookMetadata,
               style: tt.labelSmall?.copyWith(
-                color: cs.onSurfaceVariant,
                 fontSize: 10 * coverGridTextScale(context),
               ),
             ),

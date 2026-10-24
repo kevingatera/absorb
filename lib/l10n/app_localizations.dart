@@ -19196,6 +19196,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No pages found in this comic.'**
   String get comicNoPages;
+
+  /// No description provided for @chooseAuthor.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose an author'**
+  String get chooseAuthor;
+
+  /// No description provided for @loadingAuthors.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading authors...'**
+  String get loadingAuthors;
+
+  /// No description provided for @authorLookupFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load author details'**
+  String get authorLookupFailed;
+
+  /// No description provided for @authorLookupNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No author details for this book'**
+  String get authorLookupNone;
 }
 
 class _AppLocalizationsDelegate

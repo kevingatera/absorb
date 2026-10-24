@@ -794,9 +794,14 @@ class _AppShellState extends State<AppShell>
           opacity: _fadeController,
           child: IndexedStack(
             index: _currentIndex,
+            // Pages stay alive while hidden, so mark them as not ticking.
+            // Widgets read TickerMode to tell whether their tab is on screen.
             children: List<Widget>.generate(
               _pages.length,
-              (i) => _pages[i] ?? const SizedBox.shrink(),
+              (i) => TickerMode(
+                enabled: i == _currentIndex,
+                child: _pages[i] ?? const SizedBox.shrink(),
+              ),
             ),
           ),
         ),
