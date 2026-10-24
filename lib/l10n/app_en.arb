@@ -6060,5 +6060,9 @@
   "comicLeftToRight": "Left to right",
   "comicRightToLeft": "Right to left (manga)",
   "comicNeedsConnection": "This comic opens page by page from your server, so it needs a connection.",
-  "comicNoPages": "No pages found in this comic."
+  "comicNoPages": "No pages found in this comic.",
+  "chooseAuthor": "Choose an author",
+  "loadingAuthors": "Loading authors...",
+  "authorLookupFailed": "Couldn't load author details",
+  "authorLookupNone": "No author details for this book"
 }

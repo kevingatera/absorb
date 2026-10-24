@@ -3598,16 +3598,20 @@ class LibraryScreenState extends State<LibraryScreen>
     final effectiveTab = _currentTab;
     Widget headerFor(int i) =>
         _buildHeaderSliver(context, useSharedFocus: i == effectiveTab);
+    // IndexedStack keeps every tab in the tree, so mark the hidden ones as not
+    // ticking. Widgets read TickerMode to tell whether their tab is on screen.
+    Widget tab(int i, Widget child) =>
+        TickerMode(enabled: i == effectiveTab, child: child);
     // Beside a navigation rail the grid gets less than the screen's width.
     return CoverGridScope(
       child: IndexedStack(
         index: effectiveTab,
         children: [
-          _buildGrid(headerFor(0)),
-          _buildSeriesGrid(headerFor(1)),
-          _buildAuthorsGrid(headerFor(2)),
-          _buildNarratorsGrid(headerFor(3)),
-          _buildListsGrid(headerFor(4)),
+          tab(0, _buildGrid(headerFor(0))),
+          tab(1, _buildSeriesGrid(headerFor(1))),
+          tab(2, _buildAuthorsGrid(headerFor(2))),
+          tab(3, _buildNarratorsGrid(headerFor(3))),
+          tab(4, _buildListsGrid(headerFor(4))),
         ],
       ),
     );
