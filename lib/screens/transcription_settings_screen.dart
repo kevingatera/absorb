@@ -4,6 +4,7 @@ import '../l10n/app_localizations.dart';
 import '../services/player_settings.dart';
 import '../services/transcription_service.dart';
 import '../services/lyrics_service.dart';
+import '../services/sync_point_store.dart';
 import '../services/transcript_line_store.dart';
 import '../widgets/overlay_toast.dart';
 
@@ -28,6 +29,7 @@ class _TranscriptionSettingsScreenState
   double _lyricsFontSize = 16;
   int _lyricsMaxLines = 3;
   bool _lyricsFullCover = true;
+  bool _syncReadingListening = false;
   String _readAlongMode = 'word';
   int _readAlongColor = PlayerSettings.defaultReadAlongColor;
   final Map<TranscriptionModelSize, bool> _downloaded = {};
@@ -47,6 +49,7 @@ class _TranscriptionSettingsScreenState
     _lyricsMaxLines = await PlayerSettings.getLyricsMaxLines();
     _lyricsFullCover = await PlayerSettings.getLyricsFullCover();
     _readAlongMode = await PlayerSettings.getReadAlongMode();
+    _syncReadingListening = await PlayerSettings.getSyncReadingListening();
     _readAlongColor = await PlayerSettings.getReadAlongColor();
     for (final s in TranscriptionModelSize.values) {
       _downloaded[s] = await TranscriptionService.instance.isModelDownloaded(s);
@@ -78,6 +81,7 @@ class _TranscriptionSettingsScreenState
     );
     if (ok != true || !mounted) return;
     await TranscriptLineStore.instance.clearAll();
+    await SyncPointStore.instance.clearAll();
     if (!mounted) return;
     setState(() => _transcriptCacheBytes = 0);
     showOverlayToast(context, l.lyricsCacheCleared,
@@ -325,6 +329,17 @@ class _TranscriptionSettingsScreenState
                       await LyricsService.instance.reloadDisplayPrefs();
                     },
                   ),
+                ),
+                SwitchListTile(
+                  title: Text(l.syncReadingListening),
+                  subtitle: Text(l.syncReadingListeningHint,
+                      style: tt.bodySmall
+                          ?.copyWith(color: cs.onSurfaceVariant, height: 1.35)),
+                  value: _syncReadingListening,
+                  onChanged: (v) async {
+                    setState(() => _syncReadingListening = v);
+                    await PlayerSettings.setSyncReadingListening(v);
+                  },
                 ),
                 ListTile(
                   title: Text(l.readAlongFollow),

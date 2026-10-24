@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/server_url.dart';
 import 'api_service.dart';
 import 'auth_tokens.dart';
+import 'server_backend.dart';
 
 /// Represents a saved user account (server + credentials).
 class SavedAccount {
@@ -14,6 +15,7 @@ class SavedAccount {
   final String? userId;
   final bool isLegacyToken;
   final Map<String, String> customHeaders;
+  final ServerBackend backend;
 
   SavedAccount({
     required this.serverUrl,
@@ -23,6 +25,7 @@ class SavedAccount {
     this.userId,
     this.isLegacyToken = false,
     Map<String, String> customHeaders = const {},
+    this.backend = ServerBackend.audiobookshelf,
   }) : customHeaders = Map.unmodifiable(customHeaders);
 
   /// Unique key for scoping per-user SharedPreferences data.
@@ -43,6 +46,7 @@ class SavedAccount {
         'userId': userId,
         'isLegacyToken': isLegacyToken,
         'customHeaders': customHeaders,
+        'backend': backend.key,
       };
 
   factory SavedAccount.fromJson(
@@ -59,6 +63,7 @@ class SavedAccount {
         customHeaders: json.containsKey('customHeaders')
             ? Map<String, String>.from(json['customHeaders'] as Map? ?? const {})
             : legacyCustomHeaders,
+        backend: ServerBackend.fromKey(json['backend'] as String?),
       );
 
   @override
@@ -84,6 +89,10 @@ class UserAccountService {
 
   static const _accountsKey = 'saved_accounts';
   static const _activeKey = 'active_account_scope';
+
+  /// Runs before a sign-in changes the active account, so anything still
+  /// being recorded for the old one is saved under it first.
+  static Future<void> Function(SavedAccount next)? beforeAccountChange;
 
   List<SavedAccount> _accounts = [];
   String? _activeScopeKey;
@@ -122,10 +131,43 @@ class UserAccountService {
     // Load active scope
     _activeScopeKey = prefs.getString(_activeKey);
     debugPrint('[UserAccount] Loaded ${_accounts.length} accounts, active=$_activeScopeKey');
+    await _alignScopeWithSession(prefs);
+  }
+
+  /// The signed-in session lives in the plain server_url / username keys
+  /// while everything per account is stored under the active scope. If the
+  /// two ever disagree, the app talks to the server as one user but saves
+  /// progress and settings under another, so trust the session and point the
+  /// scope back at it.
+  Future<void> _alignScopeWithSession(SharedPreferences prefs) async {
+    final server = prefs.getString('server_url');
+    final username = prefs.getString('username');
+    if (server == null || username == null || username.isEmpty) return;
+    SavedAccount? match;
+    for (final a in _accounts) {
+      if (a.username == username &&
+          normalizeServerUrl(a.serverUrl) == normalizeServerUrl(server)) {
+        match = a;
+        break;
+      }
+    }
+    if (match == null || match.scopeKey == _activeScopeKey) return;
+    debugPrint('[UserAccount] Active scope $_activeScopeKey did not match the '
+        'signed-in $username - switching the scope to ${match.scopeKey}');
+    _activeScopeKey = match.scopeKey;
+    await _persistActiveKey();
   }
 
   /// Save or update an account after login. Sets it as active.
   Future<void> saveAccount(SavedAccount account) async {
+    // Nothing in here may stop the account being saved: a sign-in that got
+    // this far has already written the new session, and bailing out now
+    // leaves the old account's scope active under it.
+    try {
+      await beforeAccountChange?.call(account);
+    } catch (e) {
+      debugPrint('[UserAccount] beforeAccountChange failed: $e');
+    }
     // Remove existing entry for same server+username (update token)
     _accounts.removeWhere(
         (a) => a.serverUrl == account.serverUrl && a.username == account.username);
@@ -176,6 +218,7 @@ class UserAccountService {
         userId: old.userId,
         isLegacyToken: old.isLegacyToken,
         customHeaders: old.customHeaders,
+        backend: old.backend,
       );
       await _persist();
     }
@@ -291,6 +334,7 @@ class UserAccountService {
       userId: old.userId,
       isLegacyToken: old.isLegacyToken,
       customHeaders: old.customHeaders,
+      backend: old.backend,
     );
     await _persist();
   }
@@ -334,6 +378,7 @@ class UserAccountService {
       userId: old.userId,
       isLegacyToken: old.isLegacyToken,
       customHeaders: customHeaders,
+      backend: old.backend,
     );
 
     final oldScope = old.scopeKey;

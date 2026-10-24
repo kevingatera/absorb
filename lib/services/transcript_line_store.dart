@@ -161,6 +161,20 @@ class TranscriptLineStore {
     return null;
   }
 
+  /// The first real, ebook-exact line starting at or after [t] within
+  /// [within] seconds, or null. Read along can only find the book's own
+  /// words on the page, so with no anchor yet it looks ahead for one.
+  TranscriptLine? nextExactLine(String key, double t, {double within = 90}) {
+    final lines = _cache[key];
+    if (lines == null || lines.isEmpty) return null;
+    for (final l in lines) {
+      if (l.start < t) continue;
+      if (l.start > t + within) break;
+      if (l.exact && !l.approx && l.text.trim().isNotEmpty) return l;
+    }
+    return null;
+  }
+
   /// Up to [count] lines running on from the one that begins at [start],
   /// for filling a page of transcript downwards. Silence placeholders are
   /// left out. Empty when that line isn't in the cache.

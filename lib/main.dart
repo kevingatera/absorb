@@ -34,6 +34,9 @@ import 'services/carplay_service.dart';
 import 'services/chromecast_service.dart';
 import 'services/episode_notification_service.dart';
 import 'services/home_widget_service.dart';
+import 'services/siri_service.dart';
+import 'services/narrated_books.dart';
+import 'services/read_listen_sync.dart';
 import 'services/log_service.dart';
 import 'services/quick_actions_service.dart';
 import 'services/setup_link_service.dart';
@@ -204,6 +207,10 @@ Future<void> applyOrientationLock() async {
 void main() async {
   HttpOverrides.global = _CertOverrides();
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  ReadListenSync.instance.start();
+  try {
+    await NarratedBooks.load().timeout(const Duration(seconds: 2));
+  } catch (_) {}
   final appLinks = AppLinks();
 
   // These calls use platform channels that require an Activity. When Android
@@ -239,8 +246,10 @@ void main() async {
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
     classicWordingNotifier.value = await PlayerSettings.getClassicWording();
     PlayerSettings.showExplicitBadge = await PlayerSettings.getShowExplicitBadge();
+    PlayerSettings.showEbookBadge = await PlayerSettings.getShowEbookBadge();
     PlayerSettings.mp3IndexSeeking = await PlayerSettings.getMp3IndexSeeking();
     PlayerSettings.coverSize = await PlayerSettings.getCoverSize();
+    PlayerSettings.cardButtonFill = await PlayerSettings.getCardButtonFill();
     // Restore last cover seed color so the theme doesn't flash on startup
     {
       final seedInt = await PlayerSettings.getCoverSeedColor();
@@ -716,8 +725,10 @@ class _AuthGateState extends State<AuthGate> {
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
     classicWordingNotifier.value = await PlayerSettings.getClassicWording();
     PlayerSettings.showExplicitBadge = await PlayerSettings.getShowExplicitBadge();
+    PlayerSettings.showEbookBadge = await PlayerSettings.getShowEbookBadge();
     PlayerSettings.mp3IndexSeeking = await PlayerSettings.getMp3IndexSeeking();
     PlayerSettings.coverSize = await PlayerSettings.getCoverSize();
+    PlayerSettings.cardButtonFill = await PlayerSettings.getCardButtonFill();
     // Rotation lock: main() applied it before scope was active, so that pass
     // read the never-written unscoped key and always came up unlocked. The
     // timeout matters: on a headless boot (Android Auto bind) there is no
@@ -828,6 +839,10 @@ class _AuthGateState extends State<AuthGate> {
         // Initialize homescreen widget
         await HomeWidgetService().init();
       }
+      if (Platform.isIOS) {
+        // Siri requests wait on this; a Siri launch reaches it headless.
+        await SiriService().init();
+      }
       // App-icon long-press shortcuts. On Android the service registers
       // dynamic shortcuts + handler; on iOS it only wires the handler since
       // shortcut items themselves are declared statically in Info.plist
@@ -854,7 +869,7 @@ class _AuthGateState extends State<AuthGate> {
       return const AuthLoadingScreen();
     }
 
-    if (auth.isAuthenticated) {
+    if (auth.isAuthenticated || auth.isSignedOut) {
       return AppShell(
         key: ValueKey(UserAccountService().activeScopeKey),
         startOnAbsorbing: auth.startOnAbsorbingAfterAccountChange,

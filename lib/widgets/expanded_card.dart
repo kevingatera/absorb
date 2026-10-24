@@ -19,7 +19,7 @@ import 'ebook_router.dart';
 import '../services/lyrics_service.dart';
 import 'lyrics_overlay.dart';
 import 'overlay_toast.dart';
-import 'cover_art_viewer.dart';
+import 'full_cover_viewer.dart';
 import '../services/ebook_cache.dart';
 import '../services/find_in_ebook.dart';
 import '../main.dart' show colorSourceNotifier, useColorEverywhereNotifier, manualSeedNotifier, manualColorScheme;
@@ -199,13 +199,6 @@ class _ExpandedCardState extends State<ExpandedCard> {
     final lib = context.read<LibraryProvider>();
     return lib.getCoverUrl(_itemId, width: 1200);
   }
-
-  /// Higher-resolution cover for the full-screen zoom viewer.
-  String? get _viewerCoverUrl {
-    final lib = context.read<LibraryProvider>();
-    return lib.getCoverUrl(_itemId, width: 2400);
-  }
-
   bool get _isLocalCover => _coverUrl != null && _coverUrl!.startsWith('/');
 
   @override
@@ -811,12 +804,10 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                       _startPlayback();
                                     }
                                   } : null,
-                                  onLongPress: () => showCoverArtViewer(
+                                  onLongPress: _coverUrl == null ? null : () => showFullCoverViewer(
                                     context,
+                                    source: CoverImageSource.fromUrl(_coverUrl!, mediaHeaders),
                                     title: _title,
-                                    coverUrl: _coverUrl,
-                                    hiResCoverUrl: _viewerCoverUrl,
-                                    httpHeaders: mediaHeaders,
                                   ),
                                   child: Container(
                                   width: coverW,

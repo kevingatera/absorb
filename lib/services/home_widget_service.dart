@@ -11,7 +11,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio_player_service.dart';
 import 'api_service.dart';
+import 'bookorbit_media_proxy.dart';
+import 'server_backend.dart';
 import 'download_service.dart';
+import 'progress_sync_service.dart';
 import 'scoped_prefs.dart';
 import 'user_account_service.dart';
 import 'wear_player_service.dart';
@@ -192,6 +195,17 @@ class HomeWidgetService {
       ? stashedPosition
       : null;
 
+  /// Whether the local progress record for the last-played item says it is
+  /// done: flagged finished, or saved within a second of the end, which is
+  /// the same cut-off the play path uses to start a book over.
+  static bool lastPlayedIsFinished(Map<String, dynamic>? local) {
+    if (local == null) return false;
+    if (local['isFinished'] == true) return true;
+    final duration = (local['duration'] as num?)?.toDouble() ?? 0;
+    final currentTime = (local['currentTime'] as num?)?.toDouble() ?? 0;
+    return duration > 0 && currentTime >= duration - 1.0;
+  }
+
   /// The stash readers/writers below can run before [init] (the boot-time
   /// engine adopt fires right after the player service starts), and the
   /// HomeWidget plugin throws on iOS until it has been told the app group.
@@ -354,7 +368,8 @@ class HomeWidgetService {
       } catch (_) {}
     }
 
-    final api = ApiService(
+    final api = ApiService.forSession(
+      backend: ServerBackend.loadActive(prefs),
       baseUrl: serverUrl,
       token: token,
       refreshToken: refreshToken,
@@ -370,6 +385,7 @@ class HomeWidgetService {
             username: username,
           ),
     );
+    await api.ensureMediaReady();
 
     try {
       final fullItem = await api.getLibraryItem(itemId);
@@ -453,14 +469,29 @@ class HomeWidgetService {
     final itemId = prefs.getString('widget_item_id');
     debugPrint('[HomeWidget] play_pause: cold resume, itemId=$itemId');
     if (itemId == null) return;
+    final episodeId = prefs.getString('widget_episode_id');
+
+    // The last-played marker still names an item after it finishes with
+    // nothing queued behind it. A headset or car play press then restarted
+    // it from the top (the play path treats a saved position at the end as
+    // "start over") and the first sync un-finished it on the server
+    // (GH #374). A finished item is nothing to resume.
+    final progressKey = episodeId != null ? '$itemId-$episodeId' : itemId;
+    if (lastPlayedIsFinished(
+      await ProgressSyncService().getLocal(progressKey),
+    )) {
+      debugPrint(
+        '[HomeWidget] play_pause: last played $progressKey is finished - '
+        'nothing to resume',
+      );
+      return;
+    }
 
     final api = _apiFromPrefs(prefs);
     debugPrint(
       '[HomeWidget] play_pause: api=${api != null}',
     );
     if (api == null) return;
-
-    final episodeId = prefs.getString('widget_episode_id');
 
     try {
       // A downloaded item needs nothing from the server to start: the download
@@ -549,7 +580,8 @@ class HomeWidgetService {
         );
       } catch (_) {}
     }
-    return ApiService(
+    return ApiService.forSession(
+      backend: ServerBackend.loadActive(prefs),
       baseUrl: serverUrl,
       token: token,
       refreshToken: refreshToken,
@@ -795,6 +827,16 @@ class HomeWidgetService {
   ) async {
     final itemId = player.currentItemId;
     if (itemId == null) return;
+    // While a new item is loading the ids already point at it but the
+    // player's position still belongs to the previous source. Stamping that
+    // pair leaves the new episode carrying the old one's position when the
+    // load fails (GH #385: a podcast auto-advance whose session never
+    // started resumed the next episode from the end of the previous one).
+    // The stash catches up on the update that follows a finished load.
+    if (player.isLoadingNewItem) {
+      debugPrint('[WidgetDebug] Skipping np stash while $itemId is loading');
+      return;
+    }
     await HomeWidget.saveWidgetData<String>('np_item_id', itemId);
     await HomeWidget.saveWidgetData<String?>(
       'np_episode_id',
@@ -866,8 +908,11 @@ class HomeWidgetService {
     // via the widget without their server progress falling behind.
     final api = player.currentApi;
     if (api != null) {
+      // The native core only knows the Audiobookshelf progress endpoint. With
+      // no token it skips the push, and the app syncs on its next start.
       await HomeWidget.saveWidgetData<String>('np_server_url', api.baseUrl);
-      await HomeWidget.saveWidgetData<String>('np_api_token', api.token);
+      await HomeWidget.saveWidgetData<String>(
+          'np_api_token', api.isBookOrbit ? '' : api.token);
     }
 
     // EQ-enabled flag in the app group so a cold widget-launch (engine never
@@ -1090,11 +1135,13 @@ class HomeWidgetService {
       final localReachable = await ApiService.pingServer(
         localUrl,
         customHeaders: headers,
+        backend: ServerBackend.loadActive(prefs),
       ).timeout(const Duration(seconds: 3), onTimeout: () => false);
       if (localReachable) baseUrl = localUrl;
     }
 
-    return ApiService(
+    return ApiService.forSession(
+      backend: ServerBackend.loadActive(prefs),
       baseUrl: baseUrl,
       token: token,
       refreshToken: refreshToken,
@@ -1109,7 +1156,7 @@ class HomeWidgetService {
             serverUrl: remoteUrl,
             username: username,
           ),
-    );
+    ).withMediaReady();
   }
 
   Map<String, dynamic> _extractDailyMap(Map<String, dynamic>? stats) {
@@ -1231,10 +1278,14 @@ class HomeWidgetService {
           // Ask for a bigger one just for the widget file. The Kotlin side caps
           // what it actually hands to RemoteViews, so this only improves the
           // source it has to work from.
-          final widgetCoverUrl = coverUrl.replaceAllMapped(
+          var widgetCoverUrl = coverUrl.replaceAllMapped(
             RegExp(r'([?&])width=\d+'),
             (m) => '${m[1]}width=$_widgetCoverWidth',
           );
+          if (BookOrbitMediaProxy.instance.owns(widgetCoverUrl)) {
+            await BookOrbitMediaProxy.instance.ensureRunning();
+            widgetCoverUrl = widgetCoverUrl.replaceFirst('/thumbnail?', '/cover?');
+          }
           final response = await http
               .get(Uri.parse(widgetCoverUrl))
               .timeout(const Duration(seconds: 10));

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -19,11 +20,14 @@ String ebookExtFromFile(Map<String, dynamic> ebookFile) {
 }
 
 /// Formats the in-app readers can open. EPUB uses the full reader, PDF the
-/// dedicated viewer, and foliate-js covers MOBI/AZW3/CBZ. CBR is RAR-based
-/// and foliate-js can't read it, so it's recognized but stays download-only.
-const foliateEbookFormats = {'mobi', 'azw3', 'cbz'};
-const readableEbookFormats = {'epub', 'pdf', ...foliateEbookFormats};
-const allEbookFormats = {...readableEbookFormats, 'cbr'};
+/// dedicated viewer, foliate-js covers MOBI/AZW3, and comics get the comic
+/// reader. A CBZ opens on the phone; CBR (RAR) and CB7 (7-Zip) need a server
+/// that hands out the pages (BookOrbit), so on their own they stay
+/// download-only.
+const foliateEbookFormats = {'mobi', 'azw3'};
+const comicEbookFormats = {'cbz', 'cbr', 'cb7'};
+const readableEbookFormats = {'epub', 'pdf', 'cbz', ...foliateEbookFormats};
+const allEbookFormats = {...readableEbookFormats, 'cbr', 'cb7'};
 
 /// The ebook to use for a library item: the server's primary (media.ebookFile)
 /// when set, otherwise the best supplementary ebook from libraryFiles - epub
@@ -48,6 +52,16 @@ Map<String, dynamic>? resolveEbookFile(Map<String, dynamic>? item) {
     firstEbook ??= f;
   }
   return firstReadable ?? firstEbook;
+}
+
+/// Whether a library item comes with an ebook, from the full item or from
+/// the minified list form, which only carries the format.
+bool hasEbookFile(Map<String, dynamic>? item) {
+  if (item == null) return false;
+  if (resolveEbookFile(item) != null) return true;
+  final media = item['media'] as Map<String, dynamic>?;
+  final fmt = media?['ebookFormat'];
+  return fmt is String && fmt.isNotEmpty;
 }
 
 Directory? _ebookCacheDirHandle;
@@ -108,6 +122,38 @@ Future<Map<String, dynamic>?> cachedEbookFileFor(String itemId) async {
     return first;
   } catch (_) {}
   return null;
+}
+
+/// Item ids that have an ebook file in the cache.
+Future<List<String>> cachedEbookItemIds() async {
+  final ids = <String>{};
+  try {
+    final dir = await _ebookCacheDir();
+    for (final f in dir.listSync()) {
+      if (f is! File) continue;
+      final name = f.uri.pathSegments.last;
+      final dot = name.lastIndexOf('.');
+      if (dot <= 0) continue;
+      final ext = name.substring(dot + 1).toLowerCase();
+      if (!allEbookFormats.contains(ext)) continue;
+      ids.add(name.substring(0, dot));
+    }
+  } catch (_) {}
+  return ids.toList();
+}
+
+/// Cover kept beside a cached ebook for the offline lists. Named so neither
+/// cachedEbookFileFor nor cachedEbookBytesSync can take it for the book.
+Future<File> ebookCoverCacheFile(String itemId) async {
+  final dir = await _ebookCacheDir();
+  return File('${dir.path}/cover_$itemId.jpg');
+}
+
+Future<void> deleteCachedEbookCover(String itemId) async {
+  try {
+    final f = await ebookCoverCacheFile(itemId);
+    if (f.existsSync()) await f.delete();
+  } catch (_) {}
 }
 
 /// Persistent cache path for an item's ebook, keyed by itemId so it's stable
@@ -179,7 +225,9 @@ Future<File> fetchEbookToCache(
   // manual redirect hops below) plus `?token=` in the URL, because some
   // reverse proxies strip the header - the same reason audio file downloads
   // use the token form (see ApiService.buildFileUrl).
-  final url = '$cleanBase/api/items/$itemId/file/$ino?token=${api.token}';
+  final url = api.isBookOrbit
+      ? api.buildReaderEbookUrl(itemId, ino)
+      : '$cleanBase/api/items/$itemId/file/$ino?token=${api.token}';
 
   debugPrint('[EbookCache] downloading item=$itemId path=/api/items/$itemId/file/$ino');
   final startedAt = DateTime.now();
@@ -206,9 +254,24 @@ Future<File> fetchEbookToCache(
     }
     final ct = response.headers['content-type'] ?? '';
     if (ct.contains('text/html')) throw Exception('Server returned an error page');
+    final total = response.contentLength ?? -1;
+    debugPrint('[EbookCache] receiving item=$itemId bytes=${total < 0 ? 'unknown' : total}');
     final sink = partFile.openWrite();
+    var received = 0;
+    var logged = 0;
     try {
-      await response.stream.pipe(sink);
+      // A stalled transfer used to sit forever with the reader spinning.
+      await sink.addStream(response.stream.timeout(const Duration(seconds: 60)).map((chunk) {
+        received += chunk.length;
+        if (received - logged >= 50 * 1024 * 1024) {
+          logged = received;
+          debugPrint('[EbookCache] item=$itemId received $received of ${total < 0 ? '?' : total} bytes');
+        }
+        return chunk;
+      }));
+    } on TimeoutException {
+      debugPrint('[EbookCache] item=$itemId stalled after $received bytes');
+      throw Exception('The ebook download stopped responding');
     } finally {
       await sink.close();
     }
@@ -233,7 +296,9 @@ Future<void> deleteCachedEbook(String itemId) async {
     for (final f in dir.listSync()) {
       if (f is! File) continue;
       final name = f.uri.pathSegments.last;
-      if (name == itemId || name.startsWith('$itemId.')) {
+      if (name == itemId ||
+          name.startsWith('$itemId.') ||
+          name == 'cover_$itemId.jpg') {
         try { await f.delete(); } catch (_) {}
       }
     }

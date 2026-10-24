@@ -31,17 +31,21 @@ import '../widgets/collection_detail_sheet.dart';
 import '../widgets/playlist_detail_sheet.dart';
 import 'admin_podcasts_screen.dart';
 import 'app_shell.dart';
+import 'book_requests_screen.dart';
 import 'upcoming_releases_screen.dart';
 import '../widgets/audible_series_sheet.dart' show showAudibleRegionPicker;
-import '../widgets/books_sheet_shared.dart' show coverGridCount;
+import '../widgets/books_sheet_shared.dart' show coverGridCount, CoverGridScope;
 import '../widgets/offline_status_icon.dart';
 import '../widgets/rmab_config_sheet.dart'
     show kRmabBaseUrlKey, kRmabApiTokenKey;
 import '../widgets/rmab_search_results_sheet.dart';
 import '../widgets/scroll_reveal.dart';
 import '../services/scoped_prefs.dart';
+import '../services/server_backend.dart';
 import '../services/user_account_service.dart';
 import '../l10n/app_localizations.dart';
+import 'smart_scope_editor_screen.dart';
+import '../widgets/new_list_flow.dart';
 
 /// Responsive grid column count based on available width and the cover size
 /// setting; scales up on tablets/iPads.
@@ -74,6 +78,9 @@ enum LibrarySort {
   sequence,
   random,
   totalDuration,
+  seriesTotalDuration,
+  lastBookAdded,
+  lastBookUpdated,
 }
 
 // ─── Filter modes ────────────────────────────────────────────
@@ -106,6 +113,8 @@ enum LibraryFilter {
   missingMetadata,
   genre,
   tag,
+  // BookOrbit only: one reading status, carried as the filter value.
+  readStatus,
 }
 
 extension LibraryFilterProgressValue on LibraryFilter {
@@ -217,6 +226,8 @@ String? buildLibraryFilterQuery(
     LibraryFilter.genre when genre != null =>
       _encodedLibraryFilter('genres', genre),
     LibraryFilter.tag when tag != null => _encodedLibraryFilter('tags', tag),
+    LibraryFilter.readStatus when filterValue != null =>
+      _encodedLibraryFilter('readStatus', filterValue),
     LibraryFilter.missingMetadata when missingMetadata != null =>
       _encodedLibraryFilter('missing', missingMetadata.filterValue),
     _ => null,
@@ -241,13 +252,58 @@ bool libraryFilterSupportsMediaType(
   };
 }
 
+/// The sort a BookOrbit server actually runs for [sort]. It has no duration
+/// sort, only one author order, file dates are its date added, and it keeps
+/// no last-listened time to sort progress by.
+LibrarySort librarySortForServer(LibrarySort sort) {
+  if (!ServerBackend.active.isBookOrbit) return sort;
+  return switch (sort) {
+    LibrarySort.authorFirstLast => LibrarySort.authorName,
+    LibrarySort.progress => LibrarySort.dateStarted,
+    LibrarySort.duration ||
+    LibrarySort.fileCreated ||
+    LibrarySort.lastModified => LibrarySort.recentlyAdded,
+    _ => sort,
+  };
+}
+
+/// BookOrbit has no supplementary ebooks, track counts, abridged or explicit
+/// flags, or RSS feeds to filter on. Audiobookshelf has no reading statuses.
+bool libraryFilterSupportedOnServer(LibraryFilter filter) {
+  if (!ServerBackend.active.isBookOrbit) {
+    return filter != LibraryFilter.readStatus;
+  }
+  return switch (filter) {
+    LibraryFilter.hasSupplementaryEbook ||
+    LibraryFilter.noSupplementaryEbook ||
+    LibraryFilter.singleTrack ||
+    LibraryFilter.multipleTracks ||
+    LibraryFilter.abridged ||
+    LibraryFilter.feedOpen ||
+    LibraryFilter.explicit => false,
+    _ => true,
+  };
+}
+
+bool missingMetadataSupportedOnServer(MissingMetadataField field) {
+  if (!ServerBackend.active.isBookOrbit) return true;
+  return switch (field) {
+    MissingMetadataField.asin ||
+    MissingMetadataField.subtitle ||
+    MissingMetadataField.narrators ||
+    MissingMetadataField.chapters => false,
+    _ => true,
+  };
+}
+
 bool libraryFilterRequiresValue(LibraryFilter filter) => switch (filter) {
   LibraryFilter.series ||
   LibraryFilter.author ||
   LibraryFilter.narrator ||
   LibraryFilter.language ||
   LibraryFilter.publisher ||
-  LibraryFilter.publishedDecade => true,
+  LibraryFilter.publishedDecade ||
+  LibraryFilter.readStatus => true,
   _ => false,
 };
 
@@ -507,7 +563,22 @@ class LibraryScreenState extends State<LibraryScreen>
       if (mounted) AppShell.notifyScreenReady(1);
     });
     _loadRmabConfigured();
+    _loadBookRequests();
     SocketService().addAuthorsChangedListener(_onAuthorsChanged);
+    SocketService().addItemRemovedListener(_onItemRemoved);
+  }
+
+  // A book deleted on the server or added to a library out of Book Dock
+  // leaves the grid right away, without reloading it.
+  void _onItemRemoved(Map<String, dynamic> data) {
+    final id = data['id'];
+    if (!mounted || id is! String) return;
+    final index = _items.indexWhere((i) => !i.containsKey('collapsedSeries') && i['id'] == id);
+    if (index < 0) return;
+    setState(() {
+      _items.removeAt(index);
+      if (_totalItems > 0) _totalItems--;
+    });
   }
 
   // Live-refresh the authors tab when authors change on the server (edits,
@@ -546,6 +617,21 @@ class LibraryScreenState extends State<LibraryScreen>
         if (total != null) _totalAuthors = total;
       });
     });
+  }
+
+  // BookOrbit's own requests, offered in place of ReadMeABook when the
+  // account can use them.
+  bool _bookRequestsOn = false;
+
+  Future<void> _loadBookRequests() async {
+    final api = context.read<AuthProvider>().apiService;
+    final on = api != null && (await api.bookRequestAccess()).canRequest;
+    if (mounted && on != _bookRequestsOn) setState(() => _bookRequestsOn = on);
+  }
+
+  void _openBookRequests() {
+    final q = _searchController.text.trim();
+    BookRequestsScreen.open(context, query: q);
   }
 
   Future<void> _loadRmabConfigured() async {
@@ -601,6 +687,7 @@ class LibraryScreenState extends State<LibraryScreen>
         lib.selectedLibraryId != null) {
       _lastLibraryId = lib.selectedLibraryId;
       _loadGeneration++;
+      _loadBookRequests();
       // Cover shape and subtitles can differ per library.
       PlayerSettings.getRectangleCoversFor(lib.selectedLibraryId).then((v) {
         if (mounted && v != _rectangleCovers)
@@ -763,10 +850,10 @@ class LibraryScreenState extends State<LibraryScreen>
     if (!mounted) return;
     setState(() {
       // Book library sort/filter
-      _sort = LibrarySort.values.firstWhere(
+      _sort = librarySortForServer(LibrarySort.values.firstWhere(
         (s) => s.name == sortName,
         orElse: () => LibrarySort.recentlyAdded,
-      );
+      ));
       _sortAsc = sortAsc;
       if (_sort == LibrarySort.random) _randomSeed = Random().nextInt(100000);
       // Don't restore filter from prefs if the user (typically via a
@@ -780,9 +867,10 @@ class LibraryScreenState extends State<LibraryScreen>
           orElse: () => LibraryFilter.none,
         );
         if (!libraryFilterSupportsMediaType(
-          _filter,
-          isPodcast: isPodcast,
-        )) {
+              _filter,
+              isPodcast: isPodcast,
+            ) ||
+            !libraryFilterSupportedOnServer(_filter)) {
           _filter = LibraryFilter.none;
         }
         final restoredGenre = isPodcast ? podcastGenreFilter : genreFilter;
@@ -813,6 +901,10 @@ class LibraryScreenState extends State<LibraryScreen>
             : MissingMetadataField.values
                   .where((field) => field.name == missingMetadataFilterName)
                   .firstOrNull;
+        if (_missingMetadataFilter != null &&
+            !missingMetadataSupportedOnServer(_missingMetadataFilter!)) {
+          _missingMetadataFilter = null;
+        }
         if (_filter == LibraryFilter.missingMetadata &&
             _missingMetadataFilter == null) {
           _filter = LibraryFilter.none;
@@ -1031,6 +1123,7 @@ class LibraryScreenState extends State<LibraryScreen>
   @override
   void dispose() {
     SocketService().removeAuthorsChangedListener(_onAuthorsChanged);
+    SocketService().removeItemRemovedListener(_onItemRemoved);
     _authorsRefreshDebounce?.cancel();
     _debounce?.cancel();
     _searchController.dispose();
@@ -1108,7 +1201,12 @@ class LibraryScreenState extends State<LibraryScreen>
         break;
       case LibrarySort.duration:
       case LibrarySort.totalDuration:
+      case LibrarySort.seriesTotalDuration:
         sort = 'media.duration';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.lastBookAdded:
+        sort = 'addedAt';
         desc = _sortAsc ? 0 : 1;
         break;
       case LibrarySort.fileSize:
@@ -1116,6 +1214,7 @@ class LibraryScreenState extends State<LibraryScreen>
         desc = _sortAsc ? 0 : 1;
         break;
       case LibrarySort.lastUpdated:
+      case LibrarySort.lastBookUpdated:
         sort = 'updatedAt';
         desc = _sortAsc ? 0 : 1;
         break;
@@ -1423,6 +1522,15 @@ class LibraryScreenState extends State<LibraryScreen>
         break;
       case LibrarySort.totalDuration:
         sort = 'numBooks';
+        break;
+      case LibrarySort.seriesTotalDuration:
+        sort = 'totalDuration';
+        break;
+      case LibrarySort.lastBookAdded:
+        sort = 'lastBookAdded';
+        break;
+      case LibrarySort.lastBookUpdated:
+        sort = 'lastBookUpdated';
         break;
       default:
         sort = 'name';
@@ -2402,6 +2510,7 @@ class LibraryScreenState extends State<LibraryScreen>
         : missingMetadataFieldLabel(l, _missingMetadataFilter!),
     LibraryFilter.genre => _genreFilter ?? l.genre,
     LibraryFilter.tag => _tagFilter ?? l.tag,
+    LibraryFilter.readStatus => _filterValueLabel ?? l.readStatusTitle,
     LibraryFilter.none => '',
   };
 
@@ -2583,6 +2692,29 @@ class LibraryScreenState extends State<LibraryScreen>
                 _openUpcomingReleases();
               }
             : null,
+        // Audiobookshelf only lets users with update permission make
+        // collections, and they hold books only; BookOrbit has no playlists.
+        onNewCollection: tab == LibraryTab.lists &&
+                !context.read<LibraryProvider>().isOffline &&
+                !context.read<LibraryProvider>().isPodcastLibrary &&
+                (ServerBackend.active.isBookOrbit || context.read<AuthProvider>().canUpdateMetadata)
+            ? () {
+                Navigator.pop(ctx);
+                startNewList(context, playlist: false);
+              }
+            : null,
+        onNewPlaylist: tab == LibraryTab.lists && !context.read<LibraryProvider>().isOffline && !ServerBackend.active.isBookOrbit
+            ? () {
+                Navigator.pop(ctx);
+                startNewList(context, playlist: true);
+              }
+            : null,
+        onNewSmartScope: tab == LibraryTab.lists && !context.read<LibraryProvider>().isOffline && ServerBackend.active.isBookOrbit
+            ? () {
+                Navigator.pop(ctx);
+                SmartScopeEditorScreen.open(context);
+              }
+            : null,
         currentSeriesFilter: _seriesFilter,
         onSeriesFilterChanged: tab == LibraryTab.series
             ? (sf) {
@@ -2680,8 +2812,17 @@ class LibraryScreenState extends State<LibraryScreen>
               canQuickMatch: auth.isAdmin && !libWatch.isPodcastLibrary,
               canMarkProgress: !libWatch.isPodcastLibrary,
               canDelete: auth.canDelete,
+              canDownload: !libWatch.isPodcastLibrary,
               onSelectAll: _toggleSelectAll,
               onClear: _clearSelection,
+              onDownload: () => _runBatchAction(
+                () => DesktopBatchActions.download(
+                  context,
+                  _selectableVisibleItems()
+                      .where((i) => _selectedItemIds.contains(i['id']))
+                      .toList(),
+                ),
+              ),
               onQuickMatch: () => _runBatchAction(
                 () => DesktopBatchActions.quickMatch(
                   context,
@@ -2940,8 +3081,11 @@ class LibraryScreenState extends State<LibraryScreen>
       elevation: 0,
       scrolledUnderElevation: 0,
       automaticallyImplyLeading: false,
+      // The bar is laid out loosely, so the header fills its full height
+      // itself rather than leaving a bare strip under the count row.
       flexibleSpace: ClipRect(
         child: Stack(
+          fit: StackFit.expand,
           children: [
             Positioned.fill(child: headerBackground),
             Column(
@@ -3019,6 +3163,9 @@ class LibraryScreenState extends State<LibraryScreen>
                               ),
                             ),
                           ),
+                        // Holds the row at the select button's height on
+                        // tabs without it, so the search bar doesn't jump.
+                        if (!canSelectItems) const SizedBox(height: 48),
                         if (canSelectItems)
                           Tooltip(
                             message: _selectionMode
@@ -3451,15 +3598,22 @@ class LibraryScreenState extends State<LibraryScreen>
     final effectiveTab = _currentTab;
     Widget headerFor(int i) =>
         _buildHeaderSliver(context, useSharedFocus: i == effectiveTab);
-    return IndexedStack(
-      index: effectiveTab,
-      children: [
-        _buildGrid(headerFor(0)),
-        _buildSeriesGrid(headerFor(1)),
-        _buildAuthorsGrid(headerFor(2)),
-        _buildNarratorsGrid(headerFor(3)),
-        _buildListsGrid(headerFor(4)),
-      ],
+    // IndexedStack keeps every tab in the tree, so mark the hidden ones as not
+    // ticking. Widgets read TickerMode to tell whether their tab is on screen.
+    Widget tab(int i, Widget child) =>
+        TickerMode(enabled: i == effectiveTab, child: child);
+    // Beside a navigation rail the grid gets less than the screen's width.
+    return CoverGridScope(
+      child: IndexedStack(
+        index: effectiveTab,
+        children: [
+          tab(0, _buildGrid(headerFor(0))),
+          tab(1, _buildSeriesGrid(headerFor(1))),
+          tab(2, _buildAuthorsGrid(headerFor(2))),
+          tab(3, _buildNarratorsGrid(headerFor(3))),
+          tab(4, _buildListsGrid(headerFor(4))),
+        ],
+      ),
     );
   }
 
@@ -3873,7 +4027,8 @@ class LibraryScreenState extends State<LibraryScreen>
         _searchEpisodeResults.isEmpty &&
         _searchTagResults.isEmpty &&
         _searchGenreResults.isEmpty) {
-      final showRmabCta = _rmabConfigured && !libProv.isPodcastLibrary;
+      final showBookRequestCta = _bookRequestsOn && !libProv.isPodcastLibrary;
+      final showRmabCta = !showBookRequestCta && _rmabConfigured && !libProv.isPodcastLibrary;
       return CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
@@ -3904,6 +4059,13 @@ class LibraryScreenState extends State<LibraryScreen>
                         ),
                       ),
                       onPressed: _openPodcastLookup,
+                    ),
+                  ] else if (showBookRequestCta) ...[
+                    const SizedBox(height: 20),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.playlist_add_rounded, size: 18),
+                      label: Text(l.breqLibraryCta),
+                      onPressed: _openBookRequests,
                     ),
                   ] else if (showRmabCta) ...[
                     const SizedBox(height: 20),
@@ -4133,7 +4295,7 @@ class LibraryScreenState extends State<LibraryScreen>
         ),
       ],
       // ─── RMAB FOOTER (when results exist + RMAB configured) ───
-      if (showPodcastLookup || (_rmabConfigured && !isPodcast)) ...[
+      if (showPodcastLookup || ((_bookRequestsOn || _rmabConfigured) && !isPodcast)) ...[
         Padding(
           padding: const EdgeInsets.only(top: 28),
           child: Divider(color: cs.outlineVariant.withValues(alpha: 0.4)),
@@ -4151,6 +4313,8 @@ class LibraryScreenState extends State<LibraryScreen>
             borderRadius: BorderRadius.circular(10),
             onTap: showPodcastLookup
                 ? _openPodcastLookup
+                : _bookRequestsOn
+                ? _openBookRequests
                 : () {
                     final q = _searchController.text.trim();
                     debugPrint('[RMAB] library footer CTA tapped (query="$q")');
@@ -4163,6 +4327,8 @@ class LibraryScreenState extends State<LibraryScreen>
                   Icon(
                     showPodcastLookup
                         ? Icons.podcasts_rounded
+                        : _bookRequestsOn
+                        ? Icons.playlist_add_rounded
                         : Icons.menu_book_rounded,
                     size: 20,
                     color: cs.primary,
@@ -4174,6 +4340,8 @@ class LibraryScreenState extends State<LibraryScreen>
                           ? l.adminPodcastsSearchItunesFor(
                               _searchController.text.trim(),
                             )
+                          : _bookRequestsOn
+                          ? l.breqFooterCta(_searchController.text.trim())
                           : l.rmabSearchFooterCta(
                               _searchController.text.trim(),
                             ),

@@ -94,13 +94,31 @@ class TranscriptChunker {
   }) async {
     final epub = await cachedEpubPath();
     final watch = Stopwatch()..start();
-    final segs = await TranscriptionService.instance.transcribeWindowSegments(
+    final rawSegs = await TranscriptionService.instance.transcribeWindowSegments(
       itemId: key,
       startSeconds: start,
       windowSeconds: windowSeconds,
       preferAccuracy: preferAccuracy && epub == null,
     );
     final wall = watch.elapsedMilliseconds / 1000.0;
+    // Whisper sometimes stamps a segment well past the clip it was given (a
+    // 30s window came back ending at 59s). Believed, that stretches the last
+    // sentence over half a minute of narration that was never transcribed,
+    // and the loop picks up after the hole. Clip the stamps to the window.
+    final limit = windowSeconds + 0.5;
+    var clipped = 0;
+    final segs = <({double start, double end, String text})>[];
+    for (final s in rawSegs) {
+      final e = s.end > limit ? limit : s.end;
+      final b = s.start > e ? e : s.start;
+      if (e != s.end || b != s.start) clipped++;
+      if (e <= b) continue;
+      segs.add((start: b, end: e, text: s.text));
+    }
+    if (clipped > 0) {
+      debugPrint('[Transcript] clipped $clipped segment stamps that ran past '
+          'the ${windowSeconds.toStringAsFixed(0)}s window');
+    }
     final heard = wordsFromSegments([
       for (final s in segs)
         (start: start + s.start, end: start + s.end, text: s.text.trim()),
@@ -162,9 +180,4 @@ class TranscriptChunker {
     );
   }
 
-  /// Mark a stretch as covered without any text - silence or music, so the
-  /// loop moves past it instead of retrying the same window forever.
-  Future<void> markEmpty(double start, double windowSeconds) =>
-      TranscriptLineStore.instance
-          .addLines(key, [TranscriptLine(start, start + windowSeconds, ' ')]);
 }

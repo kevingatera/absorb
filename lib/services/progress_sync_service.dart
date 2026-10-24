@@ -217,12 +217,16 @@ class ProgressSyncService {
           duration: duration,
         );
       } else {
-        await api.updateProgress(
+        final ok = await api.updateProgress(
           itemId,
           currentTime: currentTime,
           duration: await serverTrustedDuration(api, itemId, duration),
           isFinished: isFinished ? true : null,
         );
+        if (!ok) {
+          debugPrint('[Sync] Server did not take $itemId - keeping it pending');
+          return false;
+        }
       }
 
       final pendingList = await ScopedPrefs.getStringList('pending_syncs');
@@ -257,7 +261,14 @@ class ProgressSyncService {
       final pendingList = List<String>.from(
           await ScopedPrefs.getStringList('pending_syncs'));
 
-      if (pendingList.isEmpty) return;
+      if (pendingList.isEmpty) {
+        // Nothing to listen-sync, but reading and offline listening time
+        // still wait on this flush; returning here left them queued and the
+        // retry below rescheduling for nothing.
+        await _flushOfflineListeningTimeInternal(api: api);
+        await _flushPendingEbookProgress(api);
+        return;
+      }
       pendingAtStart = pendingList.length;
 
       final batch = pendingList.take(maxItems).toList();
@@ -348,20 +359,28 @@ class ProgressSyncService {
           final localFinished = data['isFinished'] as bool? ?? false;
           final syncDuration =
               await serverTrustedDuration(api, itemId, localDuration);
+          final bool pushed;
           if (episodeId != null) {
-            await api.updateEpisodeProgress(
+            pushed = await api.updateEpisodeProgress(
               apiItemId, episodeId,
               currentTime: localTime,
               duration: syncDuration,
               isFinished: localFinished ? true : null,
             );
           } else {
-            await api.updateProgress(
+            pushed = await api.updateProgress(
               apiItemId,
               currentTime: localTime,
               duration: syncDuration,
               isFinished: localFinished ? true : null,
             );
+          }
+          if (!pushed) {
+            // Dropping it as flushed is how a refused push lost a position
+            // overnight: the next start resumed from the stale spot.
+            debugPrint('[Sync] Push for $itemId did not reach the server - keeping it for the next flush');
+            _consecutiveFailures++;
+            break;
           }
           debugPrint('[Sync] Flushed $itemId via progress update: ${localTime}s');
           // Reset backoff on success - a successful response proves
@@ -460,6 +479,11 @@ class ProgressSyncService {
       await _removePendingEbook(itemId);
       return;
     }
+    if (_isOnline && api.lastEbookProgressStatus == 404) {
+      debugPrint('[Sync] Not queueing the ebook position for $itemId: the server has no such book');
+      await _removePendingEbook(itemId);
+      return;
+    }
     final pending = await getPendingEbookProgress();
     pending[itemId] = {
       'loc': location,
@@ -483,6 +507,10 @@ class ProgressSyncService {
     }
   }
 
+  /// Forget a queued position the server has since moved past, so the retry
+  /// can't put the older place back.
+  Future<void> dropPendingEbookProgress(String itemId) => _removePendingEbook(itemId);
+
   Future<void> _removePendingEbook(String itemId) async {
     final pending = await getPendingEbookProgress();
     if (pending.remove(itemId) == null) return;
@@ -505,6 +533,11 @@ class ProgressSyncService {
       if (ok) {
         await _removePendingEbook(entry.key);
         _consecutiveFailures = 0;
+      } else if (api.lastEbookProgressStatus == 404) {
+        // Another server's download read here, or a book since deleted: this
+        // server will never take it, and retrying held up the rest.
+        debugPrint('[Sync] Dropping the queued ebook position for ${entry.key}: the server has no such book');
+        await _removePendingEbook(entry.key);
       } else {
         // Server unreachable - let the existing backoff schedule the retry.
         _consecutiveFailures++;

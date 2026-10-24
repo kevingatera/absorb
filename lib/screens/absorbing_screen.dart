@@ -72,37 +72,19 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
   final _cast = ChromecastService();
   String _queueMode = 'off';
-  // Guards the indicator switch path so rapid tap/drag events can't stack
-  // multiple animations for the same target page.
-  int? _lastIndicatorSelection;
 
-  /// Switch cards via the page dots. Rapid repeat selections of the same
-  /// target are ignored, and each accepted change gets a selection haptic.
-  Future<void> _switchToAbsorbingPage(int index, {bool animate = true}) async {
+  /// Move to a card picked from the page dots. Taps animate; drag scrubbing
+  /// jumps so the strip follows the finger and cancels any running animation.
+  void _switchToAbsorbingPage(int index, {bool animate = true}) {
     if (!_pageController.hasClients) return;
-
-    final target = index < 0 ? 0 : index;
-    final currentPage =
-        (_pageController.page ?? _pageController.initialPage.toDouble())
-            .round();
-    if (target == currentPage) return;
-    if (_lastIndicatorSelection == target) return;
-
-    _lastIndicatorSelection = target;
-    unawaited(HapticFeedback.selectionClick());
-
     if (animate) {
-      await _pageController.animateToPage(
-        target,
-        duration: const Duration(milliseconds: 220),
+      unawaited(_pageController.animateToPage(
+        index,
+        duration: const Duration(milliseconds: 400),
         curve: Curves.easeOutCubic,
-      );
+      ));
     } else {
-      _pageController.jumpToPage(target);
-    }
-
-    if (_lastIndicatorSelection == target) {
-      _lastIndicatorSelection = null;
+      _pageController.jumpToPage(index);
     }
   }
 
@@ -1051,7 +1033,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
 // ─── PAGE DOTS ──────────────────────────────────────────────
 
-class _PageDots extends StatelessWidget {
+class _PageDots extends StatefulWidget {
   final int count;
   final PageController controller;
   final ValueChanged<int> onSelected;
@@ -1063,16 +1045,43 @@ class _PageDots extends StatelessWidget {
     required this.onScrubSelected,
   });
 
-  int _indexForPosition(double dx, double stripWidth) {
-    if (count <= 1 || stripWidth <= 0) return 0;
-    final clampedDx = dx.clamp(0.0, stripWidth);
-    final ratio = (clampedDx / stripWidth).clamp(0.0, 0.999999);
-    return (ratio * count).floor().clamp(0, count - 1);
+  @override
+  State<_PageDots> createState() => _PageDotsState();
+}
+
+class _PageDotsState extends State<_PageDots> {
+  // One key per dot cell. Hit testing reads each cell's laid-out box, so a
+  // visible dot always owns its own cell, including while the active pill
+  // is animating its width.
+  final _cellKeys = <GlobalKey>[];
+  // Index the current drag last selected. Null outside a drag, so a drag
+  // only jumps and buzzes when its index changes.
+  int? _scrubIndex;
+
+  int _indexAt(Offset globalPosition) {
+    for (var i = 0; i < widget.count; i++) {
+      final box = _cellKeys[i].currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) continue;
+      if (box.globalToLocal(globalPosition).dx < box.size.width) return i;
+    }
+    return widget.count - 1;
+  }
+
+  void _scrubTo(Offset globalPosition) {
+    final index = _indexAt(globalPosition);
+    if (index == _scrubIndex) return;
+    _scrubIndex = index;
+    unawaited(HapticFeedback.selectionClick());
+    widget.onScrubSelected(index);
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final count = widget.count;
+    while (_cellKeys.length < count) {
+      _cellKeys.add(GlobalKey());
+    }
     return LayoutBuilder(builder: (context, constraints) {
       // Active dot is 20 wide, inactive is 6, each has horizontal padding on both sides.
       // Solve for padding: count * (6 + 2*pad) + (20 - 6) <= maxWidth
@@ -1083,14 +1092,11 @@ class _PageDots extends StatelessWidget {
       final extraActive = activeDotWidth - dotSize;
       final available = maxWidth - extraActive - count * dotSize;
       final hPad = (available / (count * 2)).clamp(1.5, 8.0);
-      // Natural width of the strip (dots + padding + the extra active width).
-      // The FittedBox keeps the strip compact and centered, so gesture
-      // positions must map against this width, not the layout maxWidth.
-      final stripWidth = count * (dotSize + 2 * hPad) + extraActive;
 
       return ListenableBuilder(
-        listenable: controller,
+        listenable: widget.controller,
         builder: (_, __) {
+          final controller = widget.controller;
           final page = controller.hasClients && controller.positions.length == 1 ? (controller.page ?? 0).round() : 0;
           // The compact phone header can leave less width than the dots'
           // minimum footprint (padding bottoms out at 1.5); an unclipped Row
@@ -1102,17 +1108,23 @@ class _PageDots extends StatelessWidget {
             // scrubs between cards, not just tapping a single dot.
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTapDown: (details) => onSelected(
-                  _indexForPosition(details.localPosition.dx, stripWidth)),
-              onHorizontalDragStart: (details) => onScrubSelected(
-                  _indexForPosition(details.localPosition.dx, stripWidth)),
-              onHorizontalDragUpdate: (details) => onScrubSelected(
-                  _indexForPosition(details.localPosition.dx, stripWidth)),
+              // Taps commit only once the pointer lifts without becoming a
+              // drag, so a touch that turns into a scrub or is cancelled
+              // never animates.
+              onTapUp: (details) {
+                unawaited(HapticFeedback.selectionClick());
+                widget.onSelected(_indexAt(details.globalPosition));
+              },
+              onHorizontalDragStart: (details) => _scrubTo(details.globalPosition),
+              onHorizontalDragUpdate: (details) => _scrubTo(details.globalPosition),
+              onHorizontalDragEnd: (_) => _scrubIndex = null,
+              onHorizontalDragCancel: () => _scrubIndex = null,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: List.generate(count, (i) {
                   final active = i == page;
                   return Padding(
+                    key: _cellKeys[i],
                     padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 12),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 300),
@@ -1623,7 +1635,9 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
               ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 16), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual, maxLines: 1))),
               ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 16),
                 label: FittedBox(fit: BoxFit.scaleDown, child: Text(widget.isMerged ? l.queueModeAuto : _currentIsPodcast ? l.queueModeShowLabel : l.queueModeSeriesLabel, maxLines: 1))),
-              ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 16), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist, maxLines: 1))),
+              // BookOrbit has no playlists.
+              if (!context.read<AuthProvider>().isBookOrbit || _queueMode == 'playlist')
+                ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 16), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist, maxLines: 1))),
               // Collection mode is entered via a collection's Play button, not
               // picked here - shown only while active so the selection is valid.
               if (_queueMode == 'collection')

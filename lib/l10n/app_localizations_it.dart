@@ -38,6 +38,17 @@ class AppLocalizationsIt extends AppLocalizations {
       'Absorb couldn\'t reach your server for collections and playlists.';
 
   @override
+  String get listsNoneBookOrbit => 'No collections or Smart Scopes';
+
+  @override
+  String get listsNoneHintBookOrbit =>
+      'Collections and Smart Scopes are made on your BookOrbit server, and show up here.';
+
+  @override
+  String get listsLoadFailedHintBookOrbit =>
+      'Absorb couldn\'t reach your server for collections and Smart Scopes.';
+
+  @override
   String get cancel => 'Cancel';
 
   @override
@@ -77,6 +88,17 @@ class AppLocalizationsIt extends AppLocalizations {
   String get later => 'Later';
 
   @override
+  String get whatsNewTitle => 'Absorb was updated';
+
+  @override
+  String whatsNewContent(String version) {
+    return 'You\'re now on $version.';
+  }
+
+  @override
+  String get whatsNewButton => 'See what\'s new';
+
+  @override
   String get gotIt => 'Got it';
 
   @override
@@ -108,6 +130,9 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get continueListening => 'Continue Listening';
+
+  @override
+  String get continueReading => 'Continue Reading';
 
   @override
   String get continueSeries => 'Continue Series';
@@ -198,7 +223,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get loginWaitingForSso => 'Waiting for SSO...';
 
   @override
-  String get loginRedirectUri => 'Redirect URI: audiobookshelf://oauth';
+  String loginRedirectUri(String redirectUri) {
+    return 'Redirect URI: $redirectUri';
+  }
 
   @override
   String get loginOrSignInManually => 'or sign in manually';
@@ -314,6 +341,14 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get setupLinkSigningIn => 'Checking sign-in link...';
+
+  @override
+  String get loginPlayDownloads => 'Play your downloads';
+
+  @override
+  String signedOutDownloadsNote(String username) {
+    return 'You\'re signed out. Anything you listen to here syncs to $username when you sign back in.';
+  }
 
   @override
   String get loginPasteLink => 'Paste login link';
@@ -512,6 +547,15 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get numberOfBooks => 'Number of Books';
+
+  @override
+  String get sortTotalDuration => 'Total duration';
+
+  @override
+  String get sortLastBookAdded => 'Last book added';
+
+  @override
+  String get sortLastBookUpdated => 'Last book updated';
 
   @override
   String get publishedYear => 'Published Year';
@@ -719,6 +763,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get downloadsCompleted => 'Completed';
 
   @override
+  String get downloadsEbooks => 'Ebooks';
+
+  @override
   String get downloadsWaiting => 'Waiting...';
 
   @override
@@ -752,6 +799,26 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String downloadsRemovedTitle(String title) {
     return '\"$title\" removed';
+  }
+
+  @override
+  String downloadFailedMissingFile(String title) {
+    return 'Couldn\'t download \"$title\" - one of its files isn\'t on the server. A library scan may fix it.';
+  }
+
+  @override
+  String downloadFailedNoSpace(String title) {
+    return 'Couldn\'t download \"$title\" - not enough storage space';
+  }
+
+  @override
+  String downloadFailedPermission(String title) {
+    return 'Couldn\'t download \"$title\" - check the download location in Settings';
+  }
+
+  @override
+  String downloadFailedGeneric(String title) {
+    return 'Couldn\'t download \"$title\"';
   }
 
   @override
@@ -848,6 +915,26 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get bookmarksNoBookmarks => 'No bookmarks yet';
+
+  @override
+  String get bookmarksSearchHint => 'Search bookmarks';
+
+  @override
+  String get bookmarksNoMatches => 'No bookmarks match your search';
+
+  @override
+  String batchDownloadQueued(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Downloading $count books',
+      one: 'Downloading 1 book',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get batchDownloadNothingNew => 'Already downloaded';
 
   @override
   String bookmarksDeleteCount(int count) {
@@ -1685,6 +1772,1032 @@ class AppLocalizationsIt extends AppLocalizations {
       'On - lock screen & CarPlay show chapter progress';
 
   @override
+  String get nowPlayingText => 'Now playing text';
+
+  @override
+  String get nowPlayingTextSubtitle =>
+      'Choose what the media controls show on each line';
+
+  @override
+  String get nowPlayingTopLine => 'Top line';
+
+  @override
+  String get nowPlayingSecondLine => 'Second line';
+
+  @override
+  String get nowPlayingNotShown => 'Not shown';
+
+  @override
+  String get nowPlayingTopLineRequired =>
+      'The top line needs at least one item';
+
+  @override
+  String get nowPlayingPieceChapter => 'Chapter';
+
+  @override
+  String get nowPlayingPieceTitle => 'Book title';
+
+  @override
+  String get nowPlayingPieceNarrator => 'Narrator';
+
+  @override
+  String get nowPlayingPieceSeries => 'Series';
+
+  @override
+  String get nowPlayingPiecePercent => 'Book percentage';
+
+  @override
+  String get nowPlayingPieceChapterNumber => 'Chapter number';
+
+  @override
+  String get nowPlayingPieceTimeLeft => 'Time left';
+
+  @override
+  String nowPlayingChapterNumber(int number, int total) {
+    return 'Ch. $number/$total';
+  }
+
+  @override
+  String nowPlayingTimeLeft(String time) {
+    return '$time left';
+  }
+
+  @override
+  String get bookDockBadgePending => 'Pending';
+
+  @override
+  String get bookDockBadgeExtracting => 'Reading file';
+
+  @override
+  String get bookDockBadgeFetching => 'Looking up';
+
+  @override
+  String get bookDockBadgeError => 'Error';
+
+  @override
+  String get bookDockNeedsReview => 'Needs review';
+
+  @override
+  String get bookDockNoMatch => 'No match';
+
+  @override
+  String get bookDockApplied => 'Applied';
+
+  @override
+  String get bookDockNotApplied => 'Found details not used';
+
+  @override
+  String get bookDockNoDestination => 'No destination set';
+
+  @override
+  String get bookDockNoAuthor => 'No author yet';
+
+  @override
+  String get bookDockLookUpAgain => 'Look up again';
+
+  @override
+  String get bookDockLookingUp => 'Looking up details again';
+
+  @override
+  String get bookDockLookUpFailed => 'Couldn\'t look up details';
+
+  @override
+  String get bookDockProposedChanges => 'Proposed changes';
+
+  @override
+  String get bookDockNoChanges => 'No details found online yet';
+
+  @override
+  String get bookDockStillReading => 'The server is still reading this file';
+
+  @override
+  String get bookDockRoleBook => 'Book';
+
+  @override
+  String get bookDockRoleCover => 'Cover';
+
+  @override
+  String get bookDockRoleMetadata => 'Metadata';
+
+  @override
+  String get bookDockRoleExtra => 'Extra';
+
+  @override
+  String get bookDockFieldTitle => 'Title';
+
+  @override
+  String get bookDockFieldSubtitle => 'Subtitle';
+
+  @override
+  String get bookDockFieldAuthors => 'Authors';
+
+  @override
+  String get bookDockFieldSeries => 'Series';
+
+  @override
+  String get bookDockFieldPublisher => 'Publisher';
+
+  @override
+  String get bookDockFieldYear => 'Year';
+
+  @override
+  String get bookDockFieldLanguage => 'Language';
+
+  @override
+  String get bookDockFieldIsbn => 'ISBN';
+
+  @override
+  String bookDockMatch(int percent) {
+    return '$percent% match';
+  }
+
+  @override
+  String bookDockFileCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files',
+      one: '1 file',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String bookDockGoesTo(String library) {
+    return 'Goes to $library';
+  }
+
+  @override
+  String bookDockChangedFields(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count fields',
+      one: '1 field',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String bookDockFilesInEntry(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files in this entry',
+      one: 'File in this entry',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String bookDockAdded(String date) {
+    return 'Added $date';
+  }
+
+  @override
+  String get bookDockAddToLibrary => 'Add to library';
+
+  @override
+  String get bookDockUseFound => 'Use found details';
+
+  @override
+  String get bookDockRemoveTitle => 'Remove from Book Dock?';
+
+  @override
+  String get bookDockRemoveFailed => 'Couldn\'t remove this file';
+
+  @override
+  String get bookDockPickLibrary => 'Add to which library?';
+
+  @override
+  String get bookDockNoLibraries =>
+      'Your account can\'t add books to a library';
+
+  @override
+  String get bookDockFileFailed => 'Couldn\'t add this file to the library';
+
+  @override
+  String get bookDockDuplicateBody =>
+      'A file with this name is already in that library. Remove it from Book Dock?';
+
+  @override
+  String get bookDockDetailsUpdated => 'Details updated';
+
+  @override
+  String get bookDockUseFoundFailed => 'No found details to use';
+
+  @override
+  String bookDockRemoveBody(String title) {
+    return 'This deletes $title from the server.';
+  }
+
+  @override
+  String bookDockRemoved(String title) {
+    return 'Removed $title from Book Dock';
+  }
+
+  @override
+  String bookDockFiled(String title, String library) {
+    return 'Added $title to $library';
+  }
+
+  @override
+  String bookDockFileFailedReason(String reason) {
+    return 'Couldn\'t add this file: $reason';
+  }
+
+  @override
+  String bookDockDuplicateTitle(String library) {
+    return 'Already in $library';
+  }
+
+  @override
+  String get bomatchSearchAll => 'Search all sources';
+
+  @override
+  String get bomatchSearching => 'Searching...';
+
+  @override
+  String get bomatchSearchFailed =>
+      'Couldn\'t search for matches. Check your connection and try again.';
+
+  @override
+  String get bomatchNoResults => 'No matches found';
+
+  @override
+  String get bomatchStrong => 'Strong matches';
+
+  @override
+  String get bomatchPossible => 'Possible matches';
+
+  @override
+  String get bomatchSourceTimeout => 'timed out';
+
+  @override
+  String get bomatchSourceBusy => 'busy';
+
+  @override
+  String get bomatchSourceFailed => 'failed';
+
+  @override
+  String get bomatchLinked => 'Linked';
+
+  @override
+  String get bomatchSameIsbn => 'Same ISBN';
+
+  @override
+  String get bomatchFewDetails => 'Few details';
+
+  @override
+  String get bomatchBack => 'All results';
+
+  @override
+  String get bomatchFillEmpty => 'Fill empty';
+
+  @override
+  String get bomatchTakeAll => 'Take all';
+
+  @override
+  String get bomatchOnlyDifferences => 'Only differences';
+
+  @override
+  String get bomatchNow => 'Now';
+
+  @override
+  String get bomatchEmpty => 'Empty';
+
+  @override
+  String get bomatchKindNew => 'New';
+
+  @override
+  String get bomatchKindChange => 'Change';
+
+  @override
+  String get bomatchKindSmall => 'Small change';
+
+  @override
+  String get bomatchKindSame => 'Same';
+
+  @override
+  String get bomatchKindNone => 'Not in result';
+
+  @override
+  String get bomatchKeep => 'Keep';
+
+  @override
+  String get bomatchUse => 'Use';
+
+  @override
+  String get bomatchMerge => 'Merge';
+
+  @override
+  String get bomatchReplace => 'Replace';
+
+  @override
+  String get bomatchUseThis => 'Use this';
+
+  @override
+  String get bomatchChosen => 'Chosen';
+
+  @override
+  String bomatchOther(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count other books',
+      one: '1 other book',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String bomatchChanged(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count changes',
+      one: '1 change',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String bomatchNew(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count new',
+      one: '1 new',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String bomatchApply(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Apply $count changes',
+      one: 'Apply 1 change',
+      zero: 'Apply',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String bomatchOtherSources(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count other sources',
+      one: '1 other source',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String bomatchFrom(String source) {
+    return 'From $source';
+  }
+
+  @override
+  String get breqTitle => 'Book requests';
+
+  @override
+  String get breqTabRequest => 'Request a book';
+
+  @override
+  String get breqTabMine => 'My requests';
+
+  @override
+  String get breqTabAll => 'All requests';
+
+  @override
+  String get breqNoAccess =>
+      'Your account can\'t request books on this server.';
+
+  @override
+  String get breqTitleHint => 'Book title';
+
+  @override
+  String get breqAuthorHint => 'Author';
+
+  @override
+  String get breqKindAudiobook => 'Audiobook';
+
+  @override
+  String get breqKindEbook => 'E-book';
+
+  @override
+  String get breqKindComic => 'Comic';
+
+  @override
+  String get breqSearch => 'Search';
+
+  @override
+  String get breqSearching => 'Searching...';
+
+  @override
+  String get breqSearchFailed =>
+      'Couldn\'t search. Check your connection and try again.';
+
+  @override
+  String get breqSearchPrompt =>
+      'Search for a book the library does not have yet to request it.';
+
+  @override
+  String get breqNoResults => 'No matching books found';
+
+  @override
+  String get breqInLibrary => 'In your library';
+
+  @override
+  String get breqYouAsked => 'You requested this';
+
+  @override
+  String get breqSomeoneAsked => 'Already requested by someone else';
+
+  @override
+  String get breqView => 'View';
+
+  @override
+  String get breqRequest => 'Request';
+
+  @override
+  String get breqRequested => 'Requested';
+
+  @override
+  String get breqAddMeToo => 'Add me too';
+
+  @override
+  String get breqLibrary => 'Library';
+
+  @override
+  String get breqLibraryApprover => 'Let the approver decide';
+
+  @override
+  String get breqLibraryChoose => 'Choose a library';
+
+  @override
+  String get breqNote => 'Note for the approver';
+
+  @override
+  String get breqNoteHint => 'Anything worth knowing about this request';
+
+  @override
+  String get breqAutoApproved => 'Your requests are approved right away.';
+
+  @override
+  String get breqSubmitted => 'Request submitted';
+
+  @override
+  String get breqJoined => 'Added you to the existing request';
+
+  @override
+  String get breqFailed => 'Couldn\'t send the request';
+
+  @override
+  String get breqStatusPending => 'Pending';
+
+  @override
+  String get breqStatusApproved => 'Approved';
+
+  @override
+  String get breqStatusRejected => 'Rejected';
+
+  @override
+  String get breqStatusCancelled => 'Cancelled';
+
+  @override
+  String get breqStatusSearching => 'Searching';
+
+  @override
+  String get breqStatusGrabbed => 'Release found';
+
+  @override
+  String get breqStatusDownloading => 'Downloading';
+
+  @override
+  String get breqStatusImporting => 'Importing';
+
+  @override
+  String get breqStatusNeedsReview => 'Needs review';
+
+  @override
+  String get breqStatusAvailable => 'Available';
+
+  @override
+  String get breqStatusFailed => 'Failed';
+
+  @override
+  String get breqWaitingApproval => 'Waiting for approval';
+
+  @override
+  String get breqWaitingRelease => 'Waiting for a release to be picked';
+
+  @override
+  String get breqLookingForRelease => 'Looking for a release';
+
+  @override
+  String get breqStartingDownload => 'Starting the download';
+
+  @override
+  String get breqAddingToLibrary => 'Adding to the library';
+
+  @override
+  String get breqWaitingCheck => 'Waiting for a manual check';
+
+  @override
+  String get breqReady => 'Ready in your library';
+
+  @override
+  String get breqSomethingWrong => 'Something went wrong';
+
+  @override
+  String get breqShowHidden => 'Show hidden';
+
+  @override
+  String get breqHidden => 'Hidden';
+
+  @override
+  String get breqMineEmpty => 'You haven\'t requested any books yet.';
+
+  @override
+  String get breqAllEmpty => 'No requests yet.';
+
+  @override
+  String get breqLoadFailed => 'Couldn\'t load requests.';
+
+  @override
+  String get breqLoadMore => 'Load more';
+
+  @override
+  String get breqApprove => 'Approve';
+
+  @override
+  String get breqReject => 'Reject';
+
+  @override
+  String get breqCancel => 'Cancel request';
+
+  @override
+  String get breqHide => 'Hide from my list';
+
+  @override
+  String get breqUnhide => 'Show in my list';
+
+  @override
+  String get breqLeave => 'Leave request';
+
+  @override
+  String get breqDelete => 'Delete request';
+
+  @override
+  String get breqOpenBook => 'Open book';
+
+  @override
+  String get breqCancelConfirm =>
+      'Cancel this request? A download in progress stops too.';
+
+  @override
+  String get breqDeleteConfirm => 'Delete this request? This can\'t be undone.';
+
+  @override
+  String get breqRejectTitle => 'Reject request';
+
+  @override
+  String get breqRejectReason => 'Reason (optional)';
+
+  @override
+  String get breqApproveTitle => 'Approve request';
+
+  @override
+  String get breqApproveLibraryNeeded =>
+      'Choose the library this book goes into.';
+
+  @override
+  String get breqApprovedToast => 'Request approved';
+
+  @override
+  String get breqRejectedToast => 'Request rejected';
+
+  @override
+  String get breqCancelledToast => 'Request cancelled';
+
+  @override
+  String get breqHiddenToast => 'Hidden from your list';
+
+  @override
+  String get breqRestoredToast => 'Back on your list';
+
+  @override
+  String get breqDeletedToast => 'Request deleted';
+
+  @override
+  String get breqLeftToast => 'You left this request';
+
+  @override
+  String get breqActionFailed => 'Couldn\'t update the request';
+
+  @override
+  String get breqFactRequestedBy => 'Requested by';
+
+  @override
+  String get breqFactRequestedOn => 'Requested on';
+
+  @override
+  String get breqFactLibrary => 'Library';
+
+  @override
+  String get breqFactDecidedBy => 'Decided by';
+
+  @override
+  String get breqFactNote => 'Note from the requester';
+
+  @override
+  String get breqFactDecisionNote => 'Decision note';
+
+  @override
+  String get breqFactAlsoWanted => 'Also wanted by';
+
+  @override
+  String get breqLibraryCta => 'Request a book';
+
+  @override
+  String get breqSettingsSubtitle =>
+      'Ask for books the library does not have yet';
+
+  @override
+  String get navHoldBookRequests => 'Book requests';
+
+  @override
+  String breqLibraryDefault(String library) {
+    return 'Default ($library)';
+  }
+
+  @override
+  String breqFailedReason(String reason) {
+    return 'Couldn\'t send the request: $reason';
+  }
+
+  @override
+  String breqDownloadingPercent(int percent) {
+    return 'Downloading, $percent%';
+  }
+
+  @override
+  String breqAddedTo(String library) {
+    return 'Added to $library';
+  }
+
+  @override
+  String breqRejectedWithNote(String note) {
+    return 'Rejected: $note';
+  }
+
+  @override
+  String breqFailedWithReason(String reason) {
+    return 'Failed: $reason';
+  }
+
+  @override
+  String breqRequestedBy(String name) {
+    return 'Requested by $name';
+  }
+
+  @override
+  String breqActionFailedReason(String reason) {
+    return 'Couldn\'t update the request: $reason';
+  }
+
+  @override
+  String breqFooterCta(String query) {
+    return 'Request \"$query\"';
+  }
+
+  @override
+  String breqCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count requests',
+      one: '1 request',
+      zero: 'No requests',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get breqFindRelease => 'Find a release';
+
+  @override
+  String get breqTryAnotherRelease => 'Try another release';
+
+  @override
+  String get breqApproveAndFind => 'Approve and find a release';
+
+  @override
+  String get breqReviewButton => 'Review download';
+
+  @override
+  String get breqStopDownload => 'Stop download';
+
+  @override
+  String get breqStopDownloadConfirm =>
+      'Stop this download? The request goes back to approved so another release can be picked.';
+
+  @override
+  String get breqDiscardImport => 'Discard download';
+
+  @override
+  String get breqDiscardConfirm =>
+      'Discard this download? The request is marked failed and can be tried again with another release.';
+
+  @override
+  String get breqFileAnyway => 'Add to library';
+
+  @override
+  String get breqFiledToast => 'Added to the library';
+
+  @override
+  String get breqDiscardedToast => 'Download discarded';
+
+  @override
+  String get breqStoppedToast => 'Download stopped';
+
+  @override
+  String get breqGrabTitle => 'Download this release?';
+
+  @override
+  String get breqGrab => 'Download';
+
+  @override
+  String get breqGrabbed => 'Download started';
+
+  @override
+  String get breqGrabFailed => 'Couldn\'t start that download';
+
+  @override
+  String get breqReleaseVipWarning =>
+      'This tracker only lets VIP accounts download it.';
+
+  @override
+  String get breqReleaseNoBookFile =>
+      'This release has no book file BookOrbit can add to a library.';
+
+  @override
+  String get breqReleaseCheckFailed =>
+      'Couldn\'t check what\'s in this release. Try again or pick another one.';
+
+  @override
+  String get breqCheckingRelease => 'Checking the files...';
+
+  @override
+  String get breqSearchAgain => 'Search again';
+
+  @override
+  String get breqSearchTerms => 'Search terms';
+
+  @override
+  String get breqIsbnHint => 'Leave empty to search by title and author';
+
+  @override
+  String get breqSearchingIndexers =>
+      'Searching your indexers. This can take up to a minute.';
+
+  @override
+  String get breqReleasesFailed => 'Couldn\'t search for releases.';
+
+  @override
+  String get breqNoSourcesSetUp => 'No search sources are set up in BookOrbit.';
+
+  @override
+  String get breqNoSourcesOn =>
+      'Every search source is switched off in BookOrbit.';
+
+  @override
+  String get breqNoSourceCarries =>
+      'None of your search sources carry this kind of book.';
+
+  @override
+  String get breqNoReleases => 'No releases found. Try different search terms.';
+
+  @override
+  String get breqFromCache => 'from a recent search';
+
+  @override
+  String get breqIndexerUnauthorized => 'sign-in failed';
+
+  @override
+  String get breqIndexerThrottled => 'busy';
+
+  @override
+  String get breqIndexerTimeout => 'timed out';
+
+  @override
+  String get breqIndexerUnreachable => 'unreachable';
+
+  @override
+  String get breqIndexerNoMedium => 'does not carry this';
+
+  @override
+  String get breqIndexerError => 'failed';
+
+  @override
+  String get breqSortBest => 'Best match';
+
+  @override
+  String get breqSortSeeders => 'Seeders';
+
+  @override
+  String get breqSortSize => 'Size';
+
+  @override
+  String get breqSortNewest => 'Newest';
+
+  @override
+  String get breqFreeleech => 'Freeleech';
+
+  @override
+  String get breqVipOnly => 'VIP only';
+
+  @override
+  String get breqAlreadyGrabbed => 'Downloaded before';
+
+  @override
+  String get breqReasonIsbn => 'ISBN';
+
+  @override
+  String get breqReasonTitle => 'Title';
+
+  @override
+  String get breqReasonAuthor => 'Author';
+
+  @override
+  String get breqReasonUnknownFormat => 'Unknown format';
+
+  @override
+  String get breqReasonExpectedSize => 'Size';
+
+  @override
+  String get breqReasonSuspiciousSize => 'Unusual size';
+
+  @override
+  String get breqReasonFreeleech => 'Freeleech';
+
+  @override
+  String get breqReasonSeveralBooks => 'Several books';
+
+  @override
+  String get breqReviewTitle => 'Download waiting for a check';
+
+  @override
+  String get breqReviewFailed => 'Couldn\'t load the download details.';
+
+  @override
+  String get breqReviewDockGone =>
+      'The downloaded files are no longer in the Book Dock.';
+
+  @override
+  String get breqReviewNoLibrary =>
+      'This request has no library to add the book to.';
+
+  @override
+  String breqGrabFailedReason(String reason) {
+    return 'Couldn\'t start that download: $reason';
+  }
+
+  @override
+  String breqReleaseCheckFailedReason(String reason) {
+    return 'Couldn\'t check what\'s in this release: $reason';
+  }
+
+  @override
+  String breqReleasesFailedReason(String reason) {
+    return 'Couldn\'t search for releases: $reason';
+  }
+
+  @override
+  String breqReviewFailedReason(String reason) {
+    return 'Couldn\'t load the download details: $reason';
+  }
+
+  @override
+  String breqReleaseCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count releases',
+      one: '1 release',
+      zero: 'No releases',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String breqFileCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files',
+      one: '1 file',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String breqReviewFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files',
+      one: '1 file',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String breqSeeders(int seeders, int leechers) {
+    return '$seeders seeders, $leechers leechers';
+  }
+
+  @override
+  String breqScore(int score) {
+    return 'Score $score';
+  }
+
+  @override
+  String breqReasonPreferredFormat(String format) {
+    return 'Preferred $format';
+  }
+
+  @override
+  String breqReasonFormat(String format) {
+    return '$format';
+  }
+
+  @override
+  String breqReasonSeeders(String count) {
+    return '$count seeders';
+  }
+
+  @override
+  String breqReviewScore(int score, int threshold) {
+    return 'Match score $score. Downloads scoring $threshold or more are added on their own.';
+  }
+
+  @override
+  String breqReviewRequested(String value) {
+    return 'Requested: $value';
+  }
+
+  @override
+  String breqReviewImported(String value) {
+    return 'Downloaded: $value';
+  }
+
+  @override
+  String get breqKindBoth => 'Both';
+
+  @override
+  String get breqEbookLibrary => 'E-book library';
+
+  @override
+  String get breqAudiobookLibrary => 'Audiobook library';
+
+  @override
+  String get breqRequestBoth => 'Request both';
+
+  @override
+  String get breqAddMeToBoth => 'Add me to both';
+
+  @override
+  String get breqRequestEbook => 'Request e-book';
+
+  @override
+  String get breqRequestAudiobook => 'Request audiobook';
+
+  @override
+  String get breqAddMeEbook => 'Add me to the e-book request';
+
+  @override
+  String get breqAddMeAudiobook => 'Add me to the audiobook request';
+
+  @override
+  String get breqPairSubmitted => 'Requested the e-book and the audiobook';
+
+  @override
+  String get breqPairOneJoined =>
+      'Requested both. One was already on its way, so you were added to that request';
+
+  @override
+  String get breqJoinedBoth => 'Added you to both requests';
+
+  @override
+  String get breqJoinsOwned =>
+      'Requested. It will join the copy already in your library';
+
+  @override
   String get speedBookmarkInControls => 'Speed & bookmark in media controls';
 
   @override
@@ -2021,6 +3134,17 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get hideEbookOnlyOffSubtitle => 'Off - all library items shown';
+
+  @override
+  String get homeCardsOpenDetails => 'Open details from Home';
+
+  @override
+  String get homeCardsOpenDetailsOnSubtitle =>
+      'Tapping a Continue Listening or Continue Reading card opens its details';
+
+  @override
+  String get homeCardsOpenDetailsOffSubtitle =>
+      'Tapping a Continue Listening or Continue Reading card picks up where you left off';
 
   @override
   String get showGoodreadsButton => 'Show Goodreads button';
@@ -2953,6 +4077,13 @@ class AppLocalizationsIt extends AppLocalizations {
   String get ebookOnlyNoAudio => 'eBook Only - No Audio';
 
   @override
+  String get absorbAudioNotDownloaded => 'Audio not downloaded';
+
+  @override
+  String get absorbAudioNotDownloadedEbookOnly =>
+      'Audio not downloaded, ebook only';
+
+  @override
   String get fullyAbsorbed => 'Fully Absorbed';
 
   @override
@@ -2963,6 +4094,21 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get addToAbsorbing => 'Add to Absorbing';
+
+  @override
+  String get absorbNext => 'Absorb Next';
+
+  @override
+  String get absorbNextAdded => 'Up next in Absorbing';
+
+  @override
+  String get absorbLast => 'Absorb Last';
+
+  @override
+  String get absorbNextHint => 'Right after what\'s playing now';
+
+  @override
+  String get absorbLastHint => 'At the end of the list';
 
   @override
   String get removedFromAbsorbing => 'Removed from Absorbing';
@@ -3587,6 +4733,33 @@ class AppLocalizationsIt extends AppLocalizations {
   String get collectionNameHint => 'Collection name';
 
   @override
+  String get listsNewCollectionSubtitle => 'Group books into a list you keep';
+
+  @override
+  String get listsNewCollectionNeedsBookSubtitle =>
+      'Start it with at least one book';
+
+  @override
+  String get listsNewPlaylistSubtitle => 'Line up books to listen to in order';
+
+  @override
+  String get listsAddBooksNow => 'Add books now';
+
+  @override
+  String get listsPickBooksNext =>
+      'You\'ll pick books next. A collection on this server needs at least one.';
+
+  @override
+  String get listsCreate => 'Create';
+
+  @override
+  String get listsCollectionNeedsBook =>
+      'A collection needs at least one book, so nothing was created.';
+
+  @override
+  String get listsCreateFailed => 'Couldn\'t create it';
+
+  @override
   String get castToDevice => 'Cast to Device';
 
   @override
@@ -3915,6 +5088,16 @@ class AppLocalizationsIt extends AppLocalizations {
   String get showExplicitBadgeOffSubtitle => 'Off - explicit badge hidden';
 
   @override
+  String get showEbookBadge => 'Show ebook badge';
+
+  @override
+  String get showEbookBadgeOnSubtitle =>
+      'Books with an ebook show a book icon on the cover';
+
+  @override
+  String get showEbookBadgeOffSubtitle => 'Off - ebook badge hidden';
+
+  @override
   String get libraryFallback => 'Library';
 
   @override
@@ -4156,6 +5339,9 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get bookDetailsLabel => 'Book Details';
+
+  @override
+  String get viewCover => 'View cover';
 
   @override
   String get equalizerShort => 'EQ';
@@ -5984,6 +7170,354 @@ class AppLocalizationsIt extends AppLocalizations {
   String get collectionDetailDefaultName => 'Collection';
 
   @override
+  String smartScopeBookCount(int count) {
+    return 'Smart Scope · $count books';
+  }
+
+  @override
+  String get smartScopeNew => 'New Smart Scope';
+
+  @override
+  String get smartScopeNewSubtitle =>
+      'Save a set of filters as a list that keeps itself up to date';
+
+  @override
+  String get smartScopeEditTitle => 'Edit Smart Scope';
+
+  @override
+  String get smartScopeIcon => 'Icon';
+
+  @override
+  String get smartScopePublic => 'Visible to all users';
+
+  @override
+  String get smartScopeKobo => 'Sync to Kobo';
+
+  @override
+  String get smartScopeRules => 'Rules';
+
+  @override
+  String get smartScopeMatchAll => 'Match all';
+
+  @override
+  String get smartScopeMatchAny => 'Match any';
+
+  @override
+  String get smartScopeAddRule => 'Add rule';
+
+  @override
+  String get smartScopeAddGroup => 'Add group';
+
+  @override
+  String get smartScopeGroup => 'Group';
+
+  @override
+  String get smartScopeStartFrom => 'Start from';
+
+  @override
+  String get smartScopeFromScratch => 'Build from scratch';
+
+  @override
+  String get smartScopeTplHasSeries => 'Has a series';
+
+  @override
+  String get smartScopeTplRecent => 'Added recently';
+
+  @override
+  String get smartScopeTplPdf => 'PDF only';
+
+  @override
+  String get smartScopeTplNoGenres => 'No genres';
+
+  @override
+  String get smartScopeTplEpub => 'EPUB only';
+
+  @override
+  String get smartScopeCounting => 'Counting...';
+
+  @override
+  String get smartScopeSort => 'Default sort';
+
+  @override
+  String get smartScopeAddSort => 'Add sort level';
+
+  @override
+  String get smartScopeSortNone => 'No sort set, so books sort by title.';
+
+  @override
+  String get smartScopeAscending => 'Ascending';
+
+  @override
+  String get smartScopeDescending => 'Descending';
+
+  @override
+  String get smartScopeDelete => 'Delete Smart Scope';
+
+  @override
+  String get smartScopeSaveFailed => 'Couldn\'t save the Smart Scope';
+
+  @override
+  String get smartScopeDeleteFailed => 'Couldn\'t delete the Smart Scope';
+
+  @override
+  String get smartScopeLoadFailed => 'Couldn\'t load the Smart Scope';
+
+  @override
+  String get smartScopeUnsupportedRule =>
+      'This rule can only be changed on the BookOrbit web. It\'s kept as it is.';
+
+  @override
+  String get smartScopeAnd => 'and';
+
+  @override
+  String get smartScopeDays => 'days';
+
+  @override
+  String get smartScopeWeeks => 'weeks';
+
+  @override
+  String get smartScopeMonths => 'months';
+
+  @override
+  String get smartScopePickDate => 'Pick a date';
+
+  @override
+  String get smartScopeAddValue => 'Add a value';
+
+  @override
+  String get smartScopeValue => 'Value';
+
+  @override
+  String get smartScopeCustomFields => 'Custom fields';
+
+  @override
+  String get smartScopeAnyProvider => 'Any provider';
+
+  @override
+  String get smartScopeScoreOutstanding => 'Outstanding';
+
+  @override
+  String get smartScopeScoreGood => 'Good';
+
+  @override
+  String get smartScopeScoreFair => 'Fair';
+
+  @override
+  String get smartScopeScorePoor => 'Poor';
+
+  @override
+  String get smartScopeMb => 'MB';
+
+  @override
+  String get smartScopeMaxValues => 'Up to 20 values';
+
+  @override
+  String get scopeFieldTitle => 'Title';
+
+  @override
+  String get scopeFieldAuthor => 'Author';
+
+  @override
+  String get scopeFieldSeries => 'Series';
+
+  @override
+  String get scopeFieldSeriesIndex => 'Series number';
+
+  @override
+  String get scopeFieldGenre => 'Genre';
+
+  @override
+  String get scopeFieldTag => 'Tag';
+
+  @override
+  String get scopeFieldReadStatus => 'Read status';
+
+  @override
+  String get scopeFieldReadProgress => 'Reading progress';
+
+  @override
+  String get scopeFieldRating => 'Your rating';
+
+  @override
+  String get scopeFieldFormat => 'Format';
+
+  @override
+  String get scopeFieldLibrary => 'Library';
+
+  @override
+  String get scopeFieldCollection => 'Collection';
+
+  @override
+  String get scopeFieldPublisher => 'Publisher';
+
+  @override
+  String get scopeFieldLanguage => 'Language';
+
+  @override
+  String get scopeFieldPublishedDate => 'Published date';
+
+  @override
+  String get scopeFieldPublishedYear => 'Published year';
+
+  @override
+  String get scopeFieldAddedAt => 'Date added';
+
+  @override
+  String get scopeFieldStartedAt => 'Date started';
+
+  @override
+  String get scopeFieldFinishedAt => 'Date finished';
+
+  @override
+  String get scopeFieldPageCount => 'Page count';
+
+  @override
+  String get scopeFieldFileSize => 'File size';
+
+  @override
+  String get scopeFieldCommunityRating => 'Community rating';
+
+  @override
+  String get scopeFieldCommunityRatingCount => 'Community review count';
+
+  @override
+  String get scopeFieldMetadataScore => 'Metadata score';
+
+  @override
+  String get scopeFieldIsbn => 'ISBN';
+
+  @override
+  String get scopeFieldDescription => 'Description';
+
+  @override
+  String get scopeFieldCover => 'Cover';
+
+  @override
+  String get scopeFieldAudioCover => 'Audiobook cover';
+
+  @override
+  String get scopeFieldFileAvailability => 'File availability';
+
+  @override
+  String get scopeFieldLockStatus => 'Lock status';
+
+  @override
+  String get scopeFieldSeriesStatus => 'Series status';
+
+  @override
+  String get scopeSortUpdatedAt => 'Date updated';
+
+  @override
+  String get scopeSortLastReadAt => 'Last read';
+
+  @override
+  String get scopeSortRandom => 'Random';
+
+  @override
+  String get scopeOpContains => 'contains';
+
+  @override
+  String get scopeOpNotContains => 'does not contain';
+
+  @override
+  String get scopeOpStartsWith => 'starts with';
+
+  @override
+  String get scopeOpEndsWith => 'ends with';
+
+  @override
+  String get scopeOpEq => 'is';
+
+  @override
+  String get scopeOpNotEq => 'is not';
+
+  @override
+  String get scopeOpIsEmpty => 'is empty';
+
+  @override
+  String get scopeOpIsNotEmpty => 'is not empty';
+
+  @override
+  String get scopeOpGt => 'greater than';
+
+  @override
+  String get scopeOpGte => 'at least';
+
+  @override
+  String get scopeOpLt => 'less than';
+
+  @override
+  String get scopeOpLte => 'at most';
+
+  @override
+  String get scopeOpBetween => 'between';
+
+  @override
+  String get scopeOpIncludesAny => 'includes any of';
+
+  @override
+  String get scopeOpIncludesAll => 'includes all of';
+
+  @override
+  String get scopeOpExcludesAll => 'excludes all of';
+
+  @override
+  String get scopeOpBefore => 'before';
+
+  @override
+  String get scopeOpAfter => 'after';
+
+  @override
+  String get scopeOpWithinLast => 'within the last';
+
+  @override
+  String get scopeOpIsMissing => 'is missing';
+
+  @override
+  String get scopeOpIsPresent => 'is present';
+
+  @override
+  String get scopeOpIsUnread => 'is unread';
+
+  @override
+  String get scopeOpIsInProgress => 'is in progress';
+
+  @override
+  String get scopeOpIsFinished => 'is finished';
+
+  @override
+  String get scopeOpIsLocked => 'is locked';
+
+  @override
+  String get scopeOpIsUnlocked => 'is unlocked';
+
+  @override
+  String get scopeOpIsUpNext => 'is up next';
+
+  @override
+  String get scopeOpIsTrue => 'is yes';
+
+  @override
+  String get scopeOpIsFalse => 'is no';
+
+  @override
+  String smartScopeMatchCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count books match',
+      one: '1 book matches',
+      zero: 'No books match',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String smartScopeDeleteConfirm(String name) {
+    return 'Delete \"$name\"? This can\'t be undone.';
+  }
+
+  @override
   String collectionDetailBookCount(int count) {
     return '$count books';
   }
@@ -6939,6 +8473,66 @@ class AppLocalizationsIt extends AppLocalizations {
       'Playback waits for you to press play';
 
   @override
+  String get sectionCar => 'Android Auto';
+
+  @override
+  String get sectionCarIos => 'CarPlay';
+
+  @override
+  String get sectionSiri => 'Siri';
+
+  @override
+  String get siriUseWithSiri => 'Use with Siri';
+
+  @override
+  String get siriStatusOn =>
+      'On. Siri can find and play your books and podcasts by name.';
+
+  @override
+  String get siriStatusAsk =>
+      'Let Siri find and play your books and podcasts by name.';
+
+  @override
+  String get siriStatusOff =>
+      'Siri is turned off for Absorb. Turn it on in iOS Settings.';
+
+  @override
+  String get siriAllow => 'Allow';
+
+  @override
+  String get siriOpenSettings => 'Open Settings';
+
+  @override
+  String get siriThingsToSay => 'Things to say';
+
+  @override
+  String get siriExamples =>
+      '\"Play [book title] on Absorb\"\n\"Play [series name] on Absorb\"\n\"Play something by [author] on Absorb\"\n\"Play the latest episode of [podcast] on Absorb\"\n\"Resume Absorb\"\n\"Skip back in Absorb\"\n\"Next chapter in Absorb\"\n\"Set a sleep timer in Absorb\"\n\"Add a bookmark in Absorb\"\n\"What am I listening to in Absorb\"';
+
+  @override
+  String get siriShortcutsNote =>
+      'Resume, pause, skips, chapters, the sleep timer, bookmarks and what\'s playing work even without this permission. They are also in the Shortcuts app for automations and the Action button.';
+
+  @override
+  String get carBookOrder => 'Book order in the car';
+
+  @override
+  String get carBookOrderReverse => 'Reverse book order';
+
+  @override
+  String get carBookOrderReverseSubtitle => 'Z to A, or oldest added first';
+
+  @override
+  String get carPodcastOrder => 'Podcast order in the car';
+
+  @override
+  String get carEpisodesOldestFirst => 'Oldest episodes first';
+
+  @override
+  String get carEpisodesOldestFirstSubtitle =>
+      'For shows you listen to from the start';
+
+  @override
   String get androidAutoCatBooks => 'Books';
 
   @override
@@ -6946,6 +8540,12 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get androidAutoCatAuthors => 'Authors';
+
+  @override
+  String get androidAutoCatCollections => 'Collections';
+
+  @override
+  String get androidAutoCatPlaylists => 'Playlists';
 
   @override
   String get showTipsAgain => 'Show tips again';
@@ -7154,17 +8754,63 @@ class AppLocalizationsIt extends AppLocalizations {
   String get chapterShowSeconds => 'Show seconds';
 
   @override
+  String chapterWindowMinutes(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String get chapterLoopCut => 'Loop the cut';
+
+  @override
+  String get chapterFindStart => 'Find the start';
+
+  @override
+  String get chapterFindStartListening => 'Listening around the marker';
+
+  @override
+  String get chapterFindStartNone => 'Nothing here sounds like a chapter start';
+
+  @override
+  String get chapterFindStartWider => 'Search wider';
+
+  @override
+  String get chapterFindStartCeiling =>
+      'Searched half an hour around the marker. The start is further off than that, or there\'s no chapter announcement to hear.';
+
+  @override
+  String get chapterFindStartStrong => 'Sounds like this chapter';
+
+  @override
+  String get chapterFindStartMaybe => 'Chapter-like words';
+
+  @override
+  String chapterFindStartGap(String seconds) {
+    return '${seconds}s gap';
+  }
+
+  @override
+  String chapterFindStartRange(String from, String to) {
+    return 'Searched $from to $to';
+  }
+
+  @override
+  String get chapterFindStartNeedsModel =>
+      'Turn on transcription in Settings and download a model first';
+
+  @override
+  String get chapterFindStartUseThis => 'Use this';
+
+  @override
+  String chapterFindStartTitle(String title) {
+    return 'Title: $title';
+  }
+
+  @override
   String get chapterShiftBySeconds => 'Shift by (seconds)';
 
   @override
   String get chapterShiftHint =>
       'Shifts every unlocked chapter. Use a negative value to move them earlier.';
-
-  @override
-  String get chapterBack1Second => 'Back 1 second';
-
-  @override
-  String get chapterForward1Second => 'Forward 1 second';
 
   @override
   String get chapterTitleHint => 'Chapter title';
@@ -7176,18 +8822,12 @@ class AppLocalizationsIt extends AppLocalizations {
   String get chapterPreviewFromHere => 'Preview from here';
 
   @override
-  String get chapterScrubHint => 'Scrub to the exact spot, then set';
+  String get chapterScrubHint => 'Drag or nudge to move the start';
 
   @override
   String chapterStartAt(String time) {
     return 'Start at $time';
   }
-
-  @override
-  String get chapterSetStartHere => 'Set start here';
-
-  @override
-  String get chapterMore => 'More';
 
   @override
   String get chapterUnlock => 'Unlock';
@@ -7680,6 +9320,46 @@ class AppLocalizationsIt extends AppLocalizations {
   }
 
   @override
+  String get adminUploadAddToExistingTitle => 'Folder already exists';
+
+  @override
+  String adminUploadAddToExisting(String title) {
+    return 'That folder belongs to \"$title\". Add the files to it? The server picks them up on its next scan.';
+  }
+
+  @override
+  String get adminUploadAddToExistingNoItem =>
+      'That folder already exists on the server. Add the files to it?';
+
+  @override
+  String get adminUploadAddToBook => 'Add to an existing book';
+
+  @override
+  String get adminUploadAddToBookHint => 'Search this library';
+
+  @override
+  String get adminUploadNoBooksFound => 'No books found';
+
+  @override
+  String adminUploadAddingTo(String title) {
+    return 'Adding files to \"$title\"';
+  }
+
+  @override
+  String adminUploadAddedTo(String title) {
+    return 'Added files to \"$title\"';
+  }
+
+  @override
+  String get adminUploadTargetNoFolder =>
+      'Couldn\'t find that book\'s folder on the server.';
+
+  @override
+  String adminUploadTargetFolderMismatch(String preview, String folder) {
+    return 'The server would put these files in \"$preview\", not in that book\'s folder \"$folder\". Nothing was uploaded.';
+  }
+
+  @override
   String get adminUploadUploading => 'Uploading...';
 
   @override
@@ -7712,6 +9392,13 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get adminServerSettingsSubtitle => 'Scanner, storage and sorting';
+
+  @override
+  String get adminAuthentication => 'Authentication';
+
+  @override
+  String get adminAuthenticationSubtitle =>
+      'Password and OpenID Connect sign-in';
 
   @override
   String get adminStats => 'Statistics';
@@ -7854,6 +9541,165 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get srvPrefixesSaved => 'Sorting prefixes updated';
+
+  @override
+  String get authSetLoadFailed => 'Couldn\'t load authentication settings';
+
+  @override
+  String get authSetCustomMessage => 'Custom message on login';
+
+  @override
+  String get authSetMessage => 'Message';
+
+  @override
+  String get authSetPasswordAuth => 'Password authentication';
+
+  @override
+  String get authSetOpenId => 'OpenID Connect authentication';
+
+  @override
+  String get authSetGuide => 'Setup guide';
+
+  @override
+  String get authSetIssuerUrl => 'Issuer URL';
+
+  @override
+  String get authSetAutoPopulate => 'Auto-populate';
+
+  @override
+  String get authSetAuthorizeUrl => 'Authorize URL';
+
+  @override
+  String get authSetTokenUrl => 'Token URL';
+
+  @override
+  String get authSetUserinfoUrl => 'Userinfo URL';
+
+  @override
+  String get authSetJwksUrl => 'JWKS URL';
+
+  @override
+  String get authSetLogoutUrl => 'Logout URL';
+
+  @override
+  String get authSetClientId => 'Client ID';
+
+  @override
+  String get authSetClientSecret => 'Client secret';
+
+  @override
+  String get authSetSigningAlgorithm => 'Signing algorithm';
+
+  @override
+  String get authSetRedirectUris => 'Allowed mobile redirect URIs';
+
+  @override
+  String authSetRedirectUrisInfo(String redirectUri) {
+    return 'Apps can only return to these addresses after sign-in. Absorb uses $redirectUri. An asterisk (*) as the only entry allows any address.';
+  }
+
+  @override
+  String get authSetAddRedirectUri => 'Add URI';
+
+  @override
+  String authSetAddAbsorbRedirect(String redirectUri) {
+    return 'Add $redirectUri';
+  }
+
+  @override
+  String get authSetSubfolder => 'Subfolder for redirect URLs';
+
+  @override
+  String get authSetSubfolderNone => 'None';
+
+  @override
+  String get authSetWebRedirectInfo =>
+      'Allow these URLs in your OAuth provider so sign-in can return to the web app:';
+
+  @override
+  String get authSetButtonText => 'Button text';
+
+  @override
+  String get authSetMatchExisting => 'Match existing users by';
+
+  @override
+  String get authSetMatchNone => 'Do not match';
+
+  @override
+  String get authSetMatchEmail => 'Email';
+
+  @override
+  String get authSetMatchUsername => 'Username';
+
+  @override
+  String get authSetMatchExistingInfo =>
+      'Used to link existing users. Once linked, users are matched by their unique ID from the provider.';
+
+  @override
+  String get authSetAutoLaunch => 'Auto launch';
+
+  @override
+  String get authSetAutoLaunchInfo =>
+      'Open the provider automatically from the web login page. /login?autoLaunch=0 skips it.';
+
+  @override
+  String get authSetAutoRegister => 'Auto register';
+
+  @override
+  String get authSetAutoRegisterInfo =>
+      'Create new users automatically after they sign in';
+
+  @override
+  String get authSetClaimsInfo =>
+      'Leave these empty to turn off group and permission assignment. New users then get the User role.';
+
+  @override
+  String get authSetGroupClaim => 'Group claim';
+
+  @override
+  String get authSetGroupClaimInfo =>
+      'Claim that lists the user\'s groups, usually groups. Groups named admin, user or guest set the role, and the highest one wins. If no group matches, sign-in is refused.';
+
+  @override
+  String get authSetPermsClaim => 'Advanced permission claim';
+
+  @override
+  String get authSetPermsClaimInfo =>
+      'Claim with permissions for non-admin users. If the claim is missing, sign-in is refused, and a missing option counts as off. Expected format:';
+
+  @override
+  String get authSetRestartNote =>
+      'Restart the server after saving to apply OpenID Connect changes.';
+
+  @override
+  String get authSetNoChanges => 'No changes to save';
+
+  @override
+  String get authSetNeedOneMethod => 'Turn on at least one sign-in method';
+
+  @override
+  String authSetFieldRequired(String field) {
+    return '$field is required';
+  }
+
+  @override
+  String authSetInvalidRedirectUri(String uri) {
+    return 'Invalid redirect URI: $uri';
+  }
+
+  @override
+  String get authSetAsteriskAlone =>
+      'An asterisk (*) must be the only redirect URI';
+
+  @override
+  String authSetInvalidClaim(String field) {
+    return '$field is not a valid claim name';
+  }
+
+  @override
+  String authSetIssuerFailed(String error) {
+    return 'Couldn\'t read the issuer: $error';
+  }
 
   @override
   String get libNoneYet => 'No libraries yet';
@@ -8024,6 +9870,10 @@ class AppLocalizationsIt extends AppLocalizations {
       'This ebook format can\'t be opened in the reader yet';
 
   @override
+  String get readerCouldNotOpen =>
+      'This ebook couldn\'t be opened. The file may be damaged.';
+
+  @override
   String get moreActions => 'More';
 
   @override
@@ -8037,6 +9887,15 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get readerLineSpacing => 'Line Spacing';
+
+  @override
+  String get readerTextAlignment => 'Alignment';
+
+  @override
+  String get readerAlignJustified => 'Justified';
+
+  @override
+  String get readerAlignLeft => 'Left';
 
   @override
   String get readerSideMargins => 'Side margins';
@@ -8053,6 +9912,108 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get readerPinTopBarHint =>
       'Pins them above the page instead of showing them on tap. The page gets a little shorter so no text is covered.';
+
+  @override
+  String get readerTopBarProgress => 'Top bar progress';
+
+  @override
+  String get readerTopBarProgressBook => 'Book';
+
+  @override
+  String get readerTopBarProgressChapter => 'Chapter';
+
+  @override
+  String get readerTopBarProgressBoth => 'Both';
+
+  @override
+  String get readerSectionText => 'Text';
+
+  @override
+  String get readerSectionPage => 'Page';
+
+  @override
+  String get readerSectionTopBar => 'Top bar and screen';
+
+  @override
+  String get readerSectionControls => 'Controls';
+
+  @override
+  String get readerSectionStats => 'Stats';
+
+  @override
+  String get readerParagraphSpacing => 'Paragraph spacing';
+
+  @override
+  String get readerParagraphSpacingBook => 'Book\'s own';
+
+  @override
+  String get readerTapZones => 'Tap zones';
+
+  @override
+  String get readerTapZonesHint =>
+      'Drag the lines to resize the squares. Tap a square to change what it does, or start from a layout.';
+
+  @override
+  String get readerTapPrev => 'Previous page';
+
+  @override
+  String get readerTapNext => 'Next page';
+
+  @override
+  String get readerTapMenu => 'Show controls';
+
+  @override
+  String get readerTapNothing => 'Nothing';
+
+  @override
+  String get readerTapKeepMenu => 'One square has to show the controls';
+
+  @override
+  String get readerHideControls => 'Hide controls after';
+
+  @override
+  String get readerHideControlsNever => 'Never';
+
+  @override
+  String get readerBarNotes => 'Notes and highlights';
+
+  @override
+  String readerHideControlsAfter(int seconds) {
+    return '${seconds}s';
+  }
+
+  @override
+  String get playerDownloadStreamingInstead =>
+      'This download couldn\'t be played, so it\'s streaming from the server. Downloading it again may fix it.';
+
+  @override
+  String get readerPageTurn => 'Page turn';
+
+  @override
+  String get readerPageTurnNone => 'None';
+
+  @override
+  String get readerPageTurnSlide => 'Slide';
+
+  @override
+  String get readerPageTurnCurl => 'Curl';
+
+  @override
+  String get readerPageTurnRipple => 'Ripple';
+
+  @override
+  String get readerScrollMode => 'Scroll mode';
+
+  @override
+  String get readerScrollModeHint =>
+      'Scroll down through the book instead of turning pages. Applies to every book.';
+
+  @override
+  String get readerKeepAwake => 'Keep the screen on';
+
+  @override
+  String get readerKeepAwakeHint =>
+      'Stops the screen timing out while you read at your own pace. Auto scroll and read along always keep it on.';
 
   @override
   String get readerLayoutAuto => 'Auto';
@@ -8109,6 +10070,102 @@ class AppLocalizationsIt extends AppLocalizations {
   }
 
   @override
+  String get readerMoreControls => 'More controls';
+
+  @override
+  String get readerAutoScrollSleep => 'Auto scroll sleep timer';
+
+  @override
+  String get readerAutoScrollSleepHint =>
+      'Stops the scrolling after a while and lets the screen go dark.';
+
+  @override
+  String readerAutoScrollSleepMinutes(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String readerAutoScrollSleepLeft(int minutes) {
+    return '$minutes min left';
+  }
+
+  @override
+  String readerAutoScrollSleepIn(int minutes) {
+    return 'Auto scroll stops in $minutes min';
+  }
+
+  @override
+  String get readerAutoScrollSleepOff => 'Auto scroll sleep timer off';
+
+  @override
+  String get readerAutoScrollSleepEnded => 'Sleep timer - auto scroll off';
+
+  @override
+  String get readerDownloadStarted => 'Download started';
+
+  @override
+  String get detailChaptersJumpTitle => 'Jump to this chapter?';
+
+  @override
+  String detailChaptersJumpContent(String title) {
+    return 'Playback moves to \"$title\".';
+  }
+
+  @override
+  String get detailChaptersJump => 'Jump';
+
+  @override
+  String detailChaptersFinished(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count chapters finished',
+      one: '1 chapter finished',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String detailOtherListeners(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count other listeners',
+      one: '1 other listener',
+      zero: 'No other listeners',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get seriesUpNext => 'Up next';
+
+  @override
+  String get seriesJumpToUpNext => 'Jump to up next';
+
+  @override
+  String get seriesStatsFinished => 'Finished';
+
+  @override
+  String get seriesStatsListened => 'Listened';
+
+  @override
+  String get seriesStatsLeft => 'Left';
+
+  @override
+  String seriesFinishedOf(int done, int total) {
+    return '$done of $total';
+  }
+
+  @override
+  String get detailSessionsNone => 'No listening sessions yet';
+
+  @override
+  String detailSessionsAll(int count) {
+    return 'All $count sessions';
+  }
+
+  @override
   String get readerVolumeNavWhilePlaying => 'Even while audio is playing';
 
   @override
@@ -8137,6 +10194,32 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get readerNoHighlights => 'No highlights yet';
+
+  @override
+  String get readerHistory => 'History';
+
+  @override
+  String get sessionReading => 'Reading';
+
+  @override
+  String get readerHistoryEmpty =>
+      'Pages you leave are listed here, so you can always get back to them.';
+
+  @override
+  String get readerHistoryClosed => 'Closed the book';
+
+  @override
+  String get readerHistoryBeforeJump => 'Before a jump';
+
+  @override
+  String get readerHistoryBeforeSync => 'Before matching the audio';
+
+  @override
+  String get readerLogReading => 'Count reading time in stats';
+
+  @override
+  String get readerLogReadingHint =>
+      'Logs your time in the reader as a session so it shows in your stats. On Audiobookshelf it counts as listening time.';
 
   @override
   String get readerNoBookmarks => 'No bookmarks yet';
@@ -8599,7 +10682,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get transcriptionNotDownloadedBook =>
-      'Download this book first to transcribe its bookmarks.';
+      'Download this book or connect to your server to transcribe it.';
 
   @override
   String get transcriptionNoMetadataMsg =>
@@ -8695,6 +10778,52 @@ class AppLocalizationsIt extends AppLocalizations {
   String get readAlongNeedsPlaying => 'Play this book\'s audiobook first';
 
   @override
+  String get narrationListen => 'Listen';
+
+  @override
+  String get narrationPlayFromHere => 'Play from here';
+
+  @override
+  String get narrationPreparing => 'Getting the narration ready';
+
+  @override
+  String get narrationNone => 'This ebook has no narration to play';
+
+  @override
+  String get narrationDownloadTitle => 'Download to listen';
+
+  @override
+  String get narrationDownloadBody =>
+      'This book is an EPUB3 that reads itself aloud. Audiobookshelf can\'t stream its narration, so the audio needs to be downloaded before it plays.';
+
+  @override
+  String get narrationDownloadStarted =>
+      'Downloading the narration. Tap Absorb when it finishes.';
+
+  @override
+  String get narrationTextBody =>
+      'This book\'s EPUB has its own words for every moment of the audio, so the text is copied straight from the book. Pick how much to add to the bookmark\'s note.';
+
+  @override
+  String get narrationTextLoading => 'Getting the words from the book';
+
+  @override
+  String get downloadToAbsorb => 'Download to Absorb';
+
+  @override
+  String get narrationUpNextTitle => 'Download what\'s up next';
+
+  @override
+  String narrationUpNextBody(String title) {
+    return '$title is next in your queue. It\'s an EPUB3 that reads itself aloud, so it needs to be downloaded before it can play.';
+  }
+
+  @override
+  String narrationQueueStopped(String title) {
+    return 'Stopped before $title. Download it to keep going.';
+  }
+
+  @override
   String get transcriptionNeedsDownload =>
       'This needs the audio on your phone. Download it now?';
 
@@ -8704,6 +10833,37 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get readAlongFollow => 'Read along follows';
+
+  @override
+  String get syncReadingListening => 'Keep reading and listening in sync';
+
+  @override
+  String get syncReadingListeningHint =>
+      'For books with an audiobook and an ebook. When you stop listening, the ebook moves to where you stopped. When you leave the reader, the audiobook moves to your page. Only moves forward.';
+
+  @override
+  String get syncEbookMoved => 'Ebook moved to where you stopped listening';
+
+  @override
+  String get syncAudioMoved => 'Audiobook moved to where you stopped reading';
+
+  @override
+  String get syncAudioOffer => 'Tap to jump to where you stopped reading';
+
+  @override
+  String get syncFindingAudio => 'Finding your page in the audiobook';
+
+  @override
+  String get syncFindingEbook => 'Finding your spot in the ebook';
+
+  @override
+  String get syncFailed => 'Couldn\'t sync your place';
+
+  @override
+  String get syncAlreadyTogether => 'Already in sync';
+
+  @override
+  String get syncPosition => 'Sync position';
 
   @override
   String get readAlongFollowHint =>
@@ -8722,7 +10882,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get readAlongLost => 'Can\'t find the narration on the page';
 
   @override
-  String get readAlongReady => 'Read along is ready';
+  String get readAlongBackToNarration => 'Back to narration';
 
   @override
   String get findInEbook => 'Find in ebook';
@@ -8780,4 +10940,216 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get findInAudiobookPlaying => 'Playing this passage in the audiobook';
+
+  @override
+  String get catchUpAudioAhead =>
+      'The audiobook is further along. Tap to go there.';
+
+  @override
+  String get catchUpPageAhead =>
+      'This page is ahead of the audiobook. Tap to move the audiobook here.';
+
+  @override
+  String get readerShortcutButton => 'Shortcut button';
+
+  @override
+  String get keepScreenOn => 'Keep screen on';
+
+  @override
+  String get keepScreenOnActive => 'Screen stays on';
+
+  @override
+  String get keepScreenOnUntilClosed =>
+      'Screen stays on until you close the app';
+
+  @override
+  String get keepScreenOnOff => 'Screen can turn off again';
+
+  @override
+  String get keepScreenOnOffUntilRestart =>
+      'Off until the app restarts. The Settings switch stays on';
+
+  @override
+  String get keepScreenOnPlayer => 'Keep the screen on in the player';
+
+  @override
+  String get keepScreenOnPlayerSubtitle =>
+      'The screen stays on while the player is open';
+
+  @override
+  String get keepScreenOnCarMode => 'Keep the screen on in car mode';
+
+  @override
+  String get keepScreenOnCarModeSubtitle =>
+      'The screen stays on while car mode is open';
+
+  @override
+  String get loginServerType => 'Server type';
+
+  @override
+  String get authBookOrbitDefaultPassword =>
+      'This account still has its default password. Change it in BookOrbit, then sign in again.';
+
+  @override
+  String get authBookOrbitPasswordOff =>
+      'Password sign-in is turned off on this server. Sign in with a magic link or single sign-on.';
+
+  @override
+  String get authServerIsBookOrbit =>
+      'This is a BookOrbit server. Choose BookOrbit above the server address.';
+
+  @override
+  String get authServerIsAudiobookshelf =>
+      'This is an Audiobookshelf server. Choose Audiobookshelf above the server address.';
+
+  @override
+  String get castNotAvailableBookOrbit =>
+      'Casting is not available with BookOrbit servers';
+
+  @override
+  String get loginMagicLink => 'Magic link';
+
+  @override
+  String get loginMagicLinkDescription =>
+      'Sign in with a BookOrbit magic link instead of a password.';
+
+  @override
+  String get collectionPublicTitle => 'Public';
+
+  @override
+  String get collectionPublicSubtitle =>
+      'Everyone on this server can see this collection';
+
+  @override
+  String loginSignInWithProvider(String provider) {
+    return 'Sign in with $provider';
+  }
+
+  @override
+  String get loginSignInWithSso => 'Sign in with SSO';
+
+  @override
+  String get loginChooseSsoProvider => 'Choose how to sign in';
+
+  @override
+  String get loginRedirectUriBookOrbit =>
+      'Redirect URI: bookorbit://oauth2-callback';
+
+  @override
+  String get readStatusTitle => 'Reading status';
+
+  @override
+  String get readStatusHint =>
+      'BookOrbit keeps a status you pick here until you change it.';
+
+  @override
+  String get readStatusUnread => 'Unread';
+
+  @override
+  String get readStatusWantToRead => 'Want to read';
+
+  @override
+  String get readStatusReading => 'Reading';
+
+  @override
+  String get readStatusOnHold => 'On hold';
+
+  @override
+  String get readStatusRereading => 'Rereading';
+
+  @override
+  String get readStatusRead => 'Read';
+
+  @override
+  String get readStatusSkimmed => 'Skimmed';
+
+  @override
+  String get readStatusAbandoned => 'Abandoned';
+
+  @override
+  String get personalNoteTitle => 'Your note';
+
+  @override
+  String get personalNoteAdd => 'Add a private note';
+
+  @override
+  String get personalNoteHint => 'Only you can see this note.';
+
+  @override
+  String get moreLikeThis => 'More like this';
+
+  @override
+  String get coverSlotAudiobook => 'Audiobook cover';
+
+  @override
+  String get coverSlotBook => 'Book cover';
+
+  @override
+  String get cardButtonFill => 'Button background';
+
+  @override
+  String get cardButtonFillSubtitle =>
+      'How the buttons on the player card are filled';
+
+  @override
+  String get cardButtonFillClear => 'Clear';
+
+  @override
+  String get cardButtonFillSubtle => 'Subtle';
+
+  @override
+  String get cardButtonFillSolid => 'Solid';
+
+  @override
+  String get loginBookOrbitPreview =>
+      'BookOrbit support is new. Playback, downloads and browsing work, but some screens may still look or act like Audiobookshelf. Follow the progress on GitHub, and let us know if something seems off.';
+
+  @override
+  String get signedOutTapToSignIn => 'Signed out. Tap to sign in again.';
+
+  @override
+  String get authSignedOutKeepListening =>
+      'You\'ve been signed out. Downloads still play. Tap the red cloud to sign in again.';
+
+  @override
+  String signedOutSyncNote(String username, String server) {
+    return 'What you listen to while signed out is kept on this phone and syncs when you sign back in as $username on $server. Any way of signing in to that account works.';
+  }
+
+  @override
+  String get comicReadingDirection => 'Reading direction';
+
+  @override
+  String comicPageNumber(int page) {
+    return 'Page $page';
+  }
+
+  @override
+  String get comicBookmarkRemoveFailed =>
+      'Couldn\'t remove the bookmark from the server. Try again when you\'re online.';
+
+  @override
+  String get comicLeftToRight => 'Left to right';
+
+  @override
+  String get comicRightToLeft => 'Right to left (manga)';
+
+  @override
+  String get comicNeedsConnection =>
+      'This comic opens page by page from your server, so it needs a connection.';
+
+  @override
+  String get comicNoPages => 'No pages found in this comic.';
+
+  @override
+  String get chooseAuthor => 'Choose an author';
+
+  @override
+  String get loadingAuthors => 'Loading authors...';
+
+  @override
+  String get authorLookupFailed => 'Couldn\'t load author details';
+
+  @override
+  String get authorLookupNone => 'No author details for this book';
 }

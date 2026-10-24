@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
+import '../services/ebook_cache.dart';
 import 'absorbing_shared.dart';
 import 'book_detail_sheet.dart';
 import 'books_sheet_shared.dart' show coverGridTextScale, coverGridDecodeWidth;
@@ -15,7 +16,7 @@ import 'episode_list_sheet.dart';
 import '../services/upcoming_releases_service.dart';
 import 'series_books_sheet.dart';
 import 'author_books_sheet.dart';
-import 'author_name_link.dart';
+import 'item_author_links.dart';
 
 // ═══════════════════════════════════════════════════════════════
 // Grid book tile (cover + title + author)
@@ -80,7 +81,9 @@ class _GridBookTileState extends State<GridBookTile> {
     final progress = lib.getProgress(itemId);
     final isExplicit = PlayerSettings.showExplicitBadge && metadata['explicit'] == true;
     final isDownloaded = _dl.isDownloaded(itemId);
+    final hasEbook = PlayerSettings.showEbookBadge && hasEbookFile(widget.item);
     final isFinished = lib.getProgressData(itemId)?['isFinished'] == true;
+    final isSkimmed = lib.getProgressData(itemId)?['skimmed'] == true;
     final isSubscribed = lib.isPodcastLibrary && lib.isPodcastSubscribed(itemId);
     final unfinishedCount =
         lib.isPodcastLibrary ? lib.getUnfinishedEpisodeCount(widget.item) : 0;
@@ -97,7 +100,7 @@ class _GridBookTileState extends State<GridBookTile> {
           return;
         }
         if (itemId.isNotEmpty) {
-          if (lib.isPodcastLibrary) {
+          if (lib.isPodcastItem(widget.item)) {
             EpisodeListSheet.show(context, widget.item);
           } else {
             showBookDetailSheet(context, itemId);
@@ -195,6 +198,12 @@ class _GridBookTileState extends State<GridBookTile> {
                       ),
                     ),
 
+                  if (hasEbook && !widget.selectionMode)
+                    Positioned(
+                      top: widget.sequenceBadge != null ? 24 : 4, left: 4,
+                      child: const EbookCoverBadge(),
+                    ),
+
                   // Sequence badge
                   if (widget.sequenceBadge != null)
                     Positioned(
@@ -217,6 +226,7 @@ class _GridBookTileState extends State<GridBookTile> {
                       child: CoverStateBadges(
                         isDownloaded: isDownloaded,
                         isFinished: isFinished,
+                        isSkimmed: isSkimmed,
                       ),
                     ),
 
@@ -287,13 +297,11 @@ class _GridBookTileState extends State<GridBookTile> {
             ),
           // Author
           if (author.isNotEmpty)
-            AuthorNameLink(
-              item: widget.item,
-              authorName: author,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            ItemAuthorLine(
+              itemId: itemId,
+              metadata: metadata,
+              enabled: !widget.selectionMode,
               style: tt.labelSmall?.copyWith(
-                color: cs.onSurfaceVariant,
                 fontSize: 10 * coverGridTextScale(context),
               ),
             ),
@@ -591,13 +599,10 @@ class GridSeriesTile extends StatelessWidget {
             ),
           ),
           if (author.isNotEmpty)
-            AuthorNameLink(
-              item: item,
-              authorName: author,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            ItemAuthorLine(
+              itemId: item['id'] as String? ?? '',
+              metadata: metadata,
               style: tt.labelSmall?.copyWith(
-                color: cs.onSurfaceVariant,
                 fontSize: 10 * coverGridTextScale(context),
               ),
             ),
@@ -648,12 +653,14 @@ class GridSeriesTileDirect extends StatelessWidget {
 
     // Get author from first book
     String author = '';
-    Map<String, dynamic> firstBookItem = const {};
+    String firstBookId = '';
+    Map<String, dynamic> firstBookMetadata = const {};
     if (books.isNotEmpty) {
       final firstBook = books.first as Map<String, dynamic>? ?? {};
-      firstBookItem = firstBook;
+      firstBookId = firstBook['id'] as String? ?? '';
       final media = firstBook['media'] as Map<String, dynamic>? ?? {};
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+      firstBookMetadata = metadata;
       author = metadata['authorName'] as String? ?? '';
     }
 
@@ -716,13 +723,10 @@ class GridSeriesTileDirect extends StatelessWidget {
             ),
           ),
           if (author.isNotEmpty)
-            AuthorNameLink(
-              item: firstBookItem,
-              authorName: author,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            ItemAuthorLine(
+              itemId: firstBookId,
+              metadata: firstBookMetadata,
               style: tt.labelSmall?.copyWith(
-                color: cs.onSurfaceVariant,
                 fontSize: 10 * coverGridTextScale(context),
               ),
             ),
@@ -741,6 +745,8 @@ class GridListTile extends StatelessWidget {
   final List<String> bookIds;
   final int count;
   final bool isPlaylist;
+  /// A BookOrbit Smart Scope: its books come from saved rules, not picks.
+  final bool isSmartScope;
   final double coverAspectRatio;
   final VoidCallback onTap;
 
@@ -751,6 +757,7 @@ class GridListTile extends StatelessWidget {
     required this.count,
     required this.isPlaylist,
     required this.onTap,
+    this.isSmartScope = false,
     this.coverAspectRatio = 1.0,
   });
 
@@ -782,22 +789,40 @@ class GridListTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _StackedCovers(
-            coverUrls: coverUrls.isEmpty ? const [null] : coverUrls,
-            numBooks: count,
-            mediaHeaders: lib.mediaHeaders,
-            cs: cs,
-            seriesProgress: progress,
-            booksFinished: finished,
-            coverAspectRatio: coverAspectRatio,
-          ),
+          Stack(children: [
+            _StackedCovers(
+              coverUrls: coverUrls.isEmpty ? const [null] : coverUrls,
+              numBooks: count,
+              mediaHeaders: lib.mediaHeaders,
+              cs: cs,
+              seriesProgress: progress,
+              booksFinished: finished,
+              coverAspectRatio: coverAspectRatio,
+            ),
+            if (isSmartScope)
+              Positioned(
+                top: 6,
+                left: 6,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: cs.primaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.filter_alt_rounded,
+                      size: 14 * coverGridTextScale(context), color: cs.onPrimaryContainer),
+                ),
+              ),
+          ]),
           const SizedBox(height: 5),
           Row(
             children: [
               Icon(
                   isPlaylist
                       ? Icons.playlist_play_rounded
-                      : Icons.collections_bookmark_rounded,
+                      : isSmartScope
+                          ? Icons.filter_alt_rounded
+                          : Icons.collections_bookmark_rounded,
                   size: 12 * coverGridTextScale(context),
                   color: cs.onSurfaceVariant),
               const SizedBox(width: 3),
@@ -818,7 +843,9 @@ class GridListTile extends StatelessWidget {
           Text(
             isPlaylist
                 ? l.playlistDetailItemCount(count)
-                : l.collectionDetailBookCount(count),
+                : isSmartScope
+                    ? l.smartScopeBookCount(count)
+                    : l.collectionDetailBookCount(count),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: tt.labelSmall?.copyWith(
@@ -862,7 +889,11 @@ class GridAuthorTile extends StatelessWidget {
     final numBooks = author['numBooks'] as int? ?? 0;
 
     String? imageUrl;
-    if (authorId.isNotEmpty && auth.apiService != null) {
+    // Only authors with a photo get a request: the server answers 404 for
+    // the rest, and a burst of those reads as probing to fail2ban and
+    // CrowdSec in front of it (GH #418).
+    final hasPhoto = (author['imagePath'] as String?)?.isNotEmpty == true;
+    if (authorId.isNotEmpty && hasPhoto && auth.apiService != null) {
       final ts = (author['updatedAt'] as num?)?.toInt();
       imageUrl = auth.apiService!.getAuthorImageUrl(authorId, updatedAt: ts);
     }
