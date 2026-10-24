@@ -62,7 +62,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="absorb" android:host="oauth" />
+                <data android:scheme="${webAuthScheme}" android:host="oauth" />
             </intent-filter>
             <intent-filter android:label="flutter_web_auth_2">
                 <action android:name="android.intent.action.VIEW" />

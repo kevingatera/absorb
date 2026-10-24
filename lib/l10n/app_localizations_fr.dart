@@ -226,7 +226,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get loginWaitingForSso => 'En attente du SSO...';
 
   @override
-  String get loginRedirectUri => 'URI de redirection : audiobookshelf://oauth';
+  String loginRedirectUri(String redirectUri) {
+    return 'URI de redirection : $redirectUri';
+  }
 
   @override
   String get loginOrSignInManually => 'ou se connecter manuellement';
@@ -9640,14 +9642,17 @@ class AppLocalizationsFr extends AppLocalizations {
   String get authSetRedirectUris => 'Allowed mobile redirect URIs';
 
   @override
-  String get authSetRedirectUrisInfo =>
-      'Apps can only return to these addresses after sign-in. Absorb uses absorb://oauth. An asterisk (*) as the only entry allows any address.';
+  String authSetRedirectUrisInfo(String redirectUri) {
+    return 'Apps can only return to these addresses after sign-in. Absorb uses $redirectUri. An asterisk (*) as the only entry allows any address.';
+  }
 
   @override
   String get authSetAddRedirectUri => 'Add URI';
 
   @override
-  String get authSetAddAbsorbRedirect => 'Add absorb://oauth';
+  String authSetAddAbsorbRedirect(String redirectUri) {
+    return 'Add $redirectUri';
+  }
 
   @override
   String get authSetSubfolder => 'Subfolder for redirect URLs';
