@@ -36,18 +36,19 @@ class ItemAuthorLine extends StatefulWidget {
 }
 
 class _ItemAuthorLineState extends State<ItemAuthorLine> {
-  // Bumped when the tile leaves the visible tab (IndexedStack turns TickerMode
-  // off for hidden pages) or selection mode starts. A lookup that began under
-  // an older value is dropped rather than opening a sheet over the new screen.
+  // Bumped when the tile stops being the visible page (tab switch, pushed
+  // route) or selection mode starts, and when the tile is handed a different
+  // item. A lookup that began under an older value is dropped rather than
+  // opening a sheet over the new screen or reusing the previous book's authors.
   int _generation = 0;
-  bool _tabActive = true;
+  bool _pageVisible = true;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final active = TickerMode.of(context);
-    if (active != _tabActive) {
-      _tabActive = active;
+    final visible = TickerMode.valuesOf(context).enabled;
+    if (visible != _pageVisible) {
+      _pageVisible = visible;
       _generation++;
     }
   }
@@ -55,8 +56,16 @@ class _ItemAuthorLineState extends State<ItemAuthorLine> {
   @override
   void didUpdateWidget(ItemAuthorLine oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.itemId != widget.itemId) _generation++;
     if (oldWidget.enabled && !widget.enabled) _generation++;
   }
+
+  /// Read live, so a lookup that finishes between a tab switch and the next
+  /// frame still sees the tile as hidden.
+  bool get _isCurrent =>
+      mounted &&
+      _pageVisible &&
+      TickerMode.getValuesNotifier(context).value.enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -82,7 +91,7 @@ class _ItemAuthorLineState extends State<ItemAuthorLine> {
           openItemAuthors(
             context,
             itemId: widget.itemId,
-            stillCurrent: () => mounted && generation == _generation,
+            stillCurrent: () => _isCurrent && generation == _generation,
           );
         }
       },
