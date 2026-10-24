@@ -72,6 +72,22 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
   final _cast = ChromecastService();
   String _queueMode = 'off';
+
+  /// Move to a card picked from the page dots. Taps animate; drag scrubbing
+  /// jumps so the strip follows the finger and cancels any running animation.
+  void _switchToAbsorbingPage(int index, {bool animate = true}) {
+    if (!_pageController.hasClients) return;
+    if (animate) {
+      unawaited(_pageController.animateToPage(
+        index,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+      ));
+    } else {
+      _pageController.jumpToPage(index);
+    }
+  }
+
   // Raw per-type modes behind the derived _queueMode. peekUpNext keys off these
   // (and the merge flag) directly, so the Up Next stamp must too - otherwise a
   // change to the podcast mode that leaves the derived mode unchanged (e.g. the
@@ -761,7 +777,13 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
           ];
 
           final pageDots = books.length > 1
-              ? _PageDots(count: books.length, controller: _pageController)
+              ? _PageDots(
+                  count: books.length,
+                  controller: _pageController,
+                  onSelected: (index) => _switchToAbsorbingPage(index),
+                  onScrubSelected: (index) =>
+                      _switchToAbsorbingPage(index, animate: false),
+                )
               : null;
 
           // Compact phone header: one row containing the ABSORB branding,
@@ -1011,14 +1033,55 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
 // ─── PAGE DOTS ──────────────────────────────────────────────
 
-class _PageDots extends StatelessWidget {
+class _PageDots extends StatefulWidget {
   final int count;
   final PageController controller;
-  const _PageDots({required this.count, required this.controller});
+  final ValueChanged<int> onSelected;
+  final ValueChanged<int> onScrubSelected;
+  const _PageDots({
+    required this.count,
+    required this.controller,
+    required this.onSelected,
+    required this.onScrubSelected,
+  });
+
+  @override
+  State<_PageDots> createState() => _PageDotsState();
+}
+
+class _PageDotsState extends State<_PageDots> {
+  // One key per dot cell. Hit testing reads each cell's laid-out box, so a
+  // visible dot always owns its own cell, including while the active pill
+  // is animating its width.
+  final _cellKeys = <GlobalKey>[];
+  // Index the current drag last selected. Null outside a drag, so a drag
+  // only jumps and buzzes when its index changes.
+  int? _scrubIndex;
+
+  int _indexAt(Offset globalPosition) {
+    for (var i = 0; i < widget.count; i++) {
+      final box = _cellKeys[i].currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) continue;
+      if (box.globalToLocal(globalPosition).dx < box.size.width) return i;
+    }
+    return widget.count - 1;
+  }
+
+  void _scrubTo(Offset globalPosition) {
+    final index = _indexAt(globalPosition);
+    if (index == _scrubIndex) return;
+    _scrubIndex = index;
+    unawaited(HapticFeedback.selectionClick());
+    widget.onScrubSelected(index);
+  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final count = widget.count;
+    while (_cellKeys.length < count) {
+      _cellKeys.add(GlobalKey());
+    }
     return LayoutBuilder(builder: (context, constraints) {
       // Active dot is 20 wide, inactive is 6, each has horizontal padding on both sides.
       // Solve for padding: count * (6 + 2*pad) + (20 - 6) <= maxWidth
@@ -1031,8 +1094,9 @@ class _PageDots extends StatelessWidget {
       final hPad = (available / (count * 2)).clamp(1.5, 8.0);
 
       return ListenableBuilder(
-        listenable: controller,
+        listenable: widget.controller,
         builder: (_, __) {
+          final controller = widget.controller;
           final page = controller.hasClients && controller.positions.length == 1 ? (controller.page ?? 0).round() : 0;
           // The compact phone header can leave less width than the dots'
           // minimum footprint (padding bottoms out at 1.5); an unclipped Row
@@ -1040,30 +1104,41 @@ class _PageDots extends StatelessWidget {
           // instead when it genuinely doesn't fit.
           return FittedBox(
             fit: BoxFit.scaleDown,
-            child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: List.generate(count, (i) {
-              final active = i == page;
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => controller.animateToPage(i,
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.easeOutCubic),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 12),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutCubic,
-                    width: active ? activeDotWidth : dotSize,
-                    height: dotSize,
-                    decoration: BoxDecoration(
-                      color: active ? cs.onSurface.withValues(alpha: 0.54) : cs.onSurface.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(3),
+            // Gestures live on the whole strip so dragging across the dots
+            // scrubs between cards, not just tapping a single dot.
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              // Taps commit only once the pointer lifts without becoming a
+              // drag, so a touch that turns into a scrub or is cancelled
+              // never animates.
+              onTapUp: (details) {
+                unawaited(HapticFeedback.selectionClick());
+                widget.onSelected(_indexAt(details.globalPosition));
+              },
+              onHorizontalDragStart: (details) => _scrubTo(details.globalPosition),
+              onHorizontalDragUpdate: (details) => _scrubTo(details.globalPosition),
+              onHorizontalDragEnd: (_) => _scrubIndex = null,
+              onHorizontalDragCancel: () => _scrubIndex = null,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(count, (i) {
+                  final active = i == page;
+                  return Padding(
+                    key: _cellKeys[i],
+                    padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 12),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOutCubic,
+                      width: active ? activeDotWidth : dotSize,
+                      height: dotSize,
+                      decoration: BoxDecoration(
+                        color: active ? cs.onSurface.withValues(alpha: 0.54) : cs.onSurface.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
                     ),
-                  ),
-                ),
-              );
-            }),
+                  );
+                }),
+              ),
             ),
           );
         },
