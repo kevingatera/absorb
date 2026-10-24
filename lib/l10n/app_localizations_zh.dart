@@ -5260,6 +5260,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bookDetailsLabel => '书籍详情';
 
   @override
+  String get viewCover => 'View cover';
+
+  @override
   String get equalizerShort => 'EQ';
 
   @override
