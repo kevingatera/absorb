@@ -7500,5 +7500,7 @@
   "chooseAuthor": "Choose an author",
   "loadingAuthors": "Loading authors...",
   "authorLookupFailed": "Couldn't load author details",
-  "authorLookupNone": "No author details for this book"
+  "authorLookupNone": "No author details for this book",
+  "absorbingPageDotLabel": "Card {current} of {total}",
+  "@absorbingPageDotLabel": {"placeholders": {"current": {"type": "int"}, "total": {"type": "int"}}}
 }

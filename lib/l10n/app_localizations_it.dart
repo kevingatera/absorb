@@ -14188,4 +14188,9 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get authorLookupNone => 'No author details for this book';
+
+  @override
+  String absorbingPageDotLabel(int current, int total) {
+    return 'Card $current of $total';
+  }
 }

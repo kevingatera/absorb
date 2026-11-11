@@ -1626,6 +1626,7 @@ class _PageDotsState extends State<_PageDots> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final l = AppLocalizations.of(context)!;
     final count = widget.count;
     while (_cellKeys.length < count) {
       _cellKeys.add(GlobalKey());
@@ -1660,6 +1661,9 @@ class _PageDotsState extends State<_PageDots> {
               // scrubs between cards, not just tapping a single dot.
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
+                // Screen readers use each dot's own button below; the strip's
+                // synthetic tap has no position and would always pick card 1.
+                excludeFromSemantics: true,
                 // Taps commit only once the pointer lifts without becoming a
                 // drag, so a touch that turns into a scrub or is cancelled
                 // never animates.
@@ -1678,22 +1682,28 @@ class _PageDotsState extends State<_PageDots> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(count, (i) {
                     final active = i == page;
-                    return Padding(
-                      key: _cellKeys[i],
-                      padding: EdgeInsets.symmetric(
-                        horizontal: hPad,
-                        vertical: 12,
-                      ),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOutCubic,
-                        width: active ? activeDotWidth : dotSize,
-                        height: dotSize,
-                        decoration: BoxDecoration(
-                          color: active
-                              ? cs.onSurface.withValues(alpha: 0.54)
-                              : cs.onSurface.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(3),
+                    return Semantics(
+                      button: true,
+                      selected: active,
+                      label: l.absorbingPageDotLabel(i + 1, count),
+                      onTap: () => widget.onSelected(i),
+                      child: Padding(
+                        key: _cellKeys[i],
+                        padding: EdgeInsets.symmetric(
+                          horizontal: hPad,
+                          vertical: 12,
+                        ),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOutCubic,
+                          width: active ? activeDotWidth : dotSize,
+                          height: dotSize,
+                          decoration: BoxDecoration(
+                            color: active
+                                ? cs.onSurface.withValues(alpha: 0.54)
+                                : cs.onSurface.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
                         ),
                       ),
                     );

@@ -24002,6 +24002,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No author details for this book'**
   String get authorLookupNone;
+
+  /// No description provided for @absorbingPageDotLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Card {current} of {total}'**
+  String absorbingPageDotLabel(int current, int total);
 }
 
 class _AppLocalizationsDelegate
