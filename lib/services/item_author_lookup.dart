@@ -5,9 +5,9 @@ typedef AuthorRef = ({String id, String name});
 
 /// Resolves the authors of one item for list tiles whose data has only names.
 ///
-/// Uses the single-item expanded fetch, never the library's author list. The
-/// request is cached per server and item, and concurrent callers share it.
-/// Failed lookups are dropped from the cache so a later tap retries.
+/// Uses the single-item expanded fetch, never the library's author list.
+/// Concurrent callers for the same server and item share one request. Nothing
+/// is kept after it settles, so edited authors show on the next tap.
 class ItemAuthorLookup {
   ItemAuthorLookup._();
 
@@ -24,11 +24,12 @@ class ItemAuthorLookup {
 
     final lookup = _fetch(api, itemId);
     _lookups[key] = lookup;
-    // Consume the error here so the cache drop does not leave it unhandled.
+    // Consume the error here so the cleanup does not leave it unhandled.
     // The caller still gets the error from [lookup].
-    lookup.then<void>((_) {}, onError: (Object _) {
-      _lookups.remove(key);
-    });
+    void drop() {
+      if (identical(_lookups[key], lookup)) _lookups.remove(key);
+    }
+    lookup.then<void>((_) => drop(), onError: (Object _) => drop());
     return lookup;
   }
 
