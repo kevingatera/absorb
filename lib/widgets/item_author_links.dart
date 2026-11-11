@@ -125,9 +125,13 @@ Future<void> openItemAuthors(
   final key = '$serverUrl|$itemId';
   if (!_lookupsInFlight.add(key)) return;
   final libraryId = lib.selectedLibraryId;
+  // A sheet or viewer pushed over the tile leaves its TickerMode on, so also
+  // require the tile's route to still be on top.
+  final route = ModalRoute.of(context);
   bool stale() =>
       !context.mounted ||
       !stillCurrent() ||
+      (route != null && !route.isCurrent) ||
       auth.serverUrl != serverUrl ||
       lib.selectedLibraryId != libraryId;
   showOverlayToast(context, l.loadingAuthors, icon: Icons.person_search_rounded);
