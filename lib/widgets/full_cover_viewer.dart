@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../l10n/app_localizations.dart';
+import '../utils/app_platform.dart';
 import '../utils/share_origin.dart';
 import 'overlay_toast.dart';
 
@@ -22,9 +23,10 @@ class CoverImageSource {
         headers = const {};
 
   /// Chooses the source for a URL from `LibraryProvider.getCoverUrl`, which
-  /// returns a local path for downloaded and overridden covers.
+  /// returns a local path for downloaded and overridden covers. Uses the same
+  /// local-cover rule as the cards, so the viewer reads the image they show.
   factory CoverImageSource.fromUrl(String url, Map<String, String> headers) =>
-      url.startsWith('/')
+      !AppPlatform.lacksPhonePlugins && url.startsWith('/')
           ? CoverImageSource.file(url)
           : CoverImageSource.network(url, headers: headers);
 
