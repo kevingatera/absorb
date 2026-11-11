@@ -825,7 +825,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
       if (_coverUrl != null) ...[
         Center(child: GestureDetector(
-          onTap: () => showFullCoverViewer(context, source: CoverImageSource.network(_fullResCoverUrl ?? _coverUrl!, headers: lib.mediaHeaders), title: title),
+          onTap: () => showFullCoverViewer(context, source: CoverImageSource.fromUrl(_fullResCoverUrl ?? _coverUrl!, lib.mediaHeaders), title: title),
           child: Container(
             height: 240,
             width: _squareCovers ? 240 : null,
