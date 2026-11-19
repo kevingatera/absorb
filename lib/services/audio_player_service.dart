@@ -405,12 +405,12 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     // buttons instead, so these are never added on iOS (lock screen stays as-is).
     if (AppPlatform.isAndroid) {
       final prevChapter = MediaControl.custom(
-        androidIcon: 'drawable/ic_widget_prev_chapter',
+        androidIcon: 'drawable/ic_notif_prev_chapter',
         label: 'Previous chapter',
         name: 'previousChapter',
       );
       final nextChapter = MediaControl.custom(
-        androidIcon: 'drawable/ic_widget_next_chapter',
+        androidIcon: 'drawable/ic_notif_next_chapter',
         label: 'Next chapter',
         name: 'nextChapter',
       );
