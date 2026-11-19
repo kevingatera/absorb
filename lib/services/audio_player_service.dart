@@ -365,15 +365,13 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     return 'drawable/ic_speed_${s.replaceAll('.', '_')}x';
   }
 
-  /// Android 13+ chapter skip as the standard prev/next actions rather than
-  /// custom ones. The 13+ player shows the same buttons either way, but compact
-  /// players (OnePlus quick settings, watches) only use the standard actions
-  /// and grey out prev/next without them. Off when the user put speed and
-  /// bookmark on the phone, since the slots would push those out.
-  bool get _chapterSkipSlots =>
-      AppPlatform.isAndroid &&
-      ApiService.deviceSdkInt >= 33 &&
-      !_cachedNotifSpeedBookmark;
+  /// Android 13+: rewind/forward ride the standard prev/next actions rather
+  /// than custom ones. Compact players (OnePlus quick settings, watches) only
+  /// use the standard actions and grey prev/next out without them. The full
+  /// player keeps them in the inner slots, but draws its own prev/next icons
+  /// there; apps cannot replace those.
+  bool get _seekSkipSlots =>
+      AppPlatform.isAndroid && ApiService.deviceSdkInt >= 33;
 
   PlaybackState _transformEvent(PlaybackEvent event) {
     final playPause = _player.playing ? MediaControl.pause : MediaControl.play;
@@ -391,13 +389,12 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
     // Base 3 controls (rewind | play | forward) feed both the phone
     // notification and Android Auto. compactIndices keeps the glanceable
-    // notification to just these three.
-    final controls = <MediaControl>[
-      rewindControl,
-      playPause,
-      fastForwardControl,
-    ];
-    final compactIndices = const [0, 1, 2];
+    // notification to just these three. On Android 13+ rewind/forward are the
+    // standard prev/next actions instead (see [_seekSkipSlots]).
+    final controls = _seekSkipSlots
+        ? <MediaControl>[playPause]
+        : <MediaControl>[rewindControl, playPause, fastForwardControl];
+    final compactIndices = _seekSkipSlots ? const [0] : const [0, 1, 2];
 
     // Extra Android Auto controls (custom actions). On Android 12 and below they
     // show only in AA; on 13+ they also feed the phone's media player. We always
@@ -433,12 +430,9 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       );
       // The phone media player (Android 13+) only shows the first 2 of these
       // extras (after rewind/forward); the rest stay Android-Auto-only. Order so
-      // the user's chosen pair lands on the phone. Default: chapter skip, which
-      // rides the standard prev/next actions instead (see [_chapterSkipSlots]).
+      // the user's chosen pair lands on the phone. Default: chapter skip.
       if (_cachedNotifSpeedBookmark) {
         controls.addAll([speed, bookmark, prevChapter, nextChapter]);
-      } else if (_chapterSkipSlots) {
-        controls.addAll([speed, bookmark]);
       } else {
         controls.addAll([prevChapter, nextChapter, speed, bookmark]);
       }
@@ -446,8 +440,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
     return PlaybackState(
       controls: controls,
-      // iOS always; Android only for chapter skip on 13+ (see _chapterSkipSlots),
-      // since older Android adds them to the notification as extra buttons.
+      // iOS always; Android only on 13+ (see _seekSkipSlots), since older
+      // Android adds them to the notification as extra buttons.
       systemActions: {
         // Dropping seek locks the scrubber: Android omits ACTION_SEEK_TO and iOS
         // omits changePlaybackPositionCommand, so it shows progress but can't be
@@ -456,9 +450,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
         MediaAction.seekForward,
         MediaAction.seekBackward,
         MediaAction.skipToQueueItem,
-        if (AppPlatform.isIOS || _chapterSkipSlots) MediaAction.skipToNext,
-        if (AppPlatform.isIOS || _chapterSkipSlots)
-          MediaAction.skipToPrevious,
+        if (AppPlatform.isIOS || _seekSkipSlots) MediaAction.skipToNext,
+        if (AppPlatform.isIOS || _seekSkipSlots) MediaAction.skipToPrevious,
       },
       androidCompactActionIndices: compactIndices,
       processingState: () {
@@ -696,22 +689,10 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
   // iOS BT (AirPods, steering wheel) routes track-skip through these.
   @override
-  Future<void> skipToNext() async {
-    if (_chapterSkipSlots && (_service?.chapters.isNotEmpty ?? false)) {
-      await _service!.skipToNextChapter();
-    } else {
-      await fastForward();
-    }
-  }
+  Future<void> skipToNext() => fastForward();
 
   @override
-  Future<void> skipToPrevious() async {
-    if (_chapterSkipSlots && (_service?.chapters.isNotEmpty ?? false)) {
-      await _service!.skipToPreviousChapter();
-    } else {
-      await rewind();
-    }
-  }
+  Future<void> skipToPrevious() => rewind();
 
   // Custom click handler with proper multi-press detection
   Timer? _clickTimer;
