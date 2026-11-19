@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui';
 // Flutter 3.44 moved CupertinoPageTransitionsBuilder from material.dart to
 // cupertino.dart. Older SDKs (incl. local) still re-export it from material,
@@ -46,7 +47,7 @@ import 'services/wording.dart';
 import 'utils/app_platform.dart';
 import 'screens/login_screen.dart';
 import 'screens/app_shell.dart';
-import 'widgets/auth_loading_screen.dart';
+import 'widgets/auth_loading_screen.dart';
 import 'widgets/expressive.dart';
 import 'widgets/beta_logging_notice.dart';
 import 'widgets/setup_link_login.dart';
@@ -83,11 +84,41 @@ ColorScheme manualColorScheme(Color seed, Brightness brightness) {
     brightness: brightness,
     dynamicSchemeVariant: DynamicSchemeVariant.vibrant,
   );
-  final onSeed = ThemeData.estimateBrightnessForColor(seed) == Brightness.dark
-      ? Colors.white
-      : Colors.black;
-  return base.copyWith(primary: seed, onPrimary: onSeed);
+  final primary = _legibleAccent(seed, brightness);
+  final onPrimary =
+      ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
+          ? Colors.white
+          : Colors.black;
+  return base.copyWith(primary: primary, onPrimary: onPrimary);
 }
+
+/// [seed] unchanged when it already reads against the app's surfaces, else the
+/// same hue lightened (dark mode) or darkened (light mode) just enough to pass.
+/// Icons, labels and the nav pill all paint in primary, so a dark pick in dark
+/// mode would otherwise leave them grey-on-black.
+Color _legibleAccent(Color seed, Brightness brightness) {
+  // WCAG 3:1 for icons and UI parts; the default purple passes in both modes.
+  const minContrast = 3.0;
+  final dark = brightness == Brightness.dark;
+  // The lightest dark container and darkest light one, so tiles pass too.
+  final surface = dark ? const Color(0xFF242424) : const Color(0xFFE0E0E0);
+  final surfaceLum = surface.computeLuminance();
+  double contrast(Color c) {
+    final a = c.computeLuminance(), b = surfaceLum;
+    return (math.max(a, b) + 0.05) / (math.min(a, b) + 0.05);
+  }
+
+  if (contrast(seed) >= minContrast) return seed;
+  final hsl = HSLColor.fromColor(seed);
+  var lightness = hsl.lightness;
+  for (var i = 0; i < 100; i++) {
+    lightness = (lightness + (dark ? 0.01 : -0.01)).clamp(0.0, 1.0);
+    final candidate = hsl.withLightness(lightness).toColor();
+    if (contrast(candidate) >= minContrast) return candidate;
+  }
+  return dark ? Colors.white : Colors.black;
+}
+
 /// Route transition that just shows the page - e-ink panels smear animations
 /// into a mess of ghosting, so pages should simply appear.
 class _InstantPageTransitionsBuilder extends PageTransitionsBuilder {
