@@ -365,6 +365,16 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     return 'drawable/ic_speed_${s.replaceAll('.', '_')}x';
   }
 
+  /// Android 13+ chapter skip as the standard prev/next actions rather than
+  /// custom ones. The 13+ player shows the same buttons either way, but compact
+  /// players (OnePlus quick settings, watches) only use the standard actions
+  /// and grey out prev/next without them. Off when the user put speed and
+  /// bookmark on the phone, since the slots would push those out.
+  bool get _chapterSkipSlots =>
+      AppPlatform.isAndroid &&
+      ApiService.deviceSdkInt >= 33 &&
+      !_cachedNotifSpeedBookmark;
+
   PlaybackState _transformEvent(PlaybackEvent event) {
     final playPause = _player.playing ? MediaControl.pause : MediaControl.play;
 
@@ -423,9 +433,12 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       );
       // The phone media player (Android 13+) only shows the first 2 of these
       // extras (after rewind/forward); the rest stay Android-Auto-only. Order so
-      // the user's chosen pair lands on the phone. Default: chapter skip.
+      // the user's chosen pair lands on the phone. Default: chapter skip, which
+      // rides the standard prev/next actions instead (see [_chapterSkipSlots]).
       if (_cachedNotifSpeedBookmark) {
         controls.addAll([speed, bookmark, prevChapter, nextChapter]);
+      } else if (_chapterSkipSlots) {
+        controls.addAll([speed, bookmark]);
       } else {
         controls.addAll([prevChapter, nextChapter, speed, bookmark]);
       }
@@ -433,7 +446,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
     return PlaybackState(
       controls: controls,
-      // iOS-only: declaring on Android adds prev/next buttons to the notification.
+      // iOS always; Android only for chapter skip on 13+ (see _chapterSkipSlots),
+      // since older Android adds them to the notification as extra buttons.
       systemActions: {
         // Dropping seek locks the scrubber: Android omits ACTION_SEEK_TO and iOS
         // omits changePlaybackPositionCommand, so it shows progress but can't be
@@ -442,8 +456,9 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
         MediaAction.seekForward,
         MediaAction.seekBackward,
         MediaAction.skipToQueueItem,
-        if (AppPlatform.isIOS) MediaAction.skipToNext,
-        if (AppPlatform.isIOS) MediaAction.skipToPrevious,
+        if (AppPlatform.isIOS || _chapterSkipSlots) MediaAction.skipToNext,
+        if (AppPlatform.isIOS || _chapterSkipSlots)
+          MediaAction.skipToPrevious,
       },
       androidCompactActionIndices: compactIndices,
       processingState: () {
@@ -681,10 +696,22 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
   // iOS BT (AirPods, steering wheel) routes track-skip through these.
   @override
-  Future<void> skipToNext() => fastForward();
+  Future<void> skipToNext() async {
+    if (_chapterSkipSlots && (_service?.chapters.isNotEmpty ?? false)) {
+      await _service!.skipToNextChapter();
+    } else {
+      await fastForward();
+    }
+  }
 
   @override
-  Future<void> skipToPrevious() => rewind();
+  Future<void> skipToPrevious() async {
+    if (_chapterSkipSlots && (_service?.chapters.isNotEmpty ?? false)) {
+      await _service!.skipToPreviousChapter();
+    } else {
+      await rewind();
+    }
+  }
 
   // Custom click handler with proper multi-press detection
   Timer? _clickTimer;
